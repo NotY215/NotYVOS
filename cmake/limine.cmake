@@ -1,31 +1,59 @@
-# Pinned Limine version + fetch + build helpers.
-# Limine ships its own Makefile; we shell out to it.
+# Pinned Limine version + path discovery.
+#
+# Expects tools/scripts/fetch_limine.(ps1|sh) to have populated:
+#   third_party/limine/limine-<tag>/limine.h             (header)
+#   third_party/limine/limine-binary/BOOTX64.EFI ...     (boot files + host tool)
+#
+# The fetch scripts normalize the source folder name to "limine-<tag>"
+# regardless of GitHub's original archive folder capitalization.
 
-set(NOTYVOS_LIMINE_VERSION "v8.6.0" CACHE STRING "Pinned Limine tag")
+set(NOTYVOS_LIMINE_VERSION "v12.9.0" CACHE STRING "Pinned Limine tag")
 
-set(NOTYVOS_LIMINE_ROOT "${CMAKE_SOURCE_DIR}/third_party/limine")
-set(NOTYVOS_LIMINE_SRC  "${NOTYVOS_LIMINE_ROOT}/limine-${NOTYVOS_LIMINE_VERSION}")
+string(REPLACE "v" "" _notyvos_limine_tag "${NOTYVOS_LIMINE_VERSION}")
 
-# The user runs tools/scripts/fetch_limine.* once before building,
-# OR the build system invokes it. We only *check* here.
+set(NOTYVOS_LIMINE_ROOT    "${CMAKE_SOURCE_DIR}/third_party/limine")
+set(NOTYVOS_LIMINE_SRC     "${NOTYVOS_LIMINE_ROOT}/limine-${_notyvos_limine_tag}")
+set(NOTYVOS_LIMINE_BIN_DIR "${NOTYVOS_LIMINE_ROOT}/limine-binary")
+
 function(notyvos_require_limine)
-    if(NOT EXISTS "${NOTYVOS_LIMINE_SRC}/Makefile")
+    if(NOT EXISTS "${NOTYVOS_LIMINE_SRC}/limine.h")
         message(FATAL_ERROR
-            "Limine ${NOTYVOS_LIMINE_VERSION} not found at ${NOTYVOS_LIMINE_SRC}.\n"
+            "Limine header not found at:\n"
+            "  ${NOTYVOS_LIMINE_SRC}/limine.h\n"
+            "Run one of:\n"
+            "  pwsh tools/scripts/fetch_limine.ps1\n"
+            "  bash tools/scripts/fetch_limine.sh\n"
+            "and try again.")
+    endif()
+
+    if(NOT EXISTS "${NOTYVOS_LIMINE_BIN_DIR}/BOOTX64.EFI")
+        message(FATAL_ERROR
+            "Limine boot files not found under:\n"
+            "  ${NOTYVOS_LIMINE_BIN_DIR}\n"
             "Run tools/scripts/fetch_limine.(ps1|sh) first.")
     endif()
 
-    set(LIMINE_MAKEFILE "${NOTYVOS_LIMINE_SRC}/Makefile")
-    set(LIMINE_BIN      "${NOTYVOS_LIMINE_SRC}/bin/limine")
-    set(LIMINE_BIOS_CD  "${NOTYVOS_LIMINE_SRC}/bin/limine-bios-cd.bin")
-    set(LIMINE_BIOS_SYS "${NOTYVOS_LIMINE_SRC}/bin/limine-bios.sys")
-    set(LIMINE_UEFI_CD  "${NOTYVOS_LIMINE_SRC}/bin/limine-uefi-cd.bin")
-    set(LIMINE_BIOS     "${NOTYVOS_LIMINE_SRC}/bin/limine-bios.sys")
-    set(LIMINE_EFI      "${NOTYVOS_LIMINE_SRC}/bin/BOOTX64.EFI")
+    if(WIN32)
+        set(_host "${NOTYVOS_LIMINE_BIN_DIR}/limine.exe")
+        if(NOT EXISTS "${_host}")
+            set(_host "${NOTYVOS_LIMINE_BIN_DIR}/limine")
+        endif()
+    else()
+        set(_host "${NOTYVOS_LIMINE_BIN_DIR}/limine")
+        if(NOT EXISTS "${_host}")
+            set(_host "${NOTYVOS_LIMINE_BIN_DIR}/limine.exe")
+        endif()
+    endif()
 
-    set(NOTYVOS_LIMINE_BIN      "${LIMINE_BIN}"      PARENT_SCOPE)
-    set(NOTYVOS_LIMINE_BIOS_CD  "${LIMINE_BIOS_CD}"  PARENT_SCOPE)
-    set(NOTYVOS_LIMINE_BIOS_SYS "${LIMINE_BIOS_SYS}" PARENT_SCOPE)
-    set(NOTYVOS_LIMINE_UEFI_CD  "${LIMINE_UEFI_CD}"  PARENT_SCOPE)
-    set(NOTYVOS_LIMINE_EFI      "${LIMINE_EFI}"      PARENT_SCOPE)
+    if(NOT EXISTS "${_host}")
+        message(FATAL_ERROR
+            "Limine host tool not found in ${NOTYVOS_LIMINE_BIN_DIR}.\n"
+            "Expected 'limine' or 'limine.exe'.")
+    endif()
+
+    set(NOTYVOS_LIMINE_BIN      "${_host}"                                      PARENT_SCOPE)
+    set(NOTYVOS_LIMINE_BIOS_CD  "${NOTYVOS_LIMINE_BIN_DIR}/limine-bios-cd.bin"  PARENT_SCOPE)
+    set(NOTYVOS_LIMINE_BIOS_SYS "${NOTYVOS_LIMINE_BIN_DIR}/limine-bios.sys"     PARENT_SCOPE)
+    set(NOTYVOS_LIMINE_UEFI_CD  "${NOTYVOS_LIMINE_BIN_DIR}/limine-uefi-cd.bin"  PARENT_SCOPE)
+    set(NOTYVOS_LIMINE_EFI      "${NOTYVOS_LIMINE_BIN_DIR}/BOOTX64.EFI"         PARENT_SCOPE)
 endfunction()

@@ -18,7 +18,6 @@ cmake-build-*/
 *.map
 
 # ---- boot artifacts ----
-/third_party/
 /tools/limine/
 *.iso
 *.img

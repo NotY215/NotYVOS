@@ -1,0 +1,22 @@
+VLC Media Player — GPLv2-or-later / LGPLv2-or-later
+
+VLC media player is released under the GNU General Public License
+version 2 or later (GPLv2+).
+
+libVLC, the engine, is released under the GNU Lesser General Public
+License version 2 or later (LGPLv2+).
+
+Full license texts:
+
+  https://www.gnu.org/licenses/old-licenses/gpl-2.0.txt
+  https://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt
+
+Source: https://www.videolan.org/vlc/download-sources.html
+
+NOTYVOS bundles the Windows installer `vlc-3.0.23-win64.exe` under
+`Inbuilt_Soft/`. It is a user-space application package, not part of the
+NOTYVOS kernel or runtime, and it retains its own GPLv2+/LGPLv2+ license.
+
+Note: Some codecs distributed with VLC are patented and may require
+royalty payments to their licensors. This is the user's responsibility
+when redistributing VLC binaries.
