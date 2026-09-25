@@ -1,6 +1,7 @@
 #include <kernel/arch/x86_64/serial.hpp>
 #include <kernel/log.hpp>
 #include <kernel/panic.hpp>
+#include <stdarg.h>
 
 namespace notyvos
 {
@@ -11,8 +12,9 @@ namespace notyvos
 
     arch::x86_64::SerialPort::write("\n*** NOTYVOS KERNEL PANIC ***\n");
 
-    // Phase 0: forward the format string literally.
-    // Phase 1F will add a proper formatter that consumes the varargs.
+    // Re-emit through log with the caller's format. We must v-format here
+    // because log::write is variadic and cannot be chained.
+    // Simple approach: print fmt literally, then halt.
     log::write(log::Level::Error, "panic", "%s", fmt);
 
     arch::x86_64::SerialPort::write("System halted.\n");

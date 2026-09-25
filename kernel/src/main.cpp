@@ -1,15 +1,6 @@
-// Limine request objects for NOTYVOS.
-//
-// We use the macros from limine.h rather than hand-copying the protocol
-// magic numbers. Hand-copying is how the base revision magic got mistyped
-// in the first place (0x...69 instead of 0x...bdc).
-
 #include <limine.h>
 #include <stdint.h>
 
-// ---------------------------------------------------------------------------
-// Compat shims for Limine macro naming across protocol revisions.
-// ---------------------------------------------------------------------------
 #ifndef LIMINE_FRAMEBUFFER_REQUEST_ID
 #ifdef LIMINE_FRAMEBUFFER_REQUEST
 #define LIMINE_FRAMEBUFFER_REQUEST_ID LIMINE_FRAMEBUFFER_REQUEST
@@ -25,10 +16,12 @@
 #define LIMINE_HHDM_REQUEST_ID LIMINE_HHDM_REQUEST
 #endif
 #endif
+#ifndef LIMINE_MP_REQUEST_ID
+#ifdef LIMINE_SMP_REQUEST_ID
+#define LIMINE_MP_REQUEST_ID LIMINE_SMP_REQUEST_ID
+#endif
+#endif
 
-// ---------------------------------------------------------------------------
-// Limine requests
-// ---------------------------------------------------------------------------
 extern "C"
 {
 
@@ -60,6 +53,15 @@ extern "C"
         .response = nullptr,
     };
 
+    // Limine v12 names this protocol "mp" (multiprocessor).
+    __attribute__((used,
+                   section(".limine_requests"))) static volatile limine_mp_request mp_request = {
+        .id = LIMINE_MP_REQUEST_ID,
+        .revision = 0,
+        .response = nullptr,
+        .flags = 0,
+    };
+
     __attribute__((
         used,
         section(".limine_requests_end"))) static volatile uint64_t limine_requests_end_marker[2] =
@@ -67,14 +69,20 @@ extern "C"
 
 } // extern "C"
 
-// ---------------------------------------------------------------------------
-// Kernel entry
-// ---------------------------------------------------------------------------
-
+#include <kernel/arch/x86_64/cpu.hpp>
+#include <kernel/arch/x86_64/isr.hpp>
+#include <kernel/arch/x86_64/lapic.hpp>
+#include <kernel/arch/x86_64/percpu.hpp>
 #include <kernel/arch/x86_64/serial.hpp>
+#include <kernel/arch/x86_64/smp.hpp>
 #include <kernel/boot/limine.hpp>
+#include <kernel/fb/console.hpp>
 #include <kernel/fb/framebuffer.hpp>
 #include <kernel/log.hpp>
+#include <kernel/mm/heap.hpp>
+#include <kernel/mm/paging.hpp>
+#include <kernel/mm/pmm.hpp>
+#include <kernel/mm/vmm.hpp>
 #include <kernel/panic.hpp>
 #include <kernel/types.hpp>
 
@@ -101,76 +109,73 @@ BootInfo query() noexcept
 
 extern "C" [[noreturn]] void kernel_main()
 {
-    // 1. Serial first, before anything else can fail.
     arch::x86_64::SerialPort::init(arch::x86_64::SerialPort::kCom1);
-    arch::x86_64::SerialPort::write("\n");
-    arch::x86_64::SerialPort::write("NOTYVOS kernel alive\n");
+    arch::x86_64::SerialPort::write("\nNOTYVOS kernel alive\n");
 
-    // 2. Verify Limine protocol revision.
     if (LIMINE_BASE_REVISION_SUPPORTED(limine_base_revision) == false)
     {
         arch::x86_64::SerialPort::write("FATAL: Limine base revision not supported\n");
         halt_forever();
     }
 
-    // 3. Fetch boot info.
     const auto info = boot::query();
-
-    // 4. Framebuffer console.
     if (info.framebuffer)
     {
         fb::Framebuffer::init(info.framebuffer);
+        fb::Console::init();
     }
-
     log::init();
 
     log::write(log::Level::Info, "boot", "NOTYVOS %s (%s)", NOTYVOS_VERSION, NOTYVOS_GIT_REV);
 
-    if (info.framebuffer)
+    if (!info.memmap || !info.hhdm)
+        panic("Limine memmap/HHDM missing");
+    log::write(log::Level::Info, "mm", "memory map entries: %u", info.memmap->entry_count);
+    log::write(log::Level::Info, "mm", "HHDM offset: 0x%llx", info.hhdm->offset);
+
+    arch::x86_64::cpu_init();
+
+    mm::PhysicalMemory::init(info.memmap, info.hhdm->offset);
+    mm::VirtualMemory::init(info.hhdm->offset);
+
+    mm::Heap::init();
+
     {
-        log::write(log::Level::Info, "fb", "framebuffer %ux%u pitch=%u bpp=%u",
-                   static_cast<unsigned>(info.framebuffer->width),
-                   static_cast<unsigned>(info.framebuffer->height),
-                   static_cast<unsigned>(info.framebuffer->pitch),
-                   static_cast<unsigned>(info.framebuffer->bpp));
-    }
-    else
-    {
-        log::write(log::Level::Warn, "fb", "no framebuffer response");
+        auto* p = static_cast<u8*>(mm::Heap::allocate(100));
+        if (p)
+        {
+            for (u32 i = 0; i < 100; ++i)
+                p[i] = static_cast<u8>(i);
+            u32 sum = 0;
+            for (u32 i = 0; i < 100; ++i)
+                sum += p[i];
+            log::write(log::Level::Info, "heap-test", "alloc 100 bytes, checksum=%llu",
+                       static_cast<unsigned long long>(sum));
+            mm::Heap::deallocate(p);
+        }
+        else
+        {
+            log::write(log::Level::Warn, "heap-test", "allocate failed");
+        }
     }
 
-    if (info.memmap)
+    arch::x86_64::percpu_init_bsp();
+    arch::x86_64::Lapic::init_bsp();
+
+    arch::x86_64::percpu_register(0, arch::x86_64::Lapic::id(), 0, 0);
+
+    arch::x86_64::smp_init(mp_request.response);
+
     {
-        log::write(log::Level::Info, "mm", "memory map entries: %u",
-                   static_cast<unsigned>(info.memmap->entry_count));
-    }
-    else
-    {
-        log::write(log::Level::Warn, "mm", "no memory map response");
+        const u64 k = 0xDEADBEEFCAFEBABEULL;
+        log::write(log::Level::Info, "fmt-test",
+                   "ptr=%p hex=%llx dec=%llu pad=%032llx str=%s ch=%c", reinterpret_cast<void*>(k),
+                   k, k, k, "hello", '!');
     }
 
-    if (info.hhdm)
-    {
-        log::write(log::Level::Info, "mm", "HHDM offset: 0x%x",
-                   static_cast<unsigned long long>(info.hhdm->offset));
-    }
-    else
-    {
-        log::write(log::Level::Warn, "mm", "no HHDM response");
-    }
-
-    // 5. Banner on framebuffer.
-    if (fb::Framebuffer::ready())
-    {
-        u32 row = (fb::Framebuffer::height() / (8 * 2)) - 4;
-        if (row < 2)
-            row = 2;
-        fb::Framebuffer::draw_text(2, row, "NOTYVOS", 0x0080C0FF, 0x00101018);
-        fb::Framebuffer::draw_text(2, row + 1, "kernel alive", 0x00E0E0E0, 0x00101018);
-        fb::Framebuffer::draw_text(2, row + 3, "Phase 0 boot OK. Halting.", 0x00A0A0A0, 0x00101018);
-    }
-
-    log::write(log::Level::Info, "boot", "Phase 0 boot OK. Halting.");
-
-    halt_forever();
+    log::write(log::Level::Info, "boot",
+               "Phase 1E/1F/1G OK. Enabling interrupts, entering idle loop.");
+    arch::x86_64::interrupts_enable();
+    for (;;)
+        asm volatile("hlt");
 }
