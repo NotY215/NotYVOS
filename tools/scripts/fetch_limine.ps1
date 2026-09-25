@@ -1,18 +1,17 @@
 # Fetch Limine for NOTYVOS.
 #   - source tarball  -> third_party/limine/limine-<tag>/        (for limine.h)
-#   - binary release  -> third_party/limine/limine-binary/       (boot files + host tool)
+#   - binary release  -> third_party/limine/limine-binary/       (boot files)
 # No `make` required.
 #
-# GitHub archive tarballs extract to a folder named after the repository
-# with its original capitalization ("Limine-<tag>" here, not "limine-<tag>").
-# This script normalizes the folder name to "limine-<tag>" so that
-# cmake/limine.cmake and kernel/CMakeLists.txt have a single deterministic path.
+# The Limine v12.x binary release does NOT ship the `limine` host tool.
+# The host tool is only needed for BIOS El Torito patching. NOTYVOS boots
+# via UEFI, so we build a UEFI-only ISO and skip BIOS support at Phase 0.
 
 $ErrorActionPreference = "Stop"
 
 $Version   = "v12.9.0"
-$Tag       = $Version.TrimStart("v")           # -> "12.9.0"
-$Canonical = "limine-$Tag"                     # we enforce this folder name
+$Tag       = $Version.TrimStart("v")
+$Canonical = "limine-$Tag"
 
 $Root      = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $Root      = Join-Path $Root "third_party\limine"
@@ -22,15 +21,12 @@ $SrcDir    = Join-Path $Root $Canonical
 $BinDir    = Join-Path $Root "limine-binary"
 
 # ---------------------------------------------------------------------------
-# 1. Source tarball (for limine.h)
+# 1. Source (limine.h)
 # ---------------------------------------------------------------------------
 if (-not (Test-Path (Join-Path $SrcDir "limine.h"))) {
 
-    # Remove any stale extracted source (case variants, previous tags).
     Get-ChildItem -Path $Root -Directory -ErrorAction SilentlyContinue |
-        Where-Object {
-            $_.Name -match '^[Ll]imine-' -and $_.Name -ne "limine-binary"
-        } |
+        Where-Object { $_.Name -match '^[Ll]imine-' -and $_.Name -ne "limine-binary" } |
         ForEach-Object {
             Write-Host "Removing stale source dir: $($_.FullName)"
             Remove-Item -Recurse -Force $_.FullName
@@ -46,21 +42,16 @@ if (-not (Test-Path (Join-Path $SrcDir "limine.h"))) {
     tar -xzf $SrcTar -C $Root
     if ($LASTEXITCODE -ne 0) { throw "tar extraction failed (exit $LASTEXITCODE)" }
 
-    # Find whichever folder GitHub produced (Limine-<tag> or limine-<tag>).
     $extracted = Get-ChildItem -Path $Root -Directory |
-                 Where-Object {
-                     $_.Name -match "^[Ll]imine-$([regex]::Escape($Tag))$"
-                 } |
+                 Where-Object { $_.Name -match "^[Ll]imine-$([regex]::Escape($Tag))$" } |
                  Select-Object -First 1
 
     if (-not $extracted) {
         $tree = (Get-ChildItem -Path $Root -Recurse -Depth 2 -ErrorAction SilentlyContinue |
-                 Select-Object -First 40 |
-                 ForEach-Object { $_.FullName }) -join "`n"
-        throw "Limine source directory not found after extraction. Tree under ${Root}:`n$tree"
+                 Select-Object -First 40 | ForEach-Object { $_.FullName }) -join "`n"
+        throw "Limine source directory not found. Tree under ${Root}:`n$tree"
     }
 
-    # Normalize folder name to $Canonical.
     if ($extracted.Name -ne $Canonical) {
         if (Test-Path $SrcDir) { Remove-Item -Recurse -Force $SrcDir }
         Write-Host "Renaming $($extracted.Name) -> $Canonical"
@@ -78,7 +69,7 @@ if (-not (Test-Path (Join-Path $SrcDir "limine.h"))) {
 Write-Host "Limine source ready: $SrcDir"
 
 # ---------------------------------------------------------------------------
-# 2. Prebuilt binary release (for BOOTX64.EFI etc.)
+# 2. Binary release
 # ---------------------------------------------------------------------------
 $haveBin = Test-Path (Join-Path $BinDir "BOOTX64.EFI")
 if (-not $haveBin) {
@@ -99,8 +90,7 @@ if (-not $haveBin) {
              Select-Object -First 1
     if (-not $found) {
         $listing = (Get-ChildItem -Path $Tmp -Recurse |
-                    Select-Object -First 30 |
-                    ForEach-Object { $_.FullName }) -join "`n"
+                    Select-Object -First 30 | ForEach-Object { $_.FullName }) -join "`n"
         throw "BOOTX64.EFI not found in the binary release. Contents:`n$listing"
     }
 
@@ -113,21 +103,15 @@ if (-not $haveBin) {
 }
 
 # ---------------------------------------------------------------------------
-# 3. Sanity check
+# 3. Sanity check — boot files only (host tool is optional)
 # ---------------------------------------------------------------------------
-$required = @(
-    "BOOTX64.EFI",
-    "limine-bios.sys",
-    "limine-bios-cd.bin",
-    "limine-uefi-cd.bin"
-)
+$required = @("BOOTX64.EFI", "limine-uefi-cd.bin")
 $missing = @()
 foreach ($f in $required) {
     if (-not (Test-Path (Join-Path $BinDir $f))) { $missing += $f }
 }
 if ($missing.Count -gt 0) {
     Write-Warning "Missing from binary release: $($missing -join ', ')"
-    Write-Warning "Check https://github.com/Limine-Bootloader/Limine/releases for $Version layout."
     exit 2
 }
 
@@ -136,13 +120,19 @@ foreach ($candidate in @("limine.exe", "limine")) {
     $p = Join-Path $BinDir $candidate
     if (Test-Path $p) { $hostTool = $p; break }
 }
-if (-not $hostTool) {
-    Write-Warning "Host tool 'limine' / 'limine.exe' not found in $BinDir."
-    exit 3
-}
 
 Write-Host ""
-Write-Host "Limine $Version ready."
-Write-Host "  source:    $SrcDir"
-Write-Host "  binaries:  $BinDir"
-Write-Host "  host tool: $hostTool"
+if ($hostTool) {
+    Write-Host "Limine $Version ready (BIOS + UEFI)."
+    Write-Host "  source:    $SrcDir"
+    Write-Host "  binaries:  $BinDir"
+    Write-Host "  host tool: $hostTool"
+} else {
+    Write-Host "Limine $Version ready (UEFI-only)."
+    Write-Host "  source:    $SrcDir"
+    Write-Host "  binaries:  $BinDir"
+    Write-Host "  host tool: not present (expected; UEFI boot unaffected)"
+    Write-Host ""
+    Write-Host "NOTYVOS will build a UEFI-only ISO. This is intentional."
+}
+exit 0

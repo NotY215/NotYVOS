@@ -1,11 +1,11 @@
 # Pinned Limine version + path discovery.
 #
 # Expects tools/scripts/fetch_limine.(ps1|sh) to have populated:
-#   third_party/limine/limine-<tag>/limine.h             (header)
-#   third_party/limine/limine-binary/BOOTX64.EFI ...     (boot files + host tool)
+#   third_party/limine/limine-<tag>/limine.h            (header)
+#   third_party/limine/limine-binary/BOOTX64.EFI etc.   (boot files)
 #
-# The fetch scripts normalize the source folder name to "limine-<tag>"
-# regardless of GitHub's original archive folder capitalization.
+# The `limine` host tool is OPTIONAL. It is only needed for BIOS El Torito
+# patching. NOTYVOS builds a UEFI-only ISO at Phase 0.
 
 set(NOTYVOS_LIMINE_VERSION "v12.9.0" CACHE STRING "Pinned Limine tag")
 
@@ -20,38 +20,22 @@ function(notyvos_require_limine)
         message(FATAL_ERROR
             "Limine header not found at:\n"
             "  ${NOTYVOS_LIMINE_SRC}/limine.h\n"
-            "Run one of:\n"
-            "  pwsh tools/scripts/fetch_limine.ps1\n"
-            "  bash tools/scripts/fetch_limine.sh\n"
-            "and try again.")
+            "Run: pwsh tools/scripts/fetch_limine.ps1")
     endif()
 
     if(NOT EXISTS "${NOTYVOS_LIMINE_BIN_DIR}/BOOTX64.EFI")
         message(FATAL_ERROR
             "Limine boot files not found under:\n"
             "  ${NOTYVOS_LIMINE_BIN_DIR}\n"
-            "Run tools/scripts/fetch_limine.(ps1|sh) first.")
+            "Run: pwsh tools/scripts/fetch_limine.ps1")
     endif()
 
-    if(WIN32)
-        set(_host "${NOTYVOS_LIMINE_BIN_DIR}/limine.exe")
-        if(NOT EXISTS "${_host}")
-            set(_host "${NOTYVOS_LIMINE_BIN_DIR}/limine")
-        endif()
-    else()
-        set(_host "${NOTYVOS_LIMINE_BIN_DIR}/limine")
-        if(NOT EXISTS "${_host}")
-            set(_host "${NOTYVOS_LIMINE_BIN_DIR}/limine.exe")
-        endif()
-    endif()
-
-    if(NOT EXISTS "${_host}")
+    if(NOT EXISTS "${NOTYVOS_LIMINE_BIN_DIR}/limine-uefi-cd.bin")
         message(FATAL_ERROR
-            "Limine host tool not found in ${NOTYVOS_LIMINE_BIN_DIR}.\n"
-            "Expected 'limine' or 'limine.exe'.")
+            "Limine UEFI CD boot image not found:\n"
+            "  ${NOTYVOS_LIMINE_BIN_DIR}/limine-uefi-cd.bin")
     endif()
 
-    set(NOTYVOS_LIMINE_BIN      "${_host}"                                      PARENT_SCOPE)
     set(NOTYVOS_LIMINE_BIOS_CD  "${NOTYVOS_LIMINE_BIN_DIR}/limine-bios-cd.bin"  PARENT_SCOPE)
     set(NOTYVOS_LIMINE_BIOS_SYS "${NOTYVOS_LIMINE_BIN_DIR}/limine-bios.sys"     PARENT_SCOPE)
     set(NOTYVOS_LIMINE_UEFI_CD  "${NOTYVOS_LIMINE_BIN_DIR}/limine-uefi-cd.bin"  PARENT_SCOPE)
