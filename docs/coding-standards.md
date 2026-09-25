@@ -1,6 +1,6 @@
 # Coding Standards
 
-- C++23, freestanding, exceptions off, RTTI off.
+- C++20, freestanding, exceptions off, RTTI off.
 - Assembly only where required (entry, context, ISR stubs).
 - File extension: `.hpp`, `.cpp`, `.S`.
 - Namespace: `notyvos::` (and sub-namespaces per subsystem).

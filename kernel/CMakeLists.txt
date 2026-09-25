@@ -35,6 +35,7 @@ target_compile_definitions(notyvos-kernel PRIVATE
 )
 
 target_link_options(notyvos-kernel PRIVATE ${NOTYVOS_KERNEL_LINK_FLAGS})
+
 set_target_properties(notyvos-kernel PROPERTIES
     LINK_DEPENDS "${CMAKE_SOURCE_DIR}/kernel/linker.ld"
     OUTPUT_NAME "notyvos-kernel"
@@ -44,6 +45,14 @@ set_target_properties(notyvos-kernel PROPERTIES
 
 # ---------------------------------------------------------------------------
 # UEFI-only ISO
+#
+# xorriso on Windows is a Cygwin build. It treats Windows-style absolute
+# paths (F:/...) as relative and joins them with the current directory,
+# producing bogus paths like /cygdrive/f/.../kernel/F:/...
+#
+# Fix: run the xorriso command from ${CMAKE_BINARY_DIR} and pass the
+# staging directory as a plain relative name ("iso_root"). The output
+# path is also relative for symmetry.
 # ---------------------------------------------------------------------------
 set(NOTYVOS_ISO_DIR  "${CMAKE_BINARY_DIR}/iso_root")
 set(NOTYVOS_ISO_PATH "${CMAKE_BINARY_DIR}/notyvos.iso")
@@ -63,8 +72,9 @@ add_custom_command(
             -volid "NOTYVOS"
             -e boot/limine-uefi-cd.bin
             -no-emul-boot
-            "${NOTYVOS_ISO_DIR}"
-            -o "${NOTYVOS_ISO_PATH}"
+            "iso_root"
+            -o "notyvos.iso"
+    WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
     DEPENDS notyvos-kernel "${CMAKE_SOURCE_DIR}/tools/qemu/limine.conf"
     COMMENT "Building notyvos.iso (UEFI)"
     VERBATIM

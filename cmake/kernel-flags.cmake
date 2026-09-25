@@ -1,5 +1,4 @@
-# Flags applied to every kernel translation unit.
-# NOT applied to host tools.
+# Compile + link flags for the NOTYVOS kernel.
 
 set(NOTYVOS_KERNEL_CXX_FLAGS
     -ffreestanding
@@ -11,6 +10,8 @@ set(NOTYVOS_KERNEL_CXX_FLAGS
     -fno-common
     -fno-threadsafe-statics
     -fno-use-cxa-atexit
+    -ffunction-sections
+    -fdata-sections
     -mno-red-zone
     -mno-sse
     -mno-sse2
@@ -39,7 +40,7 @@ set(NOTYVOS_KERNEL_CXX_FLAGS
     -Wold-style-cast
     -Wcast-qual
     -Wzero-as-null-pointer-constant
-    -std=c++23
+    -std=c++20
 )
 
 set(NOTYVOS_KERNEL_C_FLAGS
@@ -47,6 +48,8 @@ set(NOTYVOS_KERNEL_C_FLAGS
     -fno-stack-protector
     -fno-builtin
     -fno-common
+    -ffunction-sections
+    -fdata-sections
     -mno-red-zone
     -mno-sse
     -mno-sse2
@@ -70,10 +73,11 @@ set(NOTYVOS_KERNEL_ASM_FLAGS
     -mcmodel=kernel
 )
 
-# Linker flags for the kernel ELF.
 set(NOTYVOS_KERNEL_LINK_FLAGS
+    -fuse-ld=lld
     -nostdlib
     -nostartfiles
+    -nodefaultlibs
     -static
     -Wl,--build-id=none
     -Wl,-z,max-page-size=0x1000

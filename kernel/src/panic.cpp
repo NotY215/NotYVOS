@@ -1,27 +1,19 @@
-#include <kernel/panic.hpp>
-#include <kernel/log.hpp>
 #include <kernel/arch/x86_64/serial.hpp>
+#include <kernel/log.hpp>
+#include <kernel/panic.hpp>
 
-namespace notyvos {
+namespace notyvos
+{
 
-[[noreturn]] void panic(const char* fmt, ...) noexcept {
+[[noreturn]] void panic(const char* fmt, ...) noexcept
+{
     asm volatile("cli");
 
     arch::x86_64::SerialPort::write("\n*** NOTYVOS KERNEL PANIC ***\n");
 
-    va_list ap;
-    va_start(ap, fmt);
-    // Route through log for formatting consistency.
-    // (log::write is variadic; we forward as a single %s formatted string.)
-    // In Phase 0, we accept the small duplication:
-    char buf[512];
-    // Minimal formatter into buf:
-    // Reuse log's formatter by calling it with the user format but no tag.
-    // To keep log.cpp self-contained we just print literal + fmt text here.
-    // Phase 1 will unify this.
-    (void)ap;
+    // Phase 0: forward the format string literally.
+    // Phase 1F will add a proper formatter that consumes the varargs.
     log::write(log::Level::Error, "panic", "%s", fmt);
-    va_end(ap);
 
     arch::x86_64::SerialPort::write("System halted.\n");
     halt_forever();
