@@ -19,6 +19,22 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 This product includes software developed by third parties. Each component
 retains its own license. See THIRD_PARTY_LICENSES/ for details.
 
+Third-party components currently bundled:
+
+  - Limine Bootloader. BSD-2-Clause.
+    Copyright (C) 2019-2026 Mintsuki and contributors.
+
+  - Inter font family. SIL Open Font License 1.1.
+    Copyright (c) 2016 The Inter Project Authors.
+    https://github.com/rsms/inter
+    NOTYVOS does not own these fonts. They are redistributed unmodified
+    under the terms of the OFL.
+
+Applications distributed as installers (not part of the OS source):
+
+  - Brave Browser (MPL-2.0)
+  - VLC Media Player (GPLv2-or-later / LGPLv2-or-later)
+
 This project does NOT contain, embed, link to, or redistribute:
   - Sony proprietary keys, firmware, or decryption mechanisms
   - Microsoft Windows binaries or SDKs in the shipped OS

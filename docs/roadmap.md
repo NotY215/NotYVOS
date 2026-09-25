@@ -4,37 +4,23 @@
 
 | Phase | Status | Focus |
 |---|---|---|
-| 0 — Project Foundations | Working | Boot via Limine, Clang cross-toolchain, minimal kernel banner, QEMU smoke test |
-| 1 — Bootable Kernel Core | Next | CPU init, GDT/TSS, IDT/ISRs, physical + virtual memory, kernel heap, SMP |
-| 2 — Processes / Syscalls / VFS / Userland | Soon | Ring 3, scheduler, processes, syscall ABI, VFS, initramfs, libc, init, shell |
+| 0 — Project Foundations | Done | Boot, toolchain, Limine, minimal kernel |
+| 1 — Bootable Kernel Core | Working | CPU, GDT, TSS now; IDT / memory / heap / SMP next |
+| 2 — Processes / Syscalls / VFS / Userland | Soon | Ring 3, scheduler, VFS, libc, init, shell |
 
-## Active phase — Phase 0 subphases
-
-| Subphase | Status | Focus |
-|---|---|---|
-| 0A — Repo skeleton, license, ADRs | Working | `.gitignore`, `.clang-format`, AGPL-3.0, ADRs 0001–0008 |
-| 0B — CMake + Ninja + Clang cross-toolchain | Working | `x86_64-unknown-none-elf`, freestanding flags, presets |
-| 0C — Limine fetch + boot handoff | Working | Limine v12.9.0 source + binary release (this fix) |
-| 0D — Minimal kernel | Working | `_start`, serial, framebuffer console, banner, halt |
-| 0E — QEMU scripts + boot smoke test | Working | `run_qemu.*`, ISO assembly, expected serial log |
-| 0F — Docs + ADRs | Working | `docs/*`, `docs/decisions/*` |
-
-**Exit gate for Phase 0 → Phase 1:** QEMU boots Limine → NOTYVOS kernel,
-serial + framebuffer show the banner, no triple-fault.
-
-## Next phase — Phase 1 subphases
+## Active phase — Phase 1 subphases
 
 | Subphase | Status | Focus |
 |---|---|---|
-| 1A — CPU init / GDT / TSS / serial / FB | Blocked | CPUID, MSRs, GDT, TSS, serial, framebuffer console |
-| 1B — IDT / ISRs / exceptions / PIC / PIT | Blocked | Exception handlers, IRQ routing, timer |
+| 1A — CPU init / GDT / TSS / serial / FB | Done | CPUID, MSR, IO, GDT, TSS, console, `kassert` |
+| 1B — IDT / ISRs / exceptions / PIC / PIT | Working | IDT, ISR stubs, exception handlers, PIC, PIT |
 | 1C — Physical memory manager | Blocked | Limine memmap parser, frame allocator |
-| 1D — Virtual memory / 4-level paging | Blocked | Higher-half kernel, page tables, HHDM |
+| 1D — Virtual memory / 4-level paging | Blocked | Higher-half, page tables, HHDM |
 | 1E — Kernel heap | Blocked | Buddy + slab allocator |
 | 1F — Logging / panic / kassert | Blocked | Full printf, register dump, stack trace |
 | 1G — SMP bring-up | Blocked | Per-CPU data, APIC, trampoline |
 
-## Soon — Phase 2 subphases
+## Next phase — Phase 2 subphases
 
 | Subphase | Status | Focus |
 |---|---|---|
@@ -51,6 +37,7 @@ serial + framebuffer show the banner, no triple-fault.
 | Domain | Phase | ADR |
 |---|---|---|
 | Desktop shell + apps | 3+ | 0008 |
+| Font subsystem (Inter TTFs) | 3 | 0009 |
 | Drivers (GPU, audio, input, storage, net, USB) | 3+ | 0008 |
 | Graphics API / HAL / backends | 3+ | 0008 |
 | PS3 runtime (PPU/SPU/JIT/RSX) | 4+ | 0005, 0006 |

@@ -11,6 +11,7 @@ license is listed below and its full text is stored in this directory.
 | Component | Version | License | File |
 |---|---|---|---|
 | Limine | v12.9.0 | BSD-2-Clause | `limine.txt` |
+| Inter font family | upstream latest | SIL OFL-1.1 | `inter-font.txt` |
 
 ## Applications distributed as installers (not part of the OS source)
 
@@ -38,9 +39,11 @@ license compatible with **AGPL-3.0-or-later** for the manner in which it
 is used (linked, bundled, or distributed together).
 
 - BSD-2-Clause (Limine): compatible.
+- SIL OFL-1.1 (Inter fonts): compatible. OFL permits bundling with any
+  software without relicensing the software under OFL.
 - MPL-2.0 (Brave browser code): compatible for separate-process use.
-- GPLv2-or-later (VLC): compatible; if linked into the kernel tree,
-  the combined work remains AGPL-3.0-or-later.
+- GPLv2-or-later (VLC): compatible; if linked into the kernel tree, the
+  combined work remains AGPL-3.0-or-later.
 - Proprietary firmware: not linked, not redistributed; user-supplied only.
 
 If you are unsure whether a component is compatible, open an ADR before
