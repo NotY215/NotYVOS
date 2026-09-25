@@ -1,0 +1,83 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base-kernel",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/kernel-${presetName}",
+      "toolchainFile": "${sourceDir}/cmake/toolchain-kernel-clang.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "NOTYVOS_TARGET_KIND": "kernel"
+      }
+    },
+    {
+      "name": "windows-clang-kernel-debug",
+      "displayName": "Kernel Debug (Clang, Windows host)",
+      "inherits": "base-kernel",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "windows-clang-kernel-release",
+      "displayName": "Kernel Release (Clang, Windows host)",
+      "inherits": "base-kernel",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "linux-clang-kernel-debug",
+      "displayName": "Kernel Debug (Clang, Linux host)",
+      "inherits": "base-kernel",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    },
+    {
+      "name": "linux-clang-kernel-release",
+      "displayName": "Kernel Release (Clang, Linux host)",
+      "inherits": "base-kernel",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "build-kernel-debug",
+      "configurePreset": "windows-clang-kernel-debug"
+    },
+    {
+      "name": "build-kernel-release",
+      "configurePreset": "windows-clang-kernel-release"
+    },
+    {
+      "name": "build-kernel-debug-linux",
+      "configurePreset": "linux-clang-kernel-debug"
+    },
+    {
+      "name": "build-kernel-release-linux",
+      "configurePreset": "linux-clang-kernel-release"
+    }
+  ]
+}

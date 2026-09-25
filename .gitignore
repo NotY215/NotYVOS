@@ -1,7 +1,10 @@
 # ---- build output ----
-/build/
-/out/
-/cmake-build-*/
+build/
+out/
+cmake-build-*/
+.vs/
+.vscode/
+
 *.o
 *.obj
 *.a
