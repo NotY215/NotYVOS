@@ -1,0 +1,42 @@
+# ---- build output ----
+/build/
+/out/
+/cmake-build-*/
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dll
+*.exe
+*.pdb
+*.ilk
+*.elf
+*.map
+
+# ---- boot artifacts ----
+/third_party/
+/tools/limine/
+*.iso
+*.img
+*.hdd
+
+# ---- IDE ----
+.vscode/
+.idea/
+*.vs/
+*.user
+*.sln
+*.vcxproj
+*.vcxproj.*
+
+# ---- local proprietary / user-provided ----
+/Firmware/*
+!/Firmware/.gitkeep
+/Inbuilt_Soft/*
+!/Inbuilt_Soft/.gitkeep
+
+# ---- misc ----
+*.log
+.DS_Store
+Thumbs.db

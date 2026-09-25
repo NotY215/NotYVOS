@@ -1,0 +1,83 @@
+# Flags applied to every kernel translation unit.
+# NOT applied to host tools.
+
+set(NOTYVOS_KERNEL_CXX_FLAGS
+    -ffreestanding
+    -fno-exceptions
+    -fno-rtti
+    -fno-stack-protector
+    -fno-omit-frame-pointer
+    -fno-builtin
+    -fno-common
+    -fno-threadsafe-statics
+    -fno-use-cxa-atexit
+    -mno-red-zone
+    -mno-sse
+    -mno-sse2
+    -mcmodel=kernel
+    -mno-80387
+    -mno-mmx
+    -mno-3dnow
+    -mno-avx
+    -mno-avx2
+    -mno-avx512f
+    -Wall
+    -Wextra
+    -Wpedantic
+    -Werror
+    -Wshadow
+    -Wconversion
+    -Wsign-conversion
+    -Wnull-dereference
+    -Wdouble-promotion
+    -Wformat=2
+    -Wundef
+    -Wcast-align
+    -Wunused
+    -Woverloaded-virtual
+    -Wnon-virtual-dtor
+    -Wold-style-cast
+    -Wcast-qual
+    -Wzero-as-null-pointer-constant
+    -std=c++23
+)
+
+set(NOTYVOS_KERNEL_C_FLAGS
+    -ffreestanding
+    -fno-stack-protector
+    -fno-builtin
+    -fno-common
+    -mno-red-zone
+    -mno-sse
+    -mno-sse2
+    -mcmodel=kernel
+    -mno-80387
+    -mno-mmx
+    -mno-3dnow
+    -mno-avx
+    -mno-avx2
+    -mno-avx512f
+    -Wall
+    -Wextra
+    -Wpedantic
+    -Werror
+    -std=c17
+)
+
+set(NOTYVOS_KERNEL_ASM_FLAGS
+    -ffreestanding
+    -mno-red-zone
+    -mcmodel=kernel
+)
+
+# Linker flags for the kernel ELF.
+set(NOTYVOS_KERNEL_LINK_FLAGS
+    -nostdlib
+    -nostartfiles
+    -static
+    -Wl,--build-id=none
+    -Wl,-z,max-page-size=0x1000
+    -Wl,-z,noexecstack
+    -Wl,--gc-sections
+    -Wl,-T,${CMAKE_SOURCE_DIR}/kernel/linker.ld
+)
