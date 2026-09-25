@@ -63,7 +63,7 @@ if (-not (Test-Path (Join-Path $SrcDir "limine.h"))) {
             $tree = (Get-ChildItem -Path $Root -Recurse -Depth 2 -ErrorAction SilentlyContinue |
                      Select-Object -First 40 |
                      ForEach-Object { $_.FullName }) -join "`n"
-            throw "limine.h not found after extraction. Tree under $Root:`n$tree"
+            throw "limine.h not found after extraction. Tree under ${Root}:`n$tree"
         }
         $extracted = $hdr.Directory
     }
