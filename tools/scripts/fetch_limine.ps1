@@ -86,13 +86,14 @@ if (-not $haveBin) {
     $BinUrl = "https://github.com/Limine-Bootloader/Limine/releases/download/$Version/limine-binary.tar.gz"
 
     Write-Host "Downloading Limine binary release $Version ..."
-    Invoke-WebRequest -Uri $BinUrl -OutFile $BinZip -UseBasicParsing
+    Invoke-WebRequest -Uri $BinUrl -OutFile $BinTar -UseBasicParsing
 
     Write-Host "Extracting binary release ..."
     $Tmp = Join-Path $Root ".bin-extract"
     if (Test-Path $Tmp) { Remove-Item -Recurse -Force $Tmp }
     New-Item -ItemType Directory -Force -Path $Tmp | Out-Null
-    Expand-Archive -Path $BinZip -DestinationPath $Tmp -Force
+    tar -xzf $BinTar -C $Tmp
+    if ($LASTEXITCODE -ne 0) { throw "binary tar extraction failed (exit $LASTEXITCODE)" }
 
     $found = Get-ChildItem -Path $Tmp -Recurse -Filter "BOOTX64.EFI" -File |
              Select-Object -First 1
@@ -100,7 +101,7 @@ if (-not $haveBin) {
         $listing = (Get-ChildItem -Path $Tmp -Recurse |
                     Select-Object -First 30 |
                     ForEach-Object { $_.FullName }) -join "`n"
-        throw "BOOTX64.EFI not found in the binary zip. Contents:`n$listing"
+        throw "BOOTX64.EFI not found in the binary release. Contents:`n$listing"
     }
 
     New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
