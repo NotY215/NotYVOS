@@ -33,11 +33,8 @@ cmake-build-*/
 *.vcxproj.*
 
 # ---- local proprietary / user-provided ----
-/Firmware/*
-!/Firmware/.gitkeep
-/Inbuilt_Soft/*
-!/Inbuilt_Soft/.gitkeep
-
+Firmware/PS3UPDAT.PUP
+!Inbuilt Devices/*.exe
 # ---- misc ----
 *.log
 .DS_Store
