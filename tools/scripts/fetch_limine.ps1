@@ -36,8 +36,8 @@ if (-not (Test-Path (Join-Path $SrcDir "limine.h"))) {
             Remove-Item -Recurse -Force $_.FullName
         }
 
-    $SrcTar = Join-Path $Root "limine-$Version.tar.gz"
-    $SrcUrl = "https://github.com/Limine-Bootloader/Limine/archive/refs/tags/$Version.tar.gz"
+    $SrcTar = Join-Path $Root "limine-$Tag.tar.gz"
+    $SrcUrl = "https://github.com/Limine-Bootloader/Limine/releases/download/$Version/limine-$Tag.tar.gz"
 
     Write-Host "Downloading Limine source $Version ..."
     Invoke-WebRequest -Uri $SrcUrl -OutFile $SrcTar -UseBasicParsing
@@ -53,19 +53,11 @@ if (-not (Test-Path (Join-Path $SrcDir "limine.h"))) {
                  } |
                  Select-Object -First 1
 
-    # Fallback: locate limine.h anywhere under $Root (excluding limine-binary).
     if (-not $extracted) {
-        $hdr = Get-ChildItem -Path $Root -Recurse -Filter "limine.h" -File `
-                             -ErrorAction SilentlyContinue |
-               Where-Object { $_.FullName -notlike "*\limine-binary\*" } |
-               Select-Object -First 1
-        if (-not $hdr) {
-            $tree = (Get-ChildItem -Path $Root -Recurse -Depth 2 -ErrorAction SilentlyContinue |
-                     Select-Object -First 40 |
-                     ForEach-Object { $_.FullName }) -join "`n"
-            throw "limine.h not found after extraction. Tree under ${Root}:`n$tree"
-        }
-        $extracted = $hdr.Directory
+        $tree = (Get-ChildItem -Path $Root -Recurse -Depth 2 -ErrorAction SilentlyContinue |
+                 Select-Object -First 40 |
+                 ForEach-Object { $_.FullName }) -join "`n"
+        throw "Limine source directory not found after extraction. Tree under ${Root}:`n$tree"
     }
 
     # Normalize folder name to $Canonical.
@@ -74,6 +66,10 @@ if (-not (Test-Path (Join-Path $SrcDir "limine.h"))) {
         Write-Host "Renaming $($extracted.Name) -> $Canonical"
         Rename-Item -Path $extracted.FullName -NewName $Canonical
     }
+
+    $ProtocolUrl = "https://raw.githubusercontent.com/Limine-Bootloader/limine-protocol/trunk/include/limine.h"
+    Write-Host "Downloading Limine protocol header ..."
+    Invoke-WebRequest -Uri $ProtocolUrl -OutFile (Join-Path $SrcDir "limine.h") -UseBasicParsing
 }
 
 if (-not (Test-Path (Join-Path $SrcDir "limine.h"))) {
@@ -86,8 +82,8 @@ Write-Host "Limine source ready: $SrcDir"
 # ---------------------------------------------------------------------------
 $haveBin = Test-Path (Join-Path $BinDir "BOOTX64.EFI")
 if (-not $haveBin) {
-    $BinZip = Join-Path $Root "limine-binary-$Version.zip"
-    $BinUrl = "https://github.com/Limine-Bootloader/Limine/releases/download/$Version/limine-binary.zip"
+    $BinTar = Join-Path $Root "limine-binary-$Tag.tar.gz"
+    $BinUrl = "https://github.com/Limine-Bootloader/Limine/releases/download/$Version/limine-binary.tar.gz"
 
     Write-Host "Downloading Limine binary release $Version ..."
     Invoke-WebRequest -Uri $BinUrl -OutFile $BinZip -UseBasicParsing
