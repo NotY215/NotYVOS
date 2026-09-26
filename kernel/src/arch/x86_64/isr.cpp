@@ -3,6 +3,7 @@
 #include <kernel/arch/x86_64/pit.hpp>
 #include <kernel/log.hpp>
 #include <kernel/panic.hpp>
+#include <kernel/sched/scheduler.hpp>
 
 namespace notyvos::arch::x86_64
 {
@@ -102,29 +103,27 @@ void dump_frame(const InterruptFrame* f) noexcept
 [[noreturn]] void handle_exception(InterruptFrame* f) noexcept
 {
     const u64 v = f->vector;
-    log::write(log::Level::Error, "exc", "vector %u (%s) err=0x%x rip=0x%x", v, exception_name(v),
-               static_cast<u64>(f->error_code), static_cast<u64>(f->rip));
-
+    log::write(log::Level::Error, "exc", "vector %llu (%s) err=0x%llx rip=0x%llx",
+               static_cast<unsigned long long>(v), exception_name(v),
+               static_cast<unsigned long long>(f->error_code),
+               static_cast<unsigned long long>(f->rip));
     if (v == 14)
     {
         u64 cr2 = 0;
         asm volatile("mov %%cr2, %0" : "=r"(cr2));
-        log::write(log::Level::Error, "exc", "fault address = 0x%x", cr2);
+        log::write(log::Level::Error, "exc", "fault address = 0x%llx",
+                   static_cast<unsigned long long>(cr2));
     }
-
     dump_frame(f);
     panic("unhandled exception");
 }
 
 void handle_irq(u8 irq, InterruptFrame* /*f*/) noexcept
 {
-    switch (irq)
+    if (irq == 0)
     {
-    case 0:
         pit_on_tick();
-        break;
-    default:
-        break; // other IRQs masked for now
+        sched::scheduler_tick();
     }
 }
 
@@ -133,7 +132,6 @@ void handle_irq(u8 irq, InterruptFrame* /*f*/) noexcept
 extern "C" void notyvos_isr_dispatch(InterruptFrame* frame) noexcept
 {
     const u64 vec = frame->vector;
-
     if (vec < 32)
     {
         handle_exception(frame);
@@ -146,8 +144,8 @@ extern "C" void notyvos_isr_dispatch(InterruptFrame* frame) noexcept
     }
     else
     {
-        log::write(log::Level::Warn, "isr", "unhandled vector %u rip=0x%x", vec,
-                   static_cast<u64>(frame->rip));
+        log::write(log::Level::Warn, "isr", "unhandled vector %llu",
+                   static_cast<unsigned long long>(vec));
     }
 }
 

@@ -1,3 +1,4 @@
+#include <kernel/syscall/syscall.hpp>
 #include <kernel/arch/x86_64/cpu.hpp>
 #include <kernel/arch/x86_64/gdt.hpp>
 #include <kernel/arch/x86_64/idt.hpp>
@@ -82,7 +83,7 @@ void cpu_init() noexcept
     pic_set_mask(0, false);
 
     pit_init(100);
-
+    syscall::syscall_init();
     log_features(g_info);
 }
 

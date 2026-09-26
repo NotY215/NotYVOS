@@ -47,8 +47,9 @@ void VirtualMemory::init(u64 hhdm_offset) noexcept
 {
     g_hhdm_offset = hhdm_offset;
     asm volatile("mov %%cr3, %0" : "=r"(g_kernel_pml4));
-    log::write(log::Level::Info, "vmm", "kernel pml4 phys=0x%x hhdm=0x%x",
-               static_cast<u64>(g_kernel_pml4), static_cast<u64>(g_hhdm_offset));
+    log::write(log::Level::Info, "vmm", "kernel pml4 phys=0x%llx hhdm=0x%llx",
+               static_cast<unsigned long long>(g_kernel_pml4),
+               static_cast<unsigned long long>(g_hhdm_offset));
 }
 
 uptr VirtualMemory::kernel_pml4_physical() noexcept
@@ -63,22 +64,25 @@ bool VirtualMemory::map_page(uptr virt, uptr phys, u64 flags) noexcept
     const u32 i2 = pd_index(virt);
     const u32 i1 = pt_index(virt);
 
+    // Propagate User to intermediate levels. Without this, user-mode
+    // access faults even if the leaf PTE has U=1, because the CPU checks
+    // U at every level of the page walk.
+    const u64 child_flags = page_flags::Present | page_flags::Writable |
+                            ((flags & page_flags::User) ? page_flags::User : 0);
+
     u64* pml4 = phys_to_virt(g_kernel_pml4);
-    u64* pdpt = ensure_next(pml4, i4, true, page_flags::Present | page_flags::Writable);
+    u64* pdpt = ensure_next(pml4, i4, true, child_flags);
     if (!pdpt)
         return false;
-
-    u64* pd = ensure_next(pdpt, i3, true, page_flags::Present | page_flags::Writable);
+    u64* pd = ensure_next(pdpt, i3, true, child_flags);
     if (!pd)
         return false;
-
-    u64* pt = ensure_next(pd, i2, true, page_flags::Present | page_flags::Writable);
+    u64* pt = ensure_next(pd, i2, true, child_flags);
     if (!pt)
         return false;
 
     pt[i1] =
         (static_cast<u64>(phys) & page_flags::kPhysicalMask) | (flags & page_flags::kFlagsMask);
-
     flush_tlb_page(virt);
     return true;
 }

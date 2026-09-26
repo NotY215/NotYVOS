@@ -1,20 +1,6 @@
-/* NOTYVOS ISR stubs.
- *
- * 48 stubs (exceptions 0..31, PIC IRQs at vectors 32..47) plus one unhandled
- * stub for vectors 48..255.
- *
- * Every stub normalizes the stack to:
- *   [vector][error_code][CPU frame...]
- * where the CPU frame is what the CPU pushed automatically:
- *   [rip][cs][rflags][rsp][ss]  (rsp and ss present only on ring crossing)
- *
- * isr_common saves the general-purpose registers and both data segment
- * registers, calls notyvos_isr_dispatch, then unwinds and iretq's. */
-
 .intel_syntax noprefix
 .section .text
 
-/* ---- Stubs without a CPU-pushed error code: push a dummy 0. ---- */
 .macro ISR_NO_ERR num
 .global isr\num
 .type isr\num, @function
@@ -25,7 +11,6 @@ isr\num:
 .size isr\num, .-isr\num
 .endm
 
-/* ---- Stubs with a CPU-pushed error code: only push the vector. ---- */
 .macro ISR_ERR num
 .global isr\num
 .type isr\num, @function
@@ -35,29 +20,28 @@ isr\num:
 .size isr\num, .-isr\num
 .endm
 
-/* ---- Exceptions 0..31 ---- */
-ISR_NO_ERR 0    /* #DE divide error */
-ISR_NO_ERR 1    /* #DB debug */
-ISR_NO_ERR 2    /* NMI */
-ISR_NO_ERR 3    /* #BP breakpoint */
-ISR_NO_ERR 4    /* #OF overflow */
-ISR_NO_ERR 5    /* #BR bound range */
-ISR_NO_ERR 6    /* #UD invalid opcode */
-ISR_NO_ERR 7    /* #NM device not available */
-ISR_ERR    8    /* #DF double fault */
-ISR_NO_ERR 9    /* coprocessor segment overrun */
-ISR_ERR    10   /* #TS invalid TSS */
-ISR_ERR    11   /* #NP segment not present */
-ISR_ERR    12   /* #SS stack-segment fault */
-ISR_ERR    13   /* #GP general protection */
-ISR_ERR    14   /* #PF page fault */
-ISR_NO_ERR 15   /* reserved */
-ISR_NO_ERR 16   /* #MF x87 FP */
-ISR_ERR    17   /* #AC alignment check */
-ISR_NO_ERR 18   /* #MC machine check */
-ISR_NO_ERR 19   /* #XM SIMD FP */
-ISR_NO_ERR 20   /* #VE virtualization */
-ISR_ERR    21   /* #CP control protection */
+ISR_NO_ERR 0
+ISR_NO_ERR 1
+ISR_NO_ERR 2
+ISR_NO_ERR 3
+ISR_NO_ERR 4
+ISR_NO_ERR 5
+ISR_NO_ERR 6
+ISR_NO_ERR 7
+ISR_ERR    8
+ISR_NO_ERR 9
+ISR_ERR    10
+ISR_ERR    11
+ISR_ERR    12
+ISR_ERR    13
+ISR_ERR    14
+ISR_NO_ERR 15
+ISR_NO_ERR 16
+ISR_ERR    17
+ISR_NO_ERR 18
+ISR_NO_ERR 19
+ISR_NO_ERR 20
+ISR_ERR    21
 ISR_NO_ERR 22
 ISR_NO_ERR 23
 ISR_NO_ERR 24
@@ -68,8 +52,6 @@ ISR_NO_ERR 28
 ISR_ERR    29
 ISR_ERR    30
 ISR_NO_ERR 31
-
-/* ---- PIC IRQs 0..15 mapped to vectors 32..47 ---- */
 ISR_NO_ERR 32
 ISR_NO_ERR 33
 ISR_NO_ERR 34
@@ -87,18 +69,22 @@ ISR_NO_ERR 45
 ISR_NO_ERR 46
 ISR_NO_ERR 47
 
-/* ---- Fallback for vectors 48..255 ---- */
 .global isr_unhandled
 .type isr_unhandled, @function
 isr_unhandled:
     push 0
-    push 48                 /* sentinel; handler reports "unhandled" */
+    push 48
     jmp isr_common
 .size isr_unhandled, .-isr_unhandled
 
-/* ---- Common entry ---- */
 isr_common:
-    /* Save general-purpose registers. */
+    /* If the interrupted context is user (CS low bits = 3), GS.base is
+     * currently the user's and we must swapgs before touching GS. */
+    test byte ptr [rsp + 160], 3
+    jz 1f
+    swapgs
+1:
+
     push rax
     push rbx
     push rcx
@@ -115,7 +101,6 @@ isr_common:
     push r14
     push r15
 
-    /* Save segment registers (ds, es) via rax scratch. */
     xor rax, rax
     mov ax, ds
     push rax
@@ -123,23 +108,19 @@ isr_common:
     mov ax, es
     push rax
 
-    /* Load kernel data segment into ds/es. */
     mov ax, 0x10
     mov ds, ax
     mov es, ax
 
-    /* Call C dispatcher with rdi = pointer to InterruptFrame. */
     mov rdi, rsp
     cld
     call notyvos_isr_dispatch
 
-    /* Restore segments. */
     pop rax
     mov es, ax
     pop rax
     mov ds, ax
 
-    /* Restore general-purpose registers. */
     pop r15
     pop r14
     pop r13
@@ -156,12 +137,14 @@ isr_common:
     pop rbx
     pop rax
 
-    /* Drop the vector and error_code we pushed. */
+    /* If returning to user, swapgs back. */
+    test byte ptr [rsp + 24], 3
+    jz 2f
+    swapgs
+2:
     add rsp, 16
-
     iretq
 
-/* ---- Stub pointer table for idt_init ---- */
 .section .rodata
 .align 8
 .global isr_stub_table
