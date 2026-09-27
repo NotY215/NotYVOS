@@ -14,7 +14,8 @@
       "toolchainFile": "${sourceDir}/cmake/toolchain-kernel-clang.cmake",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "NOTYVOS_TARGET_KIND": "kernel"
+        "NOTYVOS_TARGET_KIND": "kernel",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       }
     },
     {

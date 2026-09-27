@@ -144,6 +144,17 @@ extern "C" void notyvos_isr_dispatch(InterruptFrame* frame) noexcept
     else if (vec < 48)
     {
         const u8 irq = static_cast<u8>(vec - 32);
+
+        // Log the first time each IRQ line is delivered, once per IRQ, so
+        // we can see exactly which lines are firing and which are silent.
+        static bool g_irq_seen[16] = {};
+        if (!g_irq_seen[irq])
+        {
+            g_irq_seen[irq] = true;
+            log::write(log::Level::Warn, "isr", "first IRQ%llu delivered (vec=%llu)",
+                       static_cast<unsigned long long>(irq), static_cast<unsigned long long>(vec));
+        }
+
         handle_irq(irq, frame);
         pic_send_eoi(irq);
     }

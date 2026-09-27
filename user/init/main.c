@@ -55,21 +55,9 @@ static void cmd_cat(const char* path)
     sys_close(fd);
 }
 
-static void cmd_ls(const char* path)
-{
-    i64 fd = sys_open(path ? path : "/", 0);
-    if (fd < 0)
-    {
-        printf("ls: %s: not found\n", path ? path : "/");
-        return;
-    }
-    sys_close(fd);
-    printf("(readdir not yet exposed via syscall; initramfs has: hello.txt, readme.txt)\n");
-}
-
 void _start(void)
 {
-    printf("\nNOTYVOS shell (phase 2G+)\n");
+    printf("\nNOTYVOS shell (phase 2I+)\n");
     printf("type 'help' for commands\n");
 
     for (;;)
@@ -83,7 +71,8 @@ void _start(void)
 
         if (strcmp(argv[0], "help") == 0)
         {
-            printf("commands: help, ls, cat FILE, echo TEXT, pid, fork, exit\n");
+            printf("commands: help, ls, cat FILE, echo TEXT, pid, fork,\n");
+            printf("          exec PATH, brk [N], exit\n");
         }
         else if (strcmp(argv[0], "echo") == 0)
         {
@@ -122,14 +111,14 @@ void _start(void)
         }
         else if (strcmp(argv[0], "pid") == 0)
         {
-            printf("pid=%d\n", sys_getpid());
+            printf("pid=%d\n", (int)sys_getpid());
         }
         else if (strcmp(argv[0], "fork") == 0)
         {
             i64 child = sys_fork();
             if (child == 0)
             {
-                printf("[child pid=%d] hello from fork child\n", sys_getpid());
+                printf("[child pid=%d] hello from fork child\n", (int)sys_getpid());
                 sys_exit(42);
             }
             else if (child < 0)
@@ -142,6 +131,31 @@ void _start(void)
                 i32 st = 0;
                 i64 reaped = sys_wait(-1, &st);
                 printf("[parent] reaped pid=%d status=%d\n", (int)reaped, st);
+            }
+        }
+        else if (strcmp(argv[0], "exec") == 0)
+        {
+            if (argc < 2)
+            {
+                printf("usage: exec PATH\n");
+                continue;
+            }
+            i64 r = sys_exec(argv[1]);
+            printf("exec failed: %d\n", (int)r);
+        }
+        else if (strcmp(argv[0], "brk") == 0)
+        {
+            i64 cur = sys_brk(0);
+            printf("brk = 0x%x\n", (unsigned long)cur);
+            if (argc >= 2)
+            {
+                i64 want = 0;
+                for (const char* p = argv[1]; *p >= '0' && *p <= '9'; ++p)
+                {
+                    want = want * 10 + (*p - '0');
+                }
+                i64 got = sys_brk((u64)(cur + want));
+                printf("brk + %d -> 0x%x\n", (int)want, (unsigned long)got);
             }
         }
         else if (strcmp(argv[0], "exit") == 0)

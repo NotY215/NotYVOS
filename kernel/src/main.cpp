@@ -65,6 +65,8 @@ extern "C"
 #include <kernel/arch/x86_64/percpu.hpp>
 #include <kernel/arch/x86_64/serial.hpp>
 #include <kernel/arch/x86_64/smp.hpp>
+#include <kernel/block/ahci.hpp>
+#include <kernel/block/block.hpp>
 #include <kernel/boot/limine.hpp>
 #include <kernel/fb/console.hpp>
 #include <kernel/fb/framebuffer.hpp>
@@ -128,6 +130,43 @@ extern "C" [[noreturn]] void kernel_main()
     mm::VirtualMemory::init(info.hhdm->offset);
     mm::Heap::init();
 
+    block::block_init();
+    block::ahci_init();
+
+    // Block self-test: write a pattern to the last sector, read it back.
+    if (block::block_count() > 0)
+    {
+        auto* dev = block::block_get(0);
+        if (dev && !dev->read_only && dev->sector_count > 8)
+        {
+            static u8 pattern[512];
+            static u8 readback[512];
+            for (u32 i = 0; i < 512; ++i)
+                pattern[i] = static_cast<u8>(i ^ 0xA5);
+
+            const u64 test_lba = dev->sector_count - 1;
+            const isize wr = block::block_write(dev, test_lba, 1, pattern);
+            const isize rd = block::block_read(dev, test_lba, 1, readback);
+
+            bool match = (wr == 512 && rd == 512);
+            if (match)
+            {
+                for (u32 i = 0; i < 512; ++i)
+                {
+                    if (pattern[i] != readback[i])
+                    {
+                        match = false;
+                        break;
+                    }
+                }
+            }
+            log::write(log::Level::Info, "blk-test", "dev=%s lba=%llu wr=%lld rd=%lld match=%s",
+                       dev->name, static_cast<unsigned long long>(test_lba),
+                       static_cast<long long>(wr), static_cast<long long>(rd),
+                       match ? "yes" : "no");
+        }
+    }
+
     arch::x86_64::percpu_init_bsp();
     arch::x86_64::Lapic::init_bsp(info.hhdm->offset);
     arch::x86_64::percpu_register(0, arch::x86_64::Lapic::id(), 0, 0);
@@ -135,14 +174,9 @@ extern "C" [[noreturn]] void kernel_main()
 
     sched::scheduler_init();
 
-    // Initramfs = module 0, init.elf = module 1.
     if (!module_request.response || module_request.response->module_count < 2)
     {
-        log::write(log::Level::Error, "init",
-                   "need 2 Limine modules (initramfs + init.elf); got %llu",
-                   module_request.response
-                       ? static_cast<unsigned long long>(module_request.response->module_count)
-                       : 0ULL);
+        log::write(log::Level::Error, "init", "need 2 Limine modules");
         for (;;)
             asm volatile("hlt");
     }

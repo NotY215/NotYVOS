@@ -24,6 +24,13 @@ These installers are user-space application packages. They are NOT kernel
 components. They are NOT part of NOTYVOS source code. Their licenses are
 independent of NOTYVOS's AGPL-3.0 license.
 
+## Development and testing tools (host-side, not shipped)
+
+| Tool | License | File | Notes |
+|---|---|---|---|
+| Oracle VirtualBox | GPL-3.0-or-later | `virtualbox.txt` | Used by developers to test NOTYVOS. Not shipped with NOTYVOS. |
+| QEMU (deprecated) | GPL-2.0 | — | No longer used in the workflow as of the VirtualBox migration. |
+
 ## User-provided components (never committed)
 
 | Component | Source | License |
@@ -39,11 +46,13 @@ license compatible with **AGPL-3.0-or-later** for the manner in which it
 is used (linked, bundled, or distributed together).
 
 - BSD-2-Clause (Limine): compatible.
-- SIL OFL-1.1 (Inter fonts): compatible. OFL permits bundling with any
-  software without relicensing the software under OFL.
+- SIL OFL-1.1 (Inter fonts): compatible.
 - MPL-2.0 (Brave browser code): compatible for separate-process use.
 - GPLv2-or-later (VLC): compatible; if linked into the kernel tree, the
   combined work remains AGPL-3.0-or-later.
+- GPL-3.0-or-later (VirtualBox, host-side): compatible because VirtualBox
+  is a separate process on the host machine and is never distributed
+  together with NOTYVOS.
 - Proprietary firmware: not linked, not redistributed; user-supplied only.
 
 If you are unsure whether a component is compatible, open an ADR before

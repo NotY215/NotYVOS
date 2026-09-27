@@ -1,19 +1,21 @@
-#include <kernel/arch/x86_64/keyboard.hpp>
-#include <kernel/arch/x86_64/serial.hpp>
-#include <kernel/fb/console.hpp>
-#include <kernel/fs/file.hpp>
-#include <kernel/fs/vfs.hpp>
-#include <kernel/libk/string.hpp>
-#include <kernel/libk/mem.hpp>
-#include <kernel/log.hpp>
-#include <kernel/mm/paging.hpp>
-#include <kernel/mm/pmm.hpp>
-#include <kernel/mm/vmm.hpp>
-#include <kernel/proc/fork.hpp>
-#include <kernel/sched/scheduler.hpp>
-#include <kernel/sched/task.hpp>
 #include <kernel/syscall/syscall.hpp>
 #include <kernel/syscall/uaccess.hpp>
+#include <kernel/sched/scheduler.hpp>
+#include <kernel/sched/task.hpp>
+#include <kernel/fs/vfs.hpp>
+#include <kernel/fs/file.hpp>
+#include <kernel/proc/fork.hpp>
+#include <kernel/proc/elf.hpp>
+#include <kernel/mm/pmm.hpp>
+#include <kernel/mm/vmm.hpp>
+#include <kernel/mm/paging.hpp>
+#include <kernel/mm/heap.hpp>
+#include <kernel/libk/mem.hpp>
+#include <kernel/libk/string.hpp>
+#include <kernel/arch/x86_64/serial.hpp>
+#include <kernel/arch/x86_64/keyboard.hpp>
+#include <kernel/fb/console.hpp>
+#include <kernel/log.hpp>
 
 namespace notyvos::syscall
 {
@@ -83,16 +85,28 @@ got:;
 
 i64 sys_read_stdin(u64 ubuf, u64 len)
 {
+    static bool g_first_stdin = false;
+    if (!g_first_stdin)
+    {
+        g_first_stdin = true;
+        log::write(log::Level::Warn, "syscall", "shell is blocked on stdin read");
+    }
     usize got = 0;
     while (got < len)
     {
         while (!arch::x86_64::keyboard_has_data())
         {
             asm volatile("sti; hlt");
-            // Belt-and-braces: if the i8042 sits with a byte waiting but
-            // never raises IRQ1 (firmware can leave it that way), grab it.
             while (arch::x86_64::keyboard_poll())
-            { /* drain */
+            {
+            }
+            i32 s;
+            while ((s = arch::x86_64::SerialPort::read_char_nonblocking()) >= 0)
+            {
+                char c = static_cast<char>(s);
+                if (c == '\r')
+                    c = '\n';
+                arch::x86_64::keyboard_inject(c);
             }
         }
         i32 c = arch::x86_64::keyboard_pop();
@@ -323,6 +337,127 @@ i64 sys_mmap(u64 addr_hint, u64 len, u64 /*prot*/, u64 /*flags*/, i64 fd, u64 /*
 
 } // namespace
 
+#include <kernel/proc/fork.hpp> // already present
+
+// ---------------------------------------------------------------------------
+// exec: replace current process image with the ELF at `upath`.
+// ---------------------------------------------------------------------------
+i64 sys_exec_impl(SyscallFrame* f, u64 upath)
+{
+    auto* cur = sched::scheduler_current();
+    if (!cur)
+        return -1;
+
+    char path[256];
+    if (!copy_from_user(path, upath, sizeof(path)))
+        return -1;
+    path[sizeof(path) - 1] = 0;
+
+    auto* vn = fs::vfs_lookup(path, cur->cwd);
+    if (!vn || !vn->ops || !vn->ops->size || !vn->ops->read)
+        return -1;
+
+    const isize sz = vn->ops->size(vn);
+    if (sz <= 0 || sz > 8 * 1024 * 1024)
+        return -1;
+
+    void* elf_bytes = mm::Heap::allocate(static_cast<usize>(sz));
+    if (!elf_bytes)
+        return -1;
+
+    isize got = 0;
+    while (got < sz)
+    {
+        const isize n = vn->ops->read(vn, static_cast<u8*>(elf_bytes) + got,
+                                      static_cast<usize>(got), static_cast<usize>(sz - got));
+        if (n <= 0)
+            break;
+        got += n;
+    }
+    if (got != sz)
+    {
+        mm::Heap::deallocate(elf_bytes);
+        return -1;
+    }
+
+    const auto elf = proc::load_elf(elf_bytes, static_cast<usize>(sz));
+    mm::Heap::deallocate(elf_bytes);
+    if (!elf.entry)
+        return -1;
+
+    // Update task. We leak the old user pages; a proper reclaim lands in a
+    // follow-up. This is fine while the shell has bounded memory.
+    cur->cr3 = elf.cr3;
+    cur->user_entry = elf.entry;
+    cur->user_rsp = elf.stack_top;
+    cur->user_lo = elf.user_lo;
+    cur->user_hi = elf.user_hi;
+    cur->brk_start = 0;
+    cur->brk_current = 0;
+    cur->brk_max = 0;
+
+    // Switch CR3 now so the upcoming iretq lands on the new address space.
+    asm volatile("mov %0, %%cr3" ::"r"(elf.cr3) : "memory");
+
+    // Rewrite the syscall return frame to start the new program.
+    f->rip = elf.entry;
+    f->rsp = elf.stack_top;
+    f->rflags = 0x202;
+    f->rax = 0;
+    return 0;
+}
+
+// ---------------------------------------------------------------------------
+// brk: extend or shrink the process's heap segment. `new_brk == 0` returns
+// the current break without changing anything.
+// ---------------------------------------------------------------------------
+i64 sys_brk_impl(u64 new_brk)
+{
+    auto* cur = sched::scheduler_current();
+    if (!cur)
+        return -1;
+
+    if (cur->brk_start == 0)
+    {
+        // First call: place the break just above the loaded image.
+        cur->brk_start = (cur->user_hi + 0xFFF) & ~0xFFFULL;
+        cur->brk_current = cur->brk_start;
+        cur->brk_max = cur->brk_start;
+    }
+
+    if (new_brk == 0)
+        return static_cast<i64>(cur->brk_current);
+    if (new_brk < cur->brk_start)
+        return static_cast<i64>(cur->brk_current);
+
+    if (new_brk > cur->brk_max)
+    {
+        const uptr start = cur->brk_max;
+        const uptr end = (new_brk + 0xFFF) & ~0xFFFULL;
+
+        constexpr u64 kLeaf =
+            mm::page_flags::Present | mm::page_flags::Writable | mm::page_flags::User;
+
+        for (uptr va = start; va < end; va += 0x1000)
+        {
+            const uptr phys = mm::PhysicalMemory::allocate_frame();
+            if (!phys)
+                return static_cast<i64>(cur->brk_current);
+            libk::memset(reinterpret_cast<void*>(phys + 0xffff800000000000ULL), 0, 0x1000);
+            if (!mm::VirtualMemory::map_page(va, phys, kLeaf))
+            {
+                return static_cast<i64>(cur->brk_current);
+            }
+        }
+        cur->brk_max = end;
+        if (cur->user_hi < end)
+            cur->user_hi = end;
+    }
+
+    cur->brk_current = new_brk;
+    return static_cast<i64>(cur->brk_current);
+}
+
 extern "C" void syscall_dispatch(SyscallFrame* f) noexcept
 {
     switch (f->rax)
@@ -351,6 +486,12 @@ extern "C" void syscall_dispatch(SyscallFrame* f) noexcept
         break;
     case nr::kClose:
         f->rax = static_cast<u64>(sys_close(f->rdi));
+        break;
+    case nr::kExec:
+        f->rax = static_cast<u64>(sys_exec_impl(f, f->rdi));
+        break;
+    case nr::kBrk:
+        f->rax = static_cast<u64>(sys_brk_impl(f->rdi));
         break;
     case nr::kFork:
         f->rax = static_cast<u64>(sys_fork(f));

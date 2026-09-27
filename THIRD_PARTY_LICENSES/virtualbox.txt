@@ -1,0 +1,37 @@
+Oracle VirtualBox — GNU General Public License, version 3
+
+VirtualBox is free software: you can redistribute it and/or modify it
+under the terms of the GNU General Public License as published by the
+Free Software Foundation, either version 3 of the License, or (at your
+option) any later version.
+
+VirtualBox is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+more details.
+
+You should have received a copy of the GNU General Public License along
+with VirtualBox. If not, see <https://www.gnu.org/licenses/>.
+
+Full text: https://www.gnu.org/licenses/gpl-3.0.txt
+
+Home page: https://www.virtualbox.org/
+Downloads: https://www.virtualbox.org/wiki/Downloads
+
+-------------------------------------------------------------------------------
+
+Role in NOTYVOS
+---------------
+
+VirtualBox is used as a testing tool by the NOTYVOS developers. It is not
+part of NOTYVOS source code, is not shipped with NOTYVOS, and is not
+linked against any NOTYVOS component. It runs on the host machine, not
+inside NOTYVOS.
+
+NOTYVOS source is licensed under AGPL-3.0-or-later. AGPL-3.0 is compatible
+with GPL-3.0 for the manner in which NOTYVOS uses VirtualBox: separate
+host software, not linked or redistributed together.
+
+If you distribute a NOTYVOS disk image or ISO to another developer, you
+do not distribute VirtualBox. The developer installs VirtualBox
+themselves from the official upstream source.

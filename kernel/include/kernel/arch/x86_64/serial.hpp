@@ -2,9 +2,11 @@
 
 #include <kernel/types.hpp>
 
-namespace notyvos::arch::x86_64 {
+namespace notyvos::arch::x86_64
+{
 
-class SerialPort {
+class SerialPort
+{
 public:
     static constexpr u16 kCom1 = 0x3F8;
 
@@ -13,6 +15,9 @@ public:
     static void write(const char* s) noexcept;
     static void write(const char* s, usize n) noexcept;
     static bool is_ready() noexcept;
+
+    // Returns -1 if no byte is waiting, otherwise the byte (0..255).
+    static i32 read_char_nonblocking() noexcept;
 
 private:
     static u16 s_port;

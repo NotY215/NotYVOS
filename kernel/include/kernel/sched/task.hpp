@@ -33,27 +33,26 @@ struct Task
     uptr user_lo;
     uptr user_hi;
 
+    // Program break (heap) management.
+    uptr brk_start;
+    uptr brk_current;
+    uptr brk_max;
+
     fs::FileTable* files;
     char cwd[256];
 
-    // Process hierarchy.
     Task* parent;
     Task* first_child;
     Task* next_sibling;
     i32 exit_code;
     bool reaped;
 
-    Task* next; // run-queue link
+    Task* next;
 };
 
 Task* task_create_kernel(const char* name, TaskEntryFn fn, void* arg, usize stack_size) noexcept;
 Task* task_create_user(const char* name, uptr entry, uptr user_rsp, uptr cr3, uptr user_lo,
                        uptr user_hi) noexcept;
-
-// Creates a child process that resumes execution in user mode at the state
-// captured in `parent_frame_copy`. The `frame_copy` buffer must remain valid
-// for the child's lifetime (typically a heap allocation freed by the child
-// after it returns to user mode).
 Task* task_create_forked(const char* name, uptr cr3, uptr user_lo, uptr user_hi, void* frame_copy,
                          usize frame_size) noexcept;
 

@@ -11,9 +11,9 @@
 namespace notyvos::sched
 {
 
-extern "C" void task_entry_kernel();
-extern "C" void task_entry_user();
-extern "C" void task_entry_fork_child();
+extern "C" void task_entry_kernel() noexcept;
+extern "C" void task_entry_user() noexcept;
+extern "C" void task_entry_fork_child() noexcept;
 
 namespace
 {
@@ -68,6 +68,9 @@ Task* task_create_kernel(const char* name, TaskEntryFn fn, void* arg, usize stac
     t->kernel_stack = static_cast<u8*>(mm::Heap::allocate_aligned(stack_size, 16));
     build_initial_stack(t, reinterpret_cast<u64>(&task_entry_kernel));
     init_task_common(t);
+    t->brk_start = 0;
+    t->brk_current = 0;
+    t->brk_max = 0;
     register_task(t);
     return t;
 }
@@ -92,6 +95,9 @@ Task* task_create_user(const char* name, uptr entry, uptr user_rsp, uptr cr3, up
     t->kernel_stack = static_cast<u8*>(mm::Heap::allocate_aligned(t->kernel_stack_size, 16));
     build_initial_stack(t, reinterpret_cast<u64>(&task_entry_user));
     init_task_common(t);
+    t->brk_start = 0;
+    t->brk_current = 0;
+    t->brk_max = 0;
     register_task(t);
     return t;
 }

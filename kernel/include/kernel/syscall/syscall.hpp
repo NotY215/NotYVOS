@@ -17,6 +17,8 @@ extern "C" void syscall_dispatch(SyscallFrame* frame) noexcept;
 
 namespace nr
 {
+constexpr u64 kExec = 11;
+constexpr u64 kBrk = 12;
 constexpr u64 kExit = 0;
 constexpr u64 kWrite = 1;
 constexpr u64 kYield = 2;

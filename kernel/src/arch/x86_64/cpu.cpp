@@ -5,6 +5,7 @@
 #include <kernel/arch/x86_64/pic.hpp>
 #include <kernel/arch/x86_64/pit.hpp>
 #include <kernel/arch/x86_64/tss.hpp>
+#include <kernel/arch/x86_64/io.hpp>
 #include <kernel/arch/x86_64/keyboard.hpp>
 #include <kernel/log.hpp>
 
@@ -84,7 +85,11 @@ void cpu_init() noexcept
     pic_set_mask(0, false); // PIT
     pic_set_mask(1, false); // keyboard
     pit_init(100);
-    keyboard_init();
+    (void)keyboard_init();
+
+    log::write(log::Level::Info, "pic", "final masks: master=0x%llx slave=0x%llx",
+               static_cast<unsigned long long>(inb(0x21)),
+               static_cast<unsigned long long>(inb(0xA1)));
 
     syscall::syscall_init();
     log_features(g_info);
