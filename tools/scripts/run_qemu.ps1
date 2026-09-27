@@ -100,5 +100,5 @@ Write-Host ""
     -device "qemu-xhci,id=xhci" `
     -device "usb-storage,drive=usbstick" `
     -serial stdio `
-    -display gtk `
+    -display sdl `
     -no-reboot

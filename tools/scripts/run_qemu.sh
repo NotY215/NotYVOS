@@ -47,5 +47,5 @@ exec qemu-system-x86_64 \
     -device "qemu-xhci,id=xhci" \
     -device "usb-storage,drive=usbstick" \
     -serial stdio \
-    -display gtk \
+    -display sdl \
     -no-reboot

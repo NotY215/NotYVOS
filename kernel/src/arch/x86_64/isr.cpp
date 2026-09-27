@@ -1,4 +1,5 @@
 #include <kernel/arch/x86_64/isr.hpp>
+#include <kernel/arch/x86_64/keyboard.hpp>
 #include <kernel/arch/x86_64/pic.hpp>
 #include <kernel/arch/x86_64/pit.hpp>
 #include <kernel/log.hpp>
@@ -124,6 +125,10 @@ void handle_irq(u8 irq, InterruptFrame* /*f*/) noexcept
     {
         pit_on_tick();
         sched::scheduler_tick();
+    }
+    else if (irq == 1)
+    {
+        keyboard_irq_handler();
     }
 }
 

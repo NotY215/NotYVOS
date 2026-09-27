@@ -5,6 +5,7 @@
 #include <kernel/arch/x86_64/pic.hpp>
 #include <kernel/arch/x86_64/pit.hpp>
 #include <kernel/arch/x86_64/tss.hpp>
+#include <kernel/arch/x86_64/keyboard.hpp>
 #include <kernel/log.hpp>
 
 namespace notyvos::arch::x86_64
@@ -80,9 +81,11 @@ void cpu_init() noexcept
     // Remap PIC, disable all IRQs, then unmask IRQ0 (timer).
     pic_remap(32, 40);
     pic_disable_all();
-    pic_set_mask(0, false);
-
+    pic_set_mask(0, false); // PIT
+    pic_set_mask(1, false); // keyboard
     pit_init(100);
+    keyboard_init();
+
     syscall::syscall_init();
     log_features(g_info);
 }

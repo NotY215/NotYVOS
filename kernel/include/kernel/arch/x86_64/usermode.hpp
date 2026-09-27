@@ -9,5 +9,6 @@ void usermode_prepare_kernel_stack() noexcept;
 
 extern "C" void task_entry_kernel() noexcept;
 extern "C" void task_entry_user() noexcept;
+extern "C" void task_entry_fork_child() noexcept;
 
 } // namespace notyvos::arch::x86_64

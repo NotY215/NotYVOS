@@ -31,44 +31,28 @@ extern "C"
 {
     __attribute__((used, section(".limine_requests_start"))) static volatile uint64_t
         limine_requests_start_marker[4] = LIMINE_REQUESTS_START_MARKER;
-
     __attribute__((used,
                    section(".limine_requests"))) static volatile uint64_t limine_base_revision[3] =
         LIMINE_BASE_REVISION(3);
-
     __attribute__((used, section(".limine_requests"))) static volatile limine_framebuffer_request
         framebuffer_request = {
-            .id = LIMINE_FRAMEBUFFER_REQUEST_ID,
-            .revision = 0,
-            .response = nullptr,
-    };
+            .id = LIMINE_FRAMEBUFFER_REQUEST_ID, .revision = 0, .response = nullptr};
     __attribute__((
         used, section(".limine_requests"))) static volatile limine_memmap_request memmap_request = {
-        .id = LIMINE_MEMMAP_REQUEST_ID,
-        .revision = 0,
-        .response = nullptr,
-    };
+        .id = LIMINE_MEMMAP_REQUEST_ID, .revision = 0, .response = nullptr};
     __attribute__((
         used, section(".limine_requests"))) static volatile limine_hhdm_request hhdm_request = {
-        .id = LIMINE_HHDM_REQUEST_ID,
-        .revision = 0,
-        .response = nullptr,
-    };
+        .id = LIMINE_HHDM_REQUEST_ID, .revision = 0, .response = nullptr};
     __attribute__((used,
                    section(".limine_requests"))) static volatile limine_mp_request mp_request = {
-        .id = LIMINE_MP_REQUEST_ID,
-        .revision = 0,
-        .response = nullptr,
-        .flags = 0,
-    };
+        .id = LIMINE_MP_REQUEST_ID, .revision = 0, .response = nullptr, .flags = 0};
     __attribute__((
         used, section(".limine_requests"))) static volatile limine_module_request module_request = {
         .id = LIMINE_MODULE_REQUEST_ID,
         .revision = 0,
         .response = nullptr,
         .internal_module_count = 0,
-        .internal_modules = nullptr,
-    };
+        .internal_modules = nullptr};
     __attribute__((
         used,
         section(".limine_requests_end"))) static volatile uint64_t limine_requests_end_marker[2] =
@@ -81,10 +65,11 @@ extern "C"
 #include <kernel/arch/x86_64/percpu.hpp>
 #include <kernel/arch/x86_64/serial.hpp>
 #include <kernel/arch/x86_64/smp.hpp>
-#include <kernel/arch/x86_64/usermode.hpp>
 #include <kernel/boot/limine.hpp>
 #include <kernel/fb/console.hpp>
 #include <kernel/fb/framebuffer.hpp>
+#include <kernel/fs/initramfs.hpp>
+#include <kernel/fs/vfs.hpp>
 #include <kernel/log.hpp>
 #include <kernel/mm/heap.hpp>
 #include <kernel/mm/pmm.hpp>
@@ -116,7 +101,7 @@ extern "C" [[noreturn]] void kernel_main()
     arch::x86_64::SerialPort::init(arch::x86_64::SerialPort::kCom1);
     arch::x86_64::SerialPort::write("\nNOTYVOS kernel alive\n");
 
-    if (LIMINE_BASE_REVISION_SUPPORTED(limine_base_revision) == false)
+    if (!LIMINE_BASE_REVISION_SUPPORTED(limine_base_revision))
     {
         arch::x86_64::SerialPort::write("FATAL: Limine base revision not supported\n");
         halt_forever();
@@ -150,25 +135,29 @@ extern "C" [[noreturn]] void kernel_main()
 
     sched::scheduler_init();
 
-    // ---- Load init ELF from Limine module ----
-    if (!module_request.response || module_request.response->module_count == 0)
+    // Initramfs = module 0, init.elf = module 1.
+    if (!module_request.response || module_request.response->module_count < 2)
     {
-        log::write(log::Level::Error, "init", "no Limine module; cannot start user init");
+        log::write(log::Level::Error, "init",
+                   "need 2 Limine modules (initramfs + init.elf); got %llu",
+                   module_request.response
+                       ? static_cast<unsigned long long>(module_request.response->module_count)
+                       : 0ULL);
         for (;;)
             asm volatile("hlt");
     }
-    auto* file = module_request.response->modules[0];
-    log::write(log::Level::Info, "init", "module '%s' size=%llu at 0x%llx",
-               file->path ? file->path : "(null)", static_cast<unsigned long long>(file->size),
-               static_cast<unsigned long long>(reinterpret_cast<uptr>(file->address)));
+    auto* initrd = module_request.response->modules[0];
+    auto* elfmod = module_request.response->modules[1];
 
-    const auto elf = proc::load_elf(file->address, static_cast<usize>(file->size));
+    fs::vfs_init();
+    fs::VNode* root = fs::initramfs_mount(initrd->address, initrd->size);
+    if (!root)
+        panic("initramfs mount failed");
+    fs::vfs_mount_root(root);
+
+    const auto elf = proc::load_elf(elfmod->address, elfmod->size);
     if (!elf.entry)
-    {
-        log::write(log::Level::Error, "init", "ELF load failed");
-        for (;;)
-            asm volatile("hlt");
-    }
+        panic("ELF load failed");
 
     auto* init_task = sched::task_create_user("init", elf.entry, elf.stack_top, elf.cr3,
                                               elf.user_lo, elf.user_hi);
@@ -176,13 +165,11 @@ extern "C" [[noreturn]] void kernel_main()
         panic("failed to create init task");
     sched::scheduler_add(init_task);
 
-    log::write(log::Level::Info, "boot", "Phase 2B/2C/2D: starting scheduler, %llu task(s)",
+    log::write(log::Level::Info, "boot", "starting scheduler, %llu task(s)",
                static_cast<unsigned long long>(sched::scheduler_task_count()));
 
     arch::x86_64::interrupts_enable();
     sched::scheduler_start();
-
-    // scheduler_start returned (this only happens if there is no other task).
     for (;;)
         asm volatile("hlt");
 }

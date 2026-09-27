@@ -1,5 +1,4 @@
 #pragma once
-
 #include <kernel/types.hpp>
 
 namespace notyvos::fb
@@ -8,9 +7,7 @@ namespace notyvos::fb
 class Console
 {
 public:
-    // Must be called after Framebuffer::init(). Idempotent.
     static void init() noexcept;
-
     static bool ready() noexcept;
 
     static void put(char c) noexcept;
@@ -29,12 +26,19 @@ public:
 
     static void set_cursor(u32 col, u32 row) noexcept;
 
+    // Force a redraw of the blinking-block cursor at the current position.
+    // Called automatically after every put(); exposed for the shell to call
+    // after a set_cursor().
+    static void refresh_cursor() noexcept;
+
 private:
     static void scroll_up_one() noexcept;
     static void advance_cursor() noexcept;
     static void newline() noexcept;
     static void backspace() noexcept;
     static void draw_glyph(u32 col, u32 row, char c) noexcept;
+    static void erase_cursor() noexcept;
+    static void draw_cursor() noexcept;
 };
 
 } // namespace notyvos::fb

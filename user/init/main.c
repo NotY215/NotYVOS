@@ -1,93 +1,157 @@
-/* NOTYVOS init — freestanding user program, raw syscalls only. */
+#include "libnoty.h"
 
-typedef unsigned long u64;
+#define LINE_MAX 256
+#define ARG_MAX 16
 
-static inline long sys_call1(long nr, long a1)
-{
-    long ret;
-    __asm__ volatile("syscall" : "=a"(ret) : "a"(nr), "D"(a1) : "rcx", "r11", "memory");
-    return ret;
-}
-static inline long sys_call3(long nr, long a1, long a2, long a3)
-{
-    long ret;
-    __asm__ volatile("syscall"
-                     : "=a"(ret)
-                     : "a"(nr), "D"(a1), "S"(a2), "d"(a3)
-                     : "rcx", "r11", "memory");
-    return ret;
-}
+static char line[LINE_MAX];
 
-static void write(const char* s, unsigned long n)
+static void read_line(void)
 {
-    sys_call3(1 /*write*/, 1 /*fd*/, (long)s, (long)n);
+    i64 n = sys_read(0, line, LINE_MAX - 1);
+    if (n <= 0)
+    {
+        line[0] = 0;
+        return;
+    }
+    line[n] = 0;
+    if (n > 0 && line[n - 1] == '\n')
+        line[n - 1] = 0;
 }
 
-static void print(const char* s)
+static int tokenize(char* s, char** argv, int max)
 {
-    unsigned long n = 0;
-    while (s[n])
-        n++;
-    write(s, n);
+    int argc = 0;
+    while (*s)
+    {
+        while (*s == ' ' || *s == '\t')
+            *s++ = 0;
+        if (!*s)
+            break;
+        if (argc >= max)
+            break;
+        argv[argc++] = s;
+        while (*s && *s != ' ' && *s != '\t')
+            s++;
+    }
+    return argc;
 }
 
-static long getpid_(void)
+static void cmd_cat(const char* path)
 {
-    return sys_call1(3 /*getpid*/, 0);
+    i64 fd = sys_open(path, 0);
+    if (fd < 0)
+    {
+        printf("cat: %s: not found\n", path);
+        return;
+    }
+    char buf[128];
+    for (;;)
+    {
+        i64 n = sys_read(fd, buf, sizeof(buf));
+        if (n <= 0)
+            break;
+        sys_write(1, buf, (u64)n);
+    }
+    sys_close(fd);
 }
-static void yield_(void)
+
+static void cmd_ls(const char* path)
 {
-    sys_call1(2 /*yield*/, 0);
-}
-static void exit_(int c)
-{
-    sys_call1(0 /*exit*/, c);
+    i64 fd = sys_open(path ? path : "/", 0);
+    if (fd < 0)
+    {
+        printf("ls: %s: not found\n", path ? path : "/");
+        return;
+    }
+    sys_close(fd);
+    printf("(readdir not yet exposed via syscall; initramfs has: hello.txt, readme.txt)\n");
 }
 
 void _start(void)
 {
-    print("init: hello from ring 3\n");
-
-    long pid = getpid_();
-    char buf[64];
-    int i = 0;
-    buf[i++] = 'i';
-    buf[i++] = 'n';
-    buf[i++] = 'i';
-    buf[i++] = 't';
-    buf[i++] = ':';
-    buf[i++] = ' ';
-    buf[i++] = 'p';
-    buf[i++] = 'i';
-    buf[i++] = 'd';
-    buf[i++] = '=';
-    if (pid == 0)
-        buf[i++] = '0';
-    else
-    {
-        char tmp[20];
-        int n = 0;
-        while (pid)
-        {
-            tmp[n++] = '0' + (pid % 10);
-            pid /= 10;
-        }
-        for (int k = n - 1; k >= 0; --k)
-            buf[i++] = tmp[k];
-    }
-    buf[i++] = '\n';
-    write(buf, (unsigned long)i);
-
-    for (int k = 0; k < 3; ++k)
-    {
-        print("init: yielding\n");
-        yield_();
-    }
-
-    print("init: exiting\n");
-    exit_(0);
+    printf("\nNOTYVOS shell (phase 2G+)\n");
+    printf("type 'help' for commands\n");
 
     for (;;)
     {
+        printf("$ ");
+        read_line();
+        char* argv[ARG_MAX];
+        int argc = tokenize(line, argv, ARG_MAX);
+        if (argc == 0)
+            continue;
+
+        if (strcmp(argv[0], "help") == 0)
+        {
+            printf("commands: help, ls, cat FILE, echo TEXT, pid, fork, exit\n");
+        }
+        else if (strcmp(argv[0], "echo") == 0)
+        {
+            for (int i = 1; i < argc; ++i)
+            {
+                if (i > 1)
+                    putc(' ');
+                puts(argv[i]);
+            }
+            putc('\n');
+        }
+        else if (strcmp(argv[0], "ls") == 0)
+        {
+            i64 fd = sys_open(argc >= 2 ? argv[1] : "/", 0);
+            if (fd < 0)
+            {
+                printf("ls: not found\n");
+                continue;
+            }
+            DirEntry e;
+            for (u64 i = 0;; ++i)
+            {
+                i64 n = sys_readdir(fd, i, &e);
+                if (n <= 0)
+                    break;
+                printf("%s\n", e.name);
+            }
+            sys_close(fd);
+        }
+        else if (strcmp(argv[0], "cat") == 0)
+        {
+            if (argc < 2)
+                printf("cat: missing file\n");
+            else
+                cmd_cat(argv[1]);
+        }
+        else if (strcmp(argv[0], "pid") == 0)
+        {
+            printf("pid=%d\n", sys_getpid());
+        }
+        else if (strcmp(argv[0], "fork") == 0)
+        {
+            i64 child = sys_fork();
+            if (child == 0)
+            {
+                printf("[child pid=%d] hello from fork child\n", sys_getpid());
+                sys_exit(42);
+            }
+            else if (child < 0)
+            {
+                printf("fork failed\n");
+            }
+            else
+            {
+                printf("[parent] forked child pid=%d\n", (int)child);
+                i32 st = 0;
+                i64 reaped = sys_wait(-1, &st);
+                printf("[parent] reaped pid=%d status=%d\n", (int)reaped, st);
+            }
+        }
+        else if (strcmp(argv[0], "exit") == 0)
+        {
+            printf("bye\n");
+            sys_exit(0);
+        }
+        else
+        {
+            printf("unknown: %s\n", argv[0]);
+        }
     }
 }

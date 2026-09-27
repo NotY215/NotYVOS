@@ -12,22 +12,20 @@ extern "C" void notyvos_switch_context(u64* save_slot, u64 new_rsp);
 
 namespace
 {
-Task* g_head = nullptr; // circular run queue
+Task* g_head = nullptr;
 Task* g_tail = nullptr;
 u32 g_task_count = 0;
-Task g_boot_task{}; // kernel_main itself
+Task g_boot_task{};
 } // namespace
 
 void scheduler_init() noexcept
 {
-    // Register kernel_main as the boot task.
     g_boot_task.tid = 0;
     g_boot_task.state = TaskState::Running;
     const char* n = "boot";
     for (u32 i = 0; n[i] && i < kTaskNameMax - 1; ++i)
         g_boot_task.name[i] = n[i];
     g_boot_task.name[kTaskNameMax - 1] = '\0';
-
     auto* me = arch::x86_64::this_cpu();
     me->current_task = &g_boot_task;
 }
@@ -53,12 +51,10 @@ Task* scheduler_current() noexcept
 {
     return arch::x86_64::this_cpu()->current_task;
 }
-
 void scheduler_set_current(Task* t) noexcept
 {
     arch::x86_64::this_cpu()->current_task = t;
 }
-
 u64 scheduler_task_count() noexcept
 {
     return g_task_count;
@@ -68,7 +64,6 @@ static Task* pick_next() noexcept
 {
     if (!g_head)
         return nullptr;
-    // Round-robin: advance tail->next to head; return head.
     Task* start = g_head;
     Task* t = start;
     do
@@ -80,7 +75,7 @@ static Task* pick_next() noexcept
     return nullptr;
 }
 
-static void remove(Task* t)
+static void remove_from_queue(Task* t)
 {
     if (!t || !g_head)
         return;
@@ -171,16 +166,17 @@ void scheduler_yield() noexcept
 
 void scheduler_exit_current(int code)
 {
-    (void)code;
     Task* me = scheduler_current();
-    log::write(log::Level::Info, "sched", "task '%s' (tid=%u) exited", me ? me->name : "?",
-               static_cast<unsigned long long>(me ? me->tid : 0));
+    log::write(log::Level::Info, "sched", "task '%s' (tid=%u) exited code=%d", me ? me->name : "?",
+               static_cast<unsigned long long>(me ? me->tid : 0), code);
     if (me && me != &g_boot_task)
     {
+        me->exit_code = code;
         me->state = TaskState::Zombie;
-        remove(me);
-        // leak the Task struct for now; task_destroy would free the stack
-        // we are standing on.
+        remove_from_queue(me);
+        // Do not free the Task struct or stack: the parent may still call
+        // wait() and read exit_code. The struct is freed in task_destroy()
+        // when the parent reaps it.
     }
     Task* next = pick_next();
     if (!next)
@@ -190,7 +186,6 @@ void scheduler_exit_current(int code)
             asm volatile("hlt");
     }
     switch_to(next);
-    // switch_to never returns for the zombie.
     for (;;)
         asm volatile("hlt");
 }

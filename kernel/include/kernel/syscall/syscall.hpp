@@ -21,6 +21,13 @@ constexpr u64 kExit = 0;
 constexpr u64 kWrite = 1;
 constexpr u64 kYield = 2;
 constexpr u64 kGetPid = 3;
+constexpr u64 kOpen = 4;
+constexpr u64 kRead = 5;
+constexpr u64 kClose = 6;
+constexpr u64 kFork = 7;
+constexpr u64 kWait = 8;
+constexpr u64 kReaddir = 9;
+constexpr u64 kMmap = 10;
 } // namespace nr
 
 } // namespace notyvos::syscall

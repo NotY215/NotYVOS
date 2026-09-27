@@ -78,9 +78,18 @@ isr_unhandled:
 .size isr_unhandled, .-isr_unhandled
 
 isr_common:
-    /* If the interrupted context is user (CS low bits = 3), GS.base is
-     * currently the user's and we must swapgs before touching GS. */
-    test byte ptr [rsp + 160], 3
+    /* Stack at this point, from low to high:
+     *   [rsp +  0] vector
+     *   [rsp +  8] error_code
+     *   [rsp + 16] rip
+     *   [rsp + 24] cs
+     *   [rsp + 32] rflags
+     *   [rsp + 40] rsp   (only if from user)
+     *   [rsp + 48] ss    (only if from user)
+     * If CS low 2 bits == 3, we came from user mode; GS.base is the user's,
+     * so swapgs before touching GS. */
+
+    test byte ptr [rsp + 24], 3
     jz 1f
     swapgs
 1:
@@ -137,7 +146,7 @@ isr_common:
     pop rbx
     pop rax
 
-    /* If returning to user, swapgs back. */
+    /* rsp now points to vector again. CS at [rsp + 24]. */
     test byte ptr [rsp + 24], 3
     jz 2f
     swapgs
