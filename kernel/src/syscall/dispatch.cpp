@@ -1,24 +1,29 @@
-#include <kernel/syscall/syscall.hpp>
-#include <kernel/syscall/uaccess.hpp>
-#include <kernel/sched/scheduler.hpp>
-#include <kernel/sched/task.hpp>
-#include <kernel/fs/vfs.hpp>
+#include <kernel/arch/x86_64/keyboard.hpp>
+#include <kernel/arch/x86_64/serial.hpp>
+#include <kernel/fb/console.hpp>
 #include <kernel/fs/file.hpp>
-#include <kernel/proc/fork.hpp>
-#include <kernel/proc/elf.hpp>
-#include <kernel/mm/pmm.hpp>
-#include <kernel/mm/vmm.hpp>
-#include <kernel/mm/paging.hpp>
-#include <kernel/mm/heap.hpp>
+#include <kernel/fs/vfs.hpp>
 #include <kernel/libk/mem.hpp>
 #include <kernel/libk/string.hpp>
-#include <kernel/arch/x86_64/serial.hpp>
-#include <kernel/arch/x86_64/keyboard.hpp>
-#include <kernel/fb/console.hpp>
 #include <kernel/log.hpp>
+#include <kernel/mm/heap.hpp>
+#include <kernel/mm/paging.hpp>
+#include <kernel/mm/pmm.hpp>
+#include <kernel/mm/vmm.hpp>
+#include <kernel/proc/elf.hpp>
+#include <kernel/proc/fork.hpp>
+#include <kernel/sched/scheduler.hpp>
+#include <kernel/sched/task.hpp>
+#include <kernel/syscall/syscall.hpp>
+#include <kernel/syscall/uaccess.hpp>
 
 namespace notyvos::syscall
 {
+
+// Frame pointer for the syscall currently being dispatched. Set at the top
+// of syscall_dispatch, cleared at the bottom. sys_exec uses it to rewrite
+// the return frame so iretq lands at the new program's entry point.
+SyscallFrame* g_current_frame = nullptr;
 
 namespace
 {
@@ -85,12 +90,6 @@ got:;
 
 i64 sys_read_stdin(u64 ubuf, u64 len)
 {
-    static bool g_first_stdin = false;
-    if (!g_first_stdin)
-    {
-        g_first_stdin = true;
-        log::write(log::Level::Warn, "syscall", "shell is blocked on stdin read");
-    }
     usize got = 0;
     while (got < len)
     {
@@ -113,6 +112,7 @@ i64 sys_read_stdin(u64 ubuf, u64 len)
         if (c < 0)
             continue;
         char ch = static_cast<char>(c);
+
         if (ch == '\b' || ch == 127)
         {
             if (got > 0)
@@ -124,6 +124,7 @@ i64 sys_read_stdin(u64 ubuf, u64 len)
             }
             continue;
         }
+
         console_put(ch);
         if (!copy_to_user(ubuf + got, &ch, 1))
             return -1;
@@ -144,6 +145,7 @@ i64 sys_read(u64 fd, u64 ubuf, u64 len)
     auto* f = fs::filetable_get(cur->files, static_cast<i32>(fd));
     if (!f || !f->vnode || !f->vnode->ops || !f->vnode->ops->read)
         return -1;
+
     char tmp[256];
     usize total = 0;
     usize remaining = static_cast<usize>(len);
@@ -185,10 +187,6 @@ i64 sys_getpid()
     return cur ? static_cast<i64>(cur->tid) : 0;
 }
 
-// ---------------------------------------------------------------------------
-// Fork: clone the current task's user memory, files, and hierarchy.
-// The child resumes in user mode at the same RIP/RSP with rax=0.
-// ---------------------------------------------------------------------------
 i64 sys_fork(SyscallFrame* f)
 {
     auto* parent = sched::scheduler_current();
@@ -214,7 +212,6 @@ i64 sys_fork(SyscallFrame* f)
     if (!child)
         return -1;
 
-    // FileTable copy (shallow: same VNodes, independent offsets).
     if (parent->files && child->files)
     {
         for (u32 i = 0; i < fs::kMaxFds; ++i)
@@ -222,16 +219,15 @@ i64 sys_fork(SyscallFrame* f)
             child->files->fds[i] = parent->files->fds[i];
         }
     }
+    child->brk_start = parent->brk_start;
+    child->brk_current = parent->brk_current;
+    child->brk_max = parent->brk_max;
 
     sched::task_add_child(parent, child);
     sched::scheduler_add(child);
     return static_cast<i64>(child->tid);
 }
 
-// ---------------------------------------------------------------------------
-// Wait: block until a child exits. `pid = -1` means any child.
-// Returns the child's exit code on success.
-// ---------------------------------------------------------------------------
 i64 sys_wait(i64 want_pid, u64 status_ptr)
 {
     auto* parent = sched::scheduler_current();
@@ -249,13 +245,10 @@ i64 sys_wait(i64 want_pid, u64 status_ptr)
             {
                 const i32 code = c->exit_code;
                 if (status_ptr)
-                {
                     (void)copy_to_user(status_ptr, &code, sizeof(code));
-                }
                 const u32 reaped_tid = c->tid;
                 sched::task_remove_child(parent, c);
                 c->reaped = true;
-                // Free the child's Task struct and stack now that we own it.
                 sched::task_destroy(c);
                 return static_cast<i64>(reaped_tid);
             }
@@ -266,10 +259,6 @@ i64 sys_wait(i64 want_pid, u64 status_ptr)
     }
 }
 
-// ---------------------------------------------------------------------------
-// Readdir: fill a DirEntry for index `idx` of a directory opened as `fd`.
-// Returns 1 on success, 0 when done, -1 on error.
-// ---------------------------------------------------------------------------
 i64 sys_readdir(u64 fd, u64 idx, u64 out_ptr)
 {
     auto* cur = sched::scheduler_current();
@@ -290,11 +279,6 @@ i64 sys_readdir(u64 fd, u64 idx, u64 out_ptr)
     return 1;
 }
 
-// ---------------------------------------------------------------------------
-// mmap: anonymous mappings only. fd must be -1. `len` is rounded up to a
-// page multiple. `hint` is treated as the desired base; if it is NULL, a
-// bump allocator inside [user_hi, user_hi + 256 MB) is used.
-// ---------------------------------------------------------------------------
 i64 sys_mmap(u64 addr_hint, u64 len, u64 /*prot*/, u64 /*flags*/, i64 fd, u64 /*off*/)
 {
     if (fd != -1)
@@ -310,12 +294,10 @@ i64 sys_mmap(u64 addr_hint, u64 len, u64 /*prot*/, u64 /*flags*/, i64 fd, u64 /*
     const u64 pages = (len + kPage - 1) / kPage;
     const u64 bytes = pages * kPage;
 
-    // Simple bump: place mmap region immediately above the current user_hi.
     const uptr base =
         (addr_hint != 0) ? (addr_hint & ~(kPage - 1)) : ((cur->user_hi + kPage - 1) & ~(kPage - 1));
 
-    constexpr u64 kMidFlags = 1ULL | 2ULL | 4ULL;
-    constexpr u64 kLeafFlags = 1ULL | 2ULL | 4ULL; // P | W | U
+    constexpr u64 kLeaf = mm::page_flags::Present | mm::page_flags::Writable | mm::page_flags::User;
 
     for (u64 i = 0; i < pages; ++i)
     {
@@ -323,26 +305,17 @@ i64 sys_mmap(u64 addr_hint, u64 len, u64 /*prot*/, u64 /*flags*/, i64 fd, u64 /*
         if (!phys)
             return -1;
         libk::memset(reinterpret_cast<void*>(phys + kHhdm), 0, kPage);
-        if (!mm::VirtualMemory::map_page(base + i * kPage, phys, kLeafFlags))
+        if (!mm::VirtualMemory::map_page(base + i * kPage, phys, kLeaf))
         {
             return -1;
         }
-        (void)kMidFlags;
     }
-
     if (base + bytes > cur->user_hi)
         cur->user_hi = base + bytes;
     return static_cast<i64>(base);
 }
 
-} // namespace
-
-#include <kernel/proc/fork.hpp> // already present
-
-// ---------------------------------------------------------------------------
-// exec: replace current process image with the ELF at `upath`.
-// ---------------------------------------------------------------------------
-i64 sys_exec_impl(SyscallFrame* f, u64 upath)
+i64 sys_exec_impl(u64 upath)
 {
     auto* cur = sched::scheduler_current();
     if (!cur)
@@ -385,8 +358,6 @@ i64 sys_exec_impl(SyscallFrame* f, u64 upath)
     if (!elf.entry)
         return -1;
 
-    // Update task. We leak the old user pages; a proper reclaim lands in a
-    // follow-up. This is fine while the shell has bounded memory.
     cur->cr3 = elf.cr3;
     cur->user_entry = elf.entry;
     cur->user_rsp = elf.stack_top;
@@ -396,21 +367,18 @@ i64 sys_exec_impl(SyscallFrame* f, u64 upath)
     cur->brk_current = 0;
     cur->brk_max = 0;
 
-    // Switch CR3 now so the upcoming iretq lands on the new address space.
     asm volatile("mov %0, %%cr3" ::"r"(elf.cr3) : "memory");
 
-    // Rewrite the syscall return frame to start the new program.
-    f->rip = elf.entry;
-    f->rsp = elf.stack_top;
-    f->rflags = 0x202;
-    f->rax = 0;
+    if (g_current_frame)
+    {
+        g_current_frame->rip = elf.entry;
+        g_current_frame->rsp = elf.stack_top;
+        g_current_frame->rflags = 0x202;
+        g_current_frame->rax = 0;
+    }
     return 0;
 }
 
-// ---------------------------------------------------------------------------
-// brk: extend or shrink the process's heap segment. `new_brk == 0` returns
-// the current break without changing anything.
-// ---------------------------------------------------------------------------
 i64 sys_brk_impl(u64 new_brk)
 {
     auto* cur = sched::scheduler_current();
@@ -419,7 +387,6 @@ i64 sys_brk_impl(u64 new_brk)
 
     if (cur->brk_start == 0)
     {
-        // First call: place the break just above the loaded image.
         cur->brk_start = (cur->user_hi + 0xFFF) & ~0xFFFULL;
         cur->brk_current = cur->brk_start;
         cur->brk_max = cur->brk_start;
@@ -434,16 +401,14 @@ i64 sys_brk_impl(u64 new_brk)
     {
         const uptr start = cur->brk_max;
         const uptr end = (new_brk + 0xFFF) & ~0xFFFULL;
-
         constexpr u64 kLeaf =
             mm::page_flags::Present | mm::page_flags::Writable | mm::page_flags::User;
-
         for (uptr va = start; va < end; va += 0x1000)
         {
             const uptr phys = mm::PhysicalMemory::allocate_frame();
             if (!phys)
                 return static_cast<i64>(cur->brk_current);
-            libk::memset(reinterpret_cast<void*>(phys + 0xffff800000000000ULL), 0, 0x1000);
+            libk::memset(reinterpret_cast<void*>(phys + kHhdm), 0, 0x1000);
             if (!mm::VirtualMemory::map_page(va, phys, kLeaf))
             {
                 return static_cast<i64>(cur->brk_current);
@@ -458,8 +423,11 @@ i64 sys_brk_impl(u64 new_brk)
     return static_cast<i64>(cur->brk_current);
 }
 
+} // namespace
+
 extern "C" void syscall_dispatch(SyscallFrame* f) noexcept
 {
+    g_current_frame = f;
     switch (f->rax)
     {
     case nr::kExit:
@@ -487,12 +455,6 @@ extern "C" void syscall_dispatch(SyscallFrame* f) noexcept
     case nr::kClose:
         f->rax = static_cast<u64>(sys_close(f->rdi));
         break;
-    case nr::kExec:
-        f->rax = static_cast<u64>(sys_exec_impl(f, f->rdi));
-        break;
-    case nr::kBrk:
-        f->rax = static_cast<u64>(sys_brk_impl(f->rdi));
-        break;
     case nr::kFork:
         f->rax = static_cast<u64>(sys_fork(f));
         break;
@@ -506,12 +468,19 @@ extern "C" void syscall_dispatch(SyscallFrame* f) noexcept
         f->rax = static_cast<u64>(
             sys_mmap(f->rdi, f->rsi, f->rdx, f->r10, static_cast<i64>(f->r8), f->r9));
         break;
+    case nr::kExec:
+        f->rax = static_cast<u64>(sys_exec_impl(f->rdi));
+        break;
+    case nr::kBrk:
+        f->rax = static_cast<u64>(sys_brk_impl(f->rdi));
+        break;
     default:
         log::write(log::Level::Warn, "syscall", "unknown nr=%llu",
                    static_cast<unsigned long long>(f->rax));
         f->rax = static_cast<u64>(-1);
         break;
     }
+    g_current_frame = nullptr;
 }
 
 } // namespace notyvos::syscall

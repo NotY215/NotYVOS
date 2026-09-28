@@ -114,8 +114,12 @@ static void switch_to(Task* next)
     if (prev == next)
         return;
 
-    if (prev)
+    // Only demote Running -> Ready. A Zombie stays Zombie so the parent
+    // can find it in sys_wait.
+    if (prev && prev->state == TaskState::Running)
+    {
         prev->state = TaskState::Ready;
+    }
     next->state = TaskState::Running;
     me->current_task = next;
 
@@ -174,9 +178,6 @@ void scheduler_exit_current(int code)
         me->exit_code = code;
         me->state = TaskState::Zombie;
         remove_from_queue(me);
-        // Do not free the Task struct or stack: the parent may still call
-        // wait() and read exit_code. The struct is freed in task_destroy()
-        // when the parent reaps it.
     }
     Task* next = pick_next();
     if (!next)

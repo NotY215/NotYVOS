@@ -29,6 +29,7 @@ volatile u8 g_buf[kBufSize];
 volatile u32 g_head = 0;
 volatile u32 g_tail = 0;
 u64 g_total_scancodes = 0;
+u64 g_raw_bytes_seen = 0;
 
 inline void push_char(char c)
 {
@@ -39,9 +40,9 @@ inline void push_char(char c)
     g_head = next;
 }
 
-bool wait_input_clear(u32 timeout_us = 100000) noexcept
+bool wait_input_clear(u32 timeout_iter = 1000000) noexcept
 {
-    for (u32 i = 0; i < timeout_us; ++i)
+    for (u32 i = 0; i < timeout_iter; ++i)
     {
         if ((inb(kStatusPort) & 0x02) == 0)
             return true;
@@ -50,9 +51,9 @@ bool wait_input_clear(u32 timeout_us = 100000) noexcept
     return false;
 }
 
-bool wait_output_full(u32 timeout_us = 100000) noexcept
+bool wait_output_full(u32 timeout_iter = 1000000) noexcept
 {
-    for (u32 i = 0; i < timeout_us; ++i)
+    for (u32 i = 0; i < timeout_iter; ++i)
     {
         if (inb(kStatusPort) & 0x01)
             return true;
@@ -84,6 +85,14 @@ void flush_output() noexcept
 
 void process_scancode(u8 sc)
 {
+    ++g_raw_bytes_seen;
+    if (g_raw_bytes_seen <= 3)
+    {
+        log::write(log::Level::Warn, "kbd", "raw byte #%llu: 0x%llx",
+                   static_cast<unsigned long long>(g_raw_bytes_seen),
+                   static_cast<unsigned long long>(sc));
+    }
+
     if (sc == 0xFA || sc == 0xE0 || sc == 0xE1)
         return;
     if (sc & 0x80)
@@ -104,9 +113,9 @@ void process_scancode(u8 sc)
     if (c == 0)
         return;
 
-    if (g_total_scancodes < 40)
+    if (g_total_scancodes < 8)
     {
-        log::write(log::Level::Warn, "kbd", "key #%llu: scancode=0x%llx -> '%c'",
+        log::write(log::Level::Warn, "kbd", "key #%llu: 0x%llx -> '%c'",
                    static_cast<unsigned long long>(g_total_scancodes),
                    static_cast<unsigned long long>(sc), c);
     }
@@ -118,75 +127,78 @@ void process_scancode(u8 sc)
 
 bool keyboard_init() noexcept
 {
-    log::write(log::Level::Info, "kbd", "starting full PS/2 controller init");
+    log::write(log::Level::Info, "kbd", "starting minimal PS/2 init");
 
-    write_cmd(0xAD);
-    write_cmd(0xA7);
+    // Drain anything VirtualBox left in the buffer.
     flush_output();
 
+    // Read the config byte that VirtualBox set up. Do not modify the
+    // IRQ and clock bits unless the IRQ is off.
     write_cmd(0x20);
-    if (!wait_output_full())
+    u8 cfg = 0;
+    if (!wait_output_full(500000))
     {
-        log::write(log::Level::Error, "kbd", "cfg read timeout");
+        log::write(log::Level::Error, "kbd", "cfg read failed");
         return false;
     }
-    const u8 cfg_orig = inb(kDataPort);
+    cfg = inb(kDataPort);
+    log::write(log::Level::Info, "kbd", "initial cfg = 0x%llx",
+               static_cast<unsigned long long>(cfg));
 
-    u8 cfg_init = cfg_orig;
-    cfg_init &= ~static_cast<u8>(0x03);
-    cfg_init &= ~static_cast<u8>(0x40);
-    write_cmd(0x60);
-    write_data(cfg_init);
+    bool need_write = false;
 
-    write_cmd(0xAA);
-    if (!wait_output_full())
+    // Enable IRQ1 if it is off.
+    if ((cfg & 0x01) == 0)
     {
-        log::write(log::Level::Error, "kbd", "self-test timeout");
-        return false;
+        cfg |= 0x01;
+        need_write = true;
     }
-    const u8 self_test = inb(kDataPort);
-    log::write(log::Level::Info, "kbd", "controller self-test: 0x%llx (expect 0x55)",
-               static_cast<unsigned long long>(self_test));
-
-    write_cmd(0xA8);
-    write_cmd(0x20);
-    if (wait_output_full())
+    // Enable translation if it is off (VirtualBox sends set 2 by default).
+    if ((cfg & 0x40) == 0)
     {
-        const u8 cfg_after_aux = inb(kDataPort);
-        if (cfg_after_aux & 0x20)
-            write_cmd(0xA7);
+        cfg |= 0x40;
+        need_write = true;
+    }
+    // Enable keyboard clock if it is off.
+    if (cfg & 0x10)
+    {
+        cfg &= ~static_cast<u8>(0x10);
+        need_write = true;
     }
 
-    write_cmd(0xAB);
-    if (wait_output_full())
+    if (need_write)
     {
-        const u8 port_test = inb(kDataPort);
-        log::write(log::Level::Info, "kbd", "port test: 0x%llx (expect 0x00)",
-                   static_cast<unsigned long long>(port_test));
+        write_cmd(0x60);
+        write_data(cfg);
+        write_cmd(0x20);
+        u8 rb = 0;
+        if (wait_output_full(500000))
+            rb = inb(kDataPort);
+        log::write(log::Level::Info, "kbd", "wrote cfg 0x%llx, readback 0x%llx",
+                   static_cast<unsigned long long>(cfg), static_cast<unsigned long long>(rb));
+    }
+    else
+    {
+        log::write(log::Level::Info, "kbd", "cfg already correct, no write needed");
     }
 
-    write_cmd(0xAE);
-
-    u8 cfg_final = cfg_init;
-    cfg_final |= 0x01;
-    cfg_final |= 0x40;
-    cfg_final &= ~static_cast<u8>(0x10);
-    write_cmd(0x60);
-    write_data(cfg_final);
-
+    // Send 0xF4 (Enable Scanning). Expect 0xFA ACK.
     write_data(0xF4);
-    if (wait_output_full())
-        (void)inb(kDataPort);
+    if (wait_output_full(500000))
+    {
+        const u8 ack = inb(kDataPort);
+        log::write(log::Level::Info, "kbd", "0xF4 ack = 0x%llx",
+                   static_cast<unsigned long long>(ack));
+    }
+    else
+    {
+        log::write(log::Level::Warn, "kbd", "0xF4 timeout");
+    }
 
-    write_cmd(0x20);
-    u8 readback = 0;
-    if (wait_output_full())
-        readback = inb(kDataPort);
-
-    log::write(
-        log::Level::Info, "kbd", "PS/2 init done: cfg before=0x%llx after=0x%llx readback=0x%llx",
-        static_cast<unsigned long long>(cfg_orig), static_cast<unsigned long long>(cfg_final),
-        static_cast<unsigned long long>(readback));
+    // Final status read for the log.
+    const u8 st = inb(kStatusPort);
+    log::write(log::Level::Info, "kbd", "PS/2 init done. status=0x%llx",
+               static_cast<unsigned long long>(st));
 
     return true;
 }
