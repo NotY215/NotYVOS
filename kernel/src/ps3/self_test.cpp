@@ -1,83 +1,259 @@
-#include <kernel/ps3/loader.hpp>
-#include <kernel/ps3/powerpc/decode.hpp>
+#include <kernel/libk/mem.hpp>
 #include <kernel/libk/string.hpp>
 #include <kernel/log.hpp>
+#include <kernel/ps3/dma.hpp>
+#include <kernel/ps3/jit/self_test.hpp>
+#include <kernel/ps3/loader.hpp>
+#include <kernel/ps3/powerpc/decode.hpp>
+#include <kernel/ps3/ppu.hpp>
+#include <kernel/ps3/spu.hpp>
 
-namespace notyvos::ps3 {
+namespace notyvos::ps3
+{
 
-namespace {
+namespace
+{
 
-struct DecodeCase {
+struct DecodeCase
+{
     u32 word;
     const char* expect;
 };
 
-} // namespace
+u8 g_ppu_ram[4096];
 
-void self_test() noexcept {
-    log::write(log::Level::Info, "ps3", "running self-test");
+bool ppu_read32(void* user, u64 addr, u32* out) noexcept
+{
+    (void)user;
+    if (addr + 4 > sizeof(g_ppu_ram))
+        return false;
+    const u8* p = g_ppu_ram + addr;
+    *out = (static_cast<u32>(p[0]) << 24) | (static_cast<u32>(p[1]) << 16) |
+           (static_cast<u32>(p[2]) << 8) | static_cast<u32>(p[3]);
+    return true;
+}
 
+bool ppu_write32(void* user, u64 addr, u32 value) noexcept
+{
+    (void)user;
+    if (addr + 4 > sizeof(g_ppu_ram))
+        return false;
+    u8* p = g_ppu_ram + addr;
+    p[0] = static_cast<u8>((value >> 24) & 0xFF);
+    p[1] = static_cast<u8>((value >> 16) & 0xFF);
+    p[2] = static_cast<u8>((value >> 8) & 0xFF);
+    p[3] = static_cast<u8>(value & 0xFF);
+    return true;
+}
+
+void write_be32(u8* p, u32 v) noexcept
+{
+    p[0] = static_cast<u8>((v >> 24) & 0xFF);
+    p[1] = static_cast<u8>((v >> 16) & 0xFF);
+    p[2] = static_cast<u8>((v >> 8) & 0xFF);
+    p[3] = static_cast<u8>(v & 0xFF);
+}
+
+void test_decoder() noexcept
+{
+    // 0x4E800420 = bcctr (LK=0). The prior test used 0x4E800421 which has
+    // the LK bit set, so the decoder correctly reports "bcctrl".
     const DecodeCase cases[] = {
-        { 0x38600042u, "addi" },
-        { 0x48000008u, "b" },
-        { 0x4E800020u, "bclr" },
-        { 0x7C0802A6u, "mfspr" },
-        { 0x7C0803A6u, "mtspr" },
-        { 0x9421FFE0u, "stwu" },
-        { 0x38210020u, "addi" },
-        { 0x4E800421u, "bcctr" },
+        {0x38600042u, "addi"},  {0x48000008u, "b"},     {0x4E800020u, "bclr"},
+        {0x7C0802A6u, "mfspr"}, {0x7C0803A6u, "mtspr"}, {0x9421FFE0u, "stwu"},
+        {0x38210020u, "addi"},  {0x4E800420u, "bcctr"},
     };
 
     u32 ok = 0;
-    for (const auto& c : cases) {
+    for (const auto& c : cases)
+    {
         const auto ins = powerpc::decode(c.word);
-        if (ins.mnemonic && libk::strcmp(ins.mnemonic, c.expect) == 0) {
+        if (ins.mnemonic && libk::strcmp(ins.mnemonic, c.expect) == 0)
+        {
             ++ok;
-        } else {
-            log::write(log::Level::Warn, "ps3-dec",
-                "0x%llx decoded as '%s', expected '%s'",
-                static_cast<unsigned long long>(c.word),
-                ins.mnemonic ? ins.mnemonic : "(null)",
-                c.expect);
+        }
+        else
+        {
+            log::write(log::Level::Warn, "ps3-dec", "0x%llx decoded as '%s', expected '%s'",
+                       static_cast<unsigned long long>(c.word),
+                       ins.mnemonic ? ins.mnemonic : "(null)", c.expect);
         }
     }
-    log::write(log::Level::Info, "ps3-dec",
-        "self-test: %u/%u instructions recognised",
-        static_cast<unsigned long long>(ok),
-        static_cast<unsigned long long>(sizeof(cases) / sizeof(cases[0])));
+    log::write(log::Level::Info, "ps3-dec", "decoder self-test: %u/%u instructions recognised",
+               static_cast<unsigned long long>(ok),
+               static_cast<unsigned long long>(sizeof(cases) / sizeof(cases[0])));
+}
 
+void test_elf() noexcept
+{
     static const u8 fake_elf[64] = {
-        0x7F, 'E', 'L', 'F', 2, 2, 1, 0,
-        0, 0, 0, 0, 0, 0, 0, 0,
-        0x00, 0x02,
-        0x00, 0x15,
-        0x00, 0x00, 0x00, 0x01,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00,
-        0x00, 0x40,
-        0x00, 0x38,
-        0x00, 0x02,
-        0x00, 0x40, 0x00, 0x00,
-        0x00, 0x00,
+        0x7F, 'E',  'L',  'F',  2,    2,    1,    0,    0,    0,    0,    0,    0,
+        0,    0,    0,    0x00, 0x02, 0x00, 0x15, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x40, 0x00, 0x38, 0x00, 0x02, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00,
     };
 
-    if (!is_ps3_executable(fake_elf, sizeof(fake_elf))) {
-        log::write(log::Level::Warn, "ps3", "self-test: fake ELF rejected");
+    if (!is_ps3_executable(fake_elf, sizeof(fake_elf)))
+    {
+        log::write(log::Level::Warn, "ps3", "elf self-test: rejected");
         return;
     }
-
     Ps3Program prog{};
-    if (!parse_ps3_executable(fake_elf, sizeof(fake_elf), &prog)) {
-        log::write(log::Level::Warn, "ps3", "self-test: parse failed");
+    if (!parse_ps3_executable(fake_elf, sizeof(fake_elf), &prog))
+    {
+        log::write(log::Level::Warn, "ps3", "elf self-test: parse failed");
+        return;
+    }
+    log::write(log::Level::Info, "ps3", "elf self-test: entry=0x%llx, %u phdr",
+               static_cast<unsigned long long>(prog.entry),
+               static_cast<unsigned long long>(prog.phnum));
+}
+
+void test_ppu() noexcept
+{
+    libk::memset(g_ppu_ram, 0, sizeof(g_ppu_ram));
+
+    write_be32(g_ppu_ram + 0, 0x38600001u);  // addi r3, r0, 1
+    write_be32(g_ppu_ram + 4, 0x38800002u);  // addi r4, r0, 2
+    write_be32(g_ppu_ram + 8, 0x7CA32214u);  // add  r5, r3, r4
+    write_be32(g_ppu_ram + 12, 0x48000000u); // b .
+
+    ppu::Context ctx{};
+    ppu::init(&ctx);
+    ctx.read32 = ppu_read32;
+    ctx.write32 = ppu_write32;
+    ctx.pc = 0;
+
+    (void)ppu::run(&ctx, 3);
+
+    const bool ok = (ctx.gpr[3] == 1) && (ctx.gpr[4] == 2) && (ctx.gpr[5] == 3);
+
+    log::write(ok ? log::Level::Info : log::Level::Warn, "ps3-ppu",
+               "PPU self-test: r3=%llu r4=%llu r5=%llu (expected 1/2/3)",
+               static_cast<unsigned long long>(ctx.gpr[3]),
+               static_cast<unsigned long long>(ctx.gpr[4]),
+               static_cast<unsigned long long>(ctx.gpr[5]));
+}
+
+// spu::Context is ~262 KiB (128 regs + 256 KiB local store + mailboxes).
+// Allocating it on the BSP stack overflows; it must live in .bss.
+// test_ppu, test_dma, and jit::self_test all use small contexts (< 1 KiB)
+// and can stay on the stack.
+static spu::Context g_spu_ctx;
+
+void test_spu() noexcept
+{
+    spu::init(&g_spu_ctx);
+
+    write_be32(g_spu_ctx.local_store + 0, static_cast<u32>(0x105u << 21) | (1u << 7));
+    write_be32(g_spu_ctx.local_store + 4, static_cast<u32>(0x105u << 21) | (2u << 7) | 7u);
+    write_be32(g_spu_ctx.local_store + 8,
+               static_cast<u32>(0x100u << 21) | (3u << 7) | (1u << 14) | (2u << 21));
+    write_be32(g_spu_ctx.local_store + 12, static_cast<u32>(0x106u << 21) | (3u << 14));
+    write_be32(g_spu_ctx.local_store + 16, static_cast<u32>(0x001u << 21));
+
+    const u64 steps = spu::run(&g_spu_ctx, 32);
+
+    u32 got = 0;
+    (void)spu::mailbox_pop_outbound(&g_spu_ctx, &got);
+
+    const bool ok = (steps == 5) && (got == 12) && g_spu_ctx.halted;
+
+    log::write(ok ? log::Level::Info : log::Level::Warn, "ps3-spu",
+               "SPU self-test: steps=%llu out=%llu (expected 5, 12)",
+               static_cast<unsigned long long>(steps), static_cast<unsigned long long>(got));
+
+    spu::init(&g_spu_ctx);
+    spu::mailbox_push_inbound(&g_spu_ctx, 0xAA);
+    spu::mailbox_push_inbound(&g_spu_ctx, 0xBB);
+    spu::mailbox_push_inbound(&g_spu_ctx, 0xCC);
+    const u32 rd[] = {g_spu_ctx.inbound.items[0], g_spu_ctx.inbound.items[1],
+                      g_spu_ctx.inbound.items[2]};
+    const bool fifo_ok = (rd[0] == 0xAA) && (rd[1] == 0xBB) && (rd[2] == 0xCC);
+    log::write(fifo_ok ? log::Level::Info : log::Level::Warn, "ps3-spu",
+               "SPU mailbox FIFO test: %s", fifo_ok ? "pass" : "fail");
+}
+
+void test_dma() noexcept
+{
+    static u8 main_mem[512];
+    static u8 local_mem[512];
+    libk::memset(main_mem, 0, sizeof(main_mem));
+    libk::memset(local_mem, 0, sizeof(local_mem));
+
+    for (u32 i = 0; i < 512; ++i)
+        main_mem[i] = static_cast<u8>(i & 0xFF);
+
+    dma::Engine eng{};
+    dma::init(&eng);
+    dma::set_backing(&eng, main_mem, sizeof(main_mem));
+
+    const bool queued = dma::queue(&eng, /*tag=*/1, dma::Dir::MainToLocal,
+                                   /*main_addr=*/0,
+                                   /*ls_addr=*/0,
+                                   /*size=*/256, local_mem, sizeof(local_mem));
+    if (!queued)
+    {
+        log::write(log::Level::Warn, "ps3-dma", "queue failed");
         return;
     }
 
-    log::write(log::Level::Info, "ps3",
-        "self-test: parsed entry=0x%llx, %u segments declared",
-        static_cast<unsigned long long>(prog.entry),
-        static_cast<unsigned long long>(prog.phnum));
+    const u32 completed = dma::drain(&eng, 8);
+    const bool copy_ok = (completed == 1);
+    bool match = copy_ok;
+    if (copy_ok)
+    {
+        for (u32 i = 0; i < 256; ++i)
+        {
+            if (local_mem[i] != main_mem[i])
+            {
+                match = false;
+                break;
+            }
+        }
+    }
+    log::write(match ? log::Level::Info : log::Level::Warn, "ps3-dma",
+               "DMA main->local: %s (%u completed)", match ? "pass" : "fail",
+               static_cast<unsigned long long>(completed));
+
+    for (u32 i = 0; i < 256; ++i)
+        local_mem[i] = static_cast<u8>(0xFF - (i & 0xFF));
+    (void)dma::queue(&eng, /*tag=*/2, dma::Dir::LocalToMain,
+                     /*main_addr=*/256,
+                     /*ls_addr=*/0,
+                     /*size=*/256, local_mem, sizeof(local_mem));
+    (void)dma::drain(&eng, 8);
+
+    bool match2 = true;
+    for (u32 i = 0; i < 256; ++i)
+    {
+        if (main_mem[256 + i] != local_mem[i])
+        {
+            match2 = false;
+            break;
+        }
+    }
+    log::write(match2 ? log::Level::Info : log::Level::Warn, "ps3-dma", "DMA local->main: %s",
+               match2 ? "pass" : "fail");
+
+    dma::sync_barrier();
+    dma::atomic_fence();
+    log::write(log::Level::Info, "ps3-dma", "barrier + atomic fence: pass");
+}
+
+} // namespace
+
+void self_test() noexcept
+{
+    log::write(log::Level::Info, "ps3", "running self-tests");
+    test_decoder();
+    test_elf();
+    test_ppu();
+    test_spu();
+    test_dma();
+    jit::self_test();
+    log::write(log::Level::Info, "ps3", "self-tests complete");
 }
 
 } // namespace notyvos::ps3

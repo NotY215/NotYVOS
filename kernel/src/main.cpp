@@ -92,19 +92,21 @@ extern "C"
 #include <kernel/fs/nyfs.hpp>
 #include <kernel/fs/vfs.hpp>
 #include <kernel/gfx/api.hpp>
+#include <kernel/gfx/backend_vbe.hpp>
 #include <kernel/gfx/compositor.hpp>
 #include <kernel/gfx/hal.hpp>
 #include <kernel/log.hpp>
+#include <kernel/mm/exec_page.hpp>
 #include <kernel/mm/heap.hpp>
 #include <kernel/mm/pmm.hpp>
 #include <kernel/mm/vmm.hpp>
 #include <kernel/net/e1000.hpp>
 #include <kernel/panic.hpp>
 #include <kernel/proc/elf.hpp>
+#include <kernel/ps3/jit/jit.hpp>
+#include <kernel/ps3/self_test.hpp>
 #include <kernel/sched/scheduler.hpp>
 #include <kernel/types.hpp>
-#include <kernel/gfx/backend_vbe.hpp>
-#include <kernel/ps3/self_test.hpp>
 
 using namespace notyvos;
 
@@ -154,6 +156,7 @@ extern "C" [[noreturn]] void kernel_main()
     mm::PhysicalMemory::init(info.memmap, info.hhdm->offset);
     mm::VirtualMemory::init(info.hhdm->offset);
     mm::Heap::init();
+    mm::ExecArena::init();
 
     // ---- ACPI: RSDP comes from Limine, no memory scanning. ----
     if (rsdp_request.response)
@@ -212,7 +215,6 @@ extern "C" [[noreturn]] void kernel_main()
     // ---- Networking + Audio ----
     net::e1000_init();
     audio::hda_init();
-    ps3::self_test();
 
     // ---- SMP, per-CPU, LAPIC ----
     arch::x86_64::percpu_init_bsp();
@@ -260,6 +262,10 @@ extern "C" [[noreturn]] void kernel_main()
     gfx::register_software_backend();
     gfx::vbe_backend_init();
     gfx::Device::init();
+
+    // ---- PS3 runtime: JIT must be ready before self-tests run. ----
+    ps3::jit::init();
+    ps3::self_test();
 
     // ---- Scheduler + init ----
     sched::scheduler_init();

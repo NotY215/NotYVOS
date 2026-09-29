@@ -19,6 +19,7 @@ set(KERNEL_SOURCES
     src/mm/pmm.cpp
     src/mm/vmm.cpp
     src/mm/heap.cpp
+    src/mm/exec_page.cpp                    # NEW
     src/fs/vnode.cpp
     src/fs/file.cpp
     src/fs/vfs.cpp
@@ -27,6 +28,15 @@ set(KERNEL_SOURCES
     src/ps3/loader.cpp
     src/ps3/powerpc/decode.cpp
     src/ps3/self_test.cpp
+    src/ps3/ppu.cpp
+    src/ps3/dma.cpp
+    src/ps3/spu.cpp
+    src/ps3/jit/cache.cpp                   
+    src/ps3/jit/emitter.cpp                 
+    src/ps3/jit/jit.cpp                     
+    src/ps3/jit/jit_enter.S                 
+    src/ps3/jit/self_test.cpp
+    src/ps3/jit/translate.cpp 
     src/gpu/gpu.cpp
     src/gfx/hal.cpp
     src/gfx/api.cpp
@@ -70,7 +80,6 @@ set(KERNEL_SOURCES
     src/net/e1000.cpp
     src/audio/hda.cpp
     src/acpi/acpi.cpp
-    src/gpu/gpu.cpp
 )
 
 add_executable(notyvos-kernel ${KERNEL_SOURCES})

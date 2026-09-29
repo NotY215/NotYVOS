@@ -7,7 +7,7 @@ set VDI=F:\OwnApps\NotYVOS\build\notyvos.vdi
 
 if not exist "%ISO%" (
     echo ERROR: ISO not found at %ISO%
-    echo Build first in Visual Studio.
+    echo Build first: cmake --build --preset build-kernel-release
     pause
     exit /b 1
 )
@@ -21,23 +21,29 @@ echo Creating VM ...
 
 echo Configuring VM ...
 %VBOX% modifyvm %VM% --memory 2048 --cpus 1
+%VBOX% modifyvm %VM% --vram 64
+%VBOX% modifyvm %VM% --graphicscontroller vboxsvga
+%VBOX% modifyvm %VM% --accelerate-3d off
 %VBOX% modifyvm %VM% --firmware efi
-%VBOX% modifyvm %VM% --keyboard ps2
-%VBOX% modifyvm %VM% --mouse ps2
+%VBOX% modifyvm %VM% --chipset piix3
 %VBOX% modifyvm %VM% --ioapic off
 %VBOX% modifyvm %VM% --hpet on
 %VBOX% modifyvm %VM% --longmode on
 %VBOX% modifyvm %VM% --nestedpaging on
-%VBOX% modifyvm %VM% --nested-hw-virt on
-%VBOX% modifyvm %VM% --boot1 dvd --boot2 disk --boot3 none --boot4 none
-%VBOX% modifyvm %VM% --graphicscontroller vboxsvga
+%VBOX% modifyvm %VM% --keyboard ps2
+%VBOX% modifyvm %VM% --mouse ps2
 %VBOX% modifyvm %VM% --usb off
-%VBOX% modifyvm %VM% --audio none
+%VBOX% modifyvm %VM% --usb-xhci off
+%VBOX% modifyvm %VM% --usb-ehci off
+%VBOX% modifyvm %VM% --usb-ohci off
+%VBOX% modifyvm %VM% --audio-enabled off
+%VBOX% modifyvm %VM% --boot1 dvd --boot2 disk --boot3 none --boot4 none
+%VBOX% modifyvm %VM% --usb-card-reader off
 %VBOX% modifyvm %VM% --vrde off
 %VBOX% modifyvm %VM% --uart1 0x3F8 4
 %VBOX% modifyvm %VM% --uartmode1 tcpserver 2323
 
-echo Creating virtual hard disk ...
+echo Creating hard disk ...
 if not exist "%VDI%" (
     %VBOX% createhd --filename "%VDI%" --size 256 --format VDI
 )
@@ -48,6 +54,6 @@ echo Attaching storage ...
 %VBOX% storageattach %VM% --storagectl "SATA" --port 1 --device 0 --type dvddrive --medium "%ISO%"
 
 echo Done.
-echo Start with: VBox startvm %VM%
+echo Start with: VBox startvm %VM% --type gui
 pause
 endlocal

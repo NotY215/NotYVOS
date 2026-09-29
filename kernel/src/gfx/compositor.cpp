@@ -29,8 +29,6 @@ constexpr u32 kCellH = 8 * kScale;
 constexpr u32 kTaskbarH = 30;
 constexpr u32 kTitleH = 26;
 constexpr u32 kBorder = 1;
-constexpr u32 kBtnW = 20;
-constexpr u32 kBtnGap = 2;
 
 constexpr u32 kShortcutW = 120;
 constexpr u32 kShortcutH = 40;
@@ -39,23 +37,29 @@ constexpr u32 kCtxW = 180;
 constexpr u32 kCtxItemH = 24;
 constexpr u32 kCtxSepH = 6;
 
-constexpr u32 kBgTop = 0x00283046;
-constexpr u32 kBgBottom = 0x00182032;
-constexpr u32 kTitle = 0x003060A0;
-constexpr u32 kTitleOff = 0x00405060;
-constexpr u32 kTitleFg = 0x00FFFFFF;
-constexpr u32 kBorderFg = 0x00586078;
-constexpr u32 kClientBg = 0x00101018;
-constexpr u32 kTextFg = 0x00E0E0E0;
+// ---- NOTYVOS UI palette (Win11-style, macOS-influenced) ----
+constexpr u32 kBgTop = 0x00101018;
+constexpr u32 kBgBottom = 0x000A0A10;
+constexpr u32 kTaskbarBg = 0x001C1C22;
+constexpr u32 kTaskbarHi = 0x004C4C56;
+constexpr u32 kTitleOn = 0x00202028;
+constexpr u32 kTitleOff = 0x001A1A20;
+constexpr u32 kTitleFg = 0x00F2F2F4;
+constexpr u32 kTitleFgOff = 0x00808088;
+constexpr u32 kBorderFg = 0x00303038;
+constexpr u32 kBorderOn = 0x005A5A64;
+constexpr u32 kClientBg = 0x00181820;
+constexpr u32 kTextFg = 0x00E4E4E8;
+constexpr u32 kTextDim = 0x00909098;
 constexpr u32 kCursorFg = 0x00FFFFFF;
 constexpr u32 kCursorSh = 0x00000000;
-constexpr u32 kBtnClose = 0x00A03030;
-constexpr u32 kBtnMax = 0x00308050;
-constexpr u32 kBtnMin = 0x00807040;
-constexpr u32 kMenuBg = 0x00202838;
-constexpr u32 kMenuHi = 0x00406080;
-constexpr u32 kMenuFg = 0x00E0E0E0;
-constexpr u32 kMenuSep = 0x00586078;
+constexpr u32 kBtnClose = 0x00C42B1C;
+constexpr u32 kBtnHover = 0x00404048;
+constexpr u32 kAccent = 0x0060A0E8;
+constexpr u32 kMenuBg = 0x00242430;
+constexpr u32 kMenuHi = 0x00404050;
+constexpr u32 kMenuFg = 0x00E8E8EC;
+constexpr u32 kMenuSep = 0x00383840;
 
 enum class ShortcutKind : u8
 {
@@ -386,13 +390,10 @@ void scene_draw_desktop_icons()
     }
 }
 
-void scene_draw_taskbar()
+// Returns the on-screen x of the taskbar window-button cluster start.
+i32 taskbar_cluster_x()
 {
-    const i32 y0 = static_cast<i32>(g_h - kTaskbarH);
-    s_fill(0, y0, to_i32(g_w), static_cast<i32>(kTaskbarH), 0x00101018);
-
     const i32 center = to_i32(g_w) / 2;
-
     i32 cluster_w = 44 + 44;
     for (u32 i = 0; i < g_win_count; ++i)
     {
@@ -401,11 +402,21 @@ void scene_draw_taskbar()
         const u32 tw = static_cast<u32>(libk::strlen(g_windows[i].title)) * kCellW + 20;
         cluster_w += static_cast<i32>(tw) + 6;
     }
-    i32 x = center - cluster_w / 2;
+    return center - cluster_w / 2;
+}
 
+void scene_draw_taskbar()
+{
+    const i32 y0 = static_cast<i32>(g_h - kTaskbarH);
+    s_fill(0, y0, to_i32(g_w), static_cast<i32>(kTaskbarH), kTaskbarBg);
+
+    const i32 start_x = taskbar_cluster_x();
+    i32 x = start_x;
+
+    // ---- Start button (four squares) ----
     {
         const bool open = g_start_open;
-        const u32 bg = open ? 0x004080C0 : 0x00202028;
+        const u32 bg = open ? kAccent : 0x00202028;
         s_fill(x, y0 + 4, 36, static_cast<i32>(kTaskbarH) - 8, bg);
         for (i32 i = 0; i < 2; ++i)
         {
@@ -417,6 +428,7 @@ void scene_draw_taskbar()
         x += 44;
     }
 
+    // ---- Search box ----
     {
         const u32 bg = 0x00202028;
         s_fill(x, y0 + 4, 36, static_cast<i32>(kTaskbarH) - 8, bg);
@@ -432,22 +444,29 @@ void scene_draw_taskbar()
         x += 44;
     }
 
+    // ---- Window buttons with hover highlight ----
+    const i32 mx = arch::x86_64::mouse_x();
+    const i32 my = arch::x86_64::mouse_y();
+
     for (u32 i = 0; i < g_win_count; ++i)
     {
         if (!g_windows[i].visible)
             continue;
-        const u32 color = g_windows[i].focused ? 0x004080C0 : 0x00202028;
         const u32 tw = static_cast<u32>(libk::strlen(g_windows[i].title)) * kCellW + 20;
+        const bool hover = (mx >= x && mx < x + static_cast<i32>(tw) && my >= y0 + 4 &&
+                            my < y0 + static_cast<i32>(kTaskbarH) - 4);
+        const u32 color = g_windows[i].focused ? kAccent : hover ? kTaskbarHi : 0x00202028;
         s_fill(x, y0 + 4, static_cast<i32>(tw), static_cast<i32>(kTaskbarH) - 8, color);
         if (g_windows[i].focused)
         {
             s_fill(x + 8, y0 + static_cast<i32>(kTaskbarH) - 4, static_cast<i32>(tw) - 16, 2,
-                   0x0060A0D0);
+                   0x00A0D0FF);
         }
         s_text(x + 10, y0 + 8, g_windows[i].title, 0x00FFFFFF, color);
         x += static_cast<i32>(tw) + 6;
     }
 
+    // ---- Tray on far right ----
     const i32 tray_x = to_i32(g_w) - 130;
 
     for (i32 k = 0; k < 3; ++k)
@@ -470,7 +489,7 @@ void scene_draw_taskbar()
         buf[n++] = ':';
         push2(mm);
         buf[n] = 0;
-        s_text(tray_x + 68, y0 + 4, buf, 0x00F0F0F0, 0x00101018);
+        s_text(tray_x + 68, y0 + 4, buf, 0x00F0F0F0, kTaskbarBg);
     }
 
     {
@@ -488,7 +507,7 @@ void scene_draw_taskbar()
         buf[n++] = '/';
         push2(2026 % 100);
         buf[n] = 0;
-        s_text(tray_x + 68, y0 + 16, buf, 0x00C0C0C0, 0x00101018);
+        s_text(tray_x + 68, y0 + 16, buf, 0x00C0C0C0, kTaskbarBg);
     }
 }
 
@@ -506,8 +525,8 @@ void scene_draw_start_menu()
     const i32 mx = to_i32(g_w) / 2 - menu_w / 2;
     const i32 my = y0 - menu_h;
 
-    s_fill(mx, my, menu_w, menu_h, 0x00202838);
-    s_rect(mx, my, menu_w, menu_h, 0x00586078);
+    s_fill(mx, my, menu_w, menu_h, kMenuBg);
+    s_rect(mx, my, menu_w, menu_h, kMenuSep);
 
     s_fill(mx + 1, my + 1, menu_w - 2, header_h - 2, 0x001A2030);
     for (i32 i = 0; i < 16; ++i)
@@ -517,7 +536,7 @@ void scene_draw_start_menu()
             const bool corner =
                 (i < 3 && j < 3) || (i < 3 && j > 12) || (i > 12 && j < 3) || (i > 12 && j > 12);
             if (!corner)
-                s_fill(mx + 12 + i, my + 10 + j, 1, 1, 0x0060A0D0);
+                s_fill(mx + 12 + i, my + 10 + j, 1, 1, kAccent);
         }
     }
     s_text(mx + 40, my + 10, "NOTYVOS user", 0x00FFFFFF, 0x001A2030);
@@ -529,10 +548,10 @@ void scene_draw_start_menu()
     for (u32 i = 0; i < 6; ++i)
     {
         const bool hover = (static_cast<i32>(i) == g_hover_menu);
-        const u32 bg = hover ? 0x00406080 : 0x00202838;
+        const u32 bg = hover ? kMenuHi : kMenuBg;
         if (hover)
             s_fill(mx + 4, cy, menu_w - 8, item_h - 4, bg);
-        s_text(mx + 20, cy + 12, items[i], 0x00E0E0E0, bg);
+        s_text(mx + 20, cy + 12, items[i], kMenuFg, bg);
 
         s_fill(mx + menu_w - 26, cy + 16, 8, 2, 0x00A0A0A0);
         s_fill(mx + menu_w - 22, cy + 18, 2, 4, 0x00A0A0A0);
@@ -682,35 +701,96 @@ void scene_draw_window_content(const Window& win, i32 gx, i32 gy, i32 gw, i32 gh
     s_text(gx + 12, gy + 12, win.title, kTextFg, kClientBg);
 }
 
+// Clear a 2x2 corner by drawing the desktop background colour over it.
+void clear_corner(i32 x, i32 y)
+{
+    if (x < 0 || y < 0 || x >= to_i32(g_w) || y >= to_i32(g_h))
+        return;
+    s_fill(x, y, 1, 1, kBgBottom);
+}
+
 void scene_draw_window(const Window& win)
 {
     if (!win.visible || win.minimized)
         return;
-    const u32 title = win.focused ? kTitle : kTitleOff;
 
+    const u32 title = win.focused ? kTitleOn : kTitleOff;
+    const u32 titleFg = win.focused ? kTitleFg : kTitleFgOff;
+    const u32 border = win.focused ? kBorderOn : kBorderFg;
+
+    // ---- Outer border (uses kBorder for thickness) ----
     s_fill(win.x - static_cast<i32>(kBorder), win.y - static_cast<i32>(kBorder),
-           win.w + static_cast<i32>(kBorder) * 2, win.h + static_cast<i32>(kBorder) * 2, kBorderFg);
+           win.w + static_cast<i32>(kBorder) * 2, static_cast<i32>(kBorder), border);
+    s_fill(win.x - static_cast<i32>(kBorder), win.y + win.h, win.w + static_cast<i32>(kBorder) * 2,
+           static_cast<i32>(kBorder), border);
+    s_fill(win.x - static_cast<i32>(kBorder), win.y, static_cast<i32>(kBorder), win.h, border);
+    s_fill(win.x + win.w, win.y, static_cast<i32>(kBorder), win.h, border);
+
+    // Rounded corners: 2x2 cut on each.
+    clear_corner(win.x - static_cast<i32>(kBorder), win.y - static_cast<i32>(kBorder));
+    clear_corner(win.x + win.w, win.y - static_cast<i32>(kBorder));
+    clear_corner(win.x - static_cast<i32>(kBorder), win.y + win.h);
+    clear_corner(win.x + win.w, win.y + win.h);
+
+    // ---- Title bar ----
     s_fill(win.x, win.y, win.w, static_cast<i32>(kTitleH), title);
-    s_text(win.x + 8, win.y + static_cast<i32>((kTitleH - kCellH) / 2), win.title, kTitleFg, title);
+    if (win.focused)
+    {
+        s_fill(win.x, win.y, win.w, 2, kAccent);
+    }
 
-    const i32 btn_y = win.y + (static_cast<i32>(kTitleH) - 16) / 2;
-    const i32 bx_close = win.x + win.w - 4 - static_cast<i32>(kBtnW);
-    const i32 bx_max = bx_close - static_cast<i32>(kBtnW) - static_cast<i32>(kBtnGap);
-    const i32 bx_min = bx_max - static_cast<i32>(kBtnW) - static_cast<i32>(kBtnGap);
+    // Unfocused windows print their title with kTextDim for clarity that
+    // they are not active. Focused windows use full-brightness title text.
+    s_text(win.x + 10, win.y + static_cast<i32>((kTitleH - kCellH) / 2), win.title, titleFg, title);
+    (void)kTextDim; // reserved for future use; kept to avoid -Wunused.
 
-    s_fill(bx_close, btn_y, static_cast<i32>(kBtnW), 16, kBtnClose);
-    s_fill(bx_max, btn_y, static_cast<i32>(kBtnW), 16, kBtnMax);
-    s_fill(bx_min, btn_y, static_cast<i32>(kBtnW), 16, kBtnMin);
+    // ---- Title bar buttons (Win11-style, right-aligned) ----
+    const i32 btn_y = win.y + 1;
+    const i32 btn_h = static_cast<i32>(kTitleH) - 2;
+    const i32 btn_w = 32;
 
-    s_fill(bx_close + 5, btn_y + 4, 2, 8, kTitleFg);
-    s_fill(bx_close + 11, btn_y + 4, 2, 8, kTitleFg);
-    s_fill(bx_close + 5, btn_y + 4, 8, 2, kTitleFg);
-    s_fill(bx_close + 5, btn_y + 10, 8, 2, kTitleFg);
+    const i32 bx_close = win.x + win.w - btn_w;
+    const i32 bx_max = bx_close - btn_w;
+    const i32 bx_min = bx_max - btn_w;
 
-    s_rect(bx_max + 5, btn_y + 4, 10, 8, kTitleFg);
+    const i32 mx = arch::x86_64::mouse_x();
+    const i32 my = arch::x86_64::mouse_y();
 
-    s_fill(bx_min + 5, btn_y + 7, 10, 2, kTitleFg);
+    const bool close_hover =
+        (mx >= bx_close && mx < bx_close + btn_w && my >= btn_y && my < btn_y + btn_h);
+    s_fill(bx_close, btn_y, btn_w, btn_h, close_hover ? kBtnClose : title);
+    {
+        const i32 gx = bx_close + btn_w / 2 - 5;
+        const i32 gy = btn_y + btn_h / 2 - 5;
+        for (i32 i = 0; i < 10; ++i)
+        {
+            s_fill(gx + i, gy + i, 1, 1, 0x00F0F0F0);
+            s_fill(gx + 9 - i, gy + i, 1, 1, 0x00F0F0F0);
+        }
+    }
 
+    const bool max_hover =
+        (mx >= bx_max && mx < bx_max + btn_w && my >= btn_y && my < btn_y + btn_h);
+    s_fill(bx_max, btn_y, btn_w, btn_h, max_hover ? kBtnHover : title);
+    {
+        const i32 gx = bx_max + btn_w / 2 - 5;
+        const i32 gy = btn_y + btn_h / 2 - 5;
+        s_fill(gx, gy, 11, 1, 0x00F0F0F0);
+        s_fill(gx, gy + 10, 11, 1, 0x00F0F0F0);
+        s_fill(gx, gy, 1, 11, 0x00F0F0F0);
+        s_fill(gx + 10, gy, 1, 11, 0x00F0F0F0);
+    }
+
+    const bool min_hover =
+        (mx >= bx_min && mx < bx_min + btn_w && my >= btn_y && my < btn_y + btn_h);
+    s_fill(bx_min, btn_y, btn_w, btn_h, min_hover ? kBtnHover : title);
+    {
+        const i32 gx = bx_min + btn_w / 2 - 5;
+        const i32 gy = btn_y + btn_h / 2;
+        s_fill(gx, gy, 11, 1, 0x00F0F0F0);
+    }
+
+    // ---- Client area ----
     s_fill(win.x, win.y + static_cast<i32>(kTitleH), win.w, win.h - static_cast<i32>(kTitleH),
            kClientBg);
 
@@ -763,17 +843,21 @@ bool hit_title_bar(const Window& w, i32 mx, i32 my)
 
 i32 hit_title_button(const Window& w, i32 mx, i32 my)
 {
-    if (my < w.y + (static_cast<i32>(kTitleH) - 16) / 2 ||
-        my >= w.y + (static_cast<i32>(kTitleH) + 16) / 2)
+    if (my < w.y + 1)
         return 0;
-    const i32 bx_close = w.x + w.w - 4 - static_cast<i32>(kBtnW);
-    const i32 bx_max = bx_close - static_cast<i32>(kBtnW) - static_cast<i32>(kBtnGap);
-    const i32 bx_min = bx_max - static_cast<i32>(kBtnW) - static_cast<i32>(kBtnGap);
-    if (mx >= bx_close && mx < bx_close + static_cast<i32>(kBtnW))
+    if (my >= w.y + static_cast<i32>(kTitleH) - 1)
+        return 0;
+
+    const i32 btn_w = 32;
+    const i32 bx_close = w.x + w.w - btn_w;
+    const i32 bx_max = bx_close - btn_w;
+    const i32 bx_min = bx_max - btn_w;
+
+    if (mx >= bx_close && mx < bx_close + btn_w)
         return 1;
-    if (mx >= bx_max && mx < bx_max + static_cast<i32>(kBtnW))
+    if (mx >= bx_max && mx < bx_max + btn_w)
         return 2;
-    if (mx >= bx_min && mx < bx_min + static_cast<i32>(kBtnW))
+    if (mx >= bx_min && mx < bx_min + btn_w)
         return 3;
     return 0;
 }
@@ -781,18 +865,7 @@ i32 hit_title_button(const Window& w, i32 mx, i32 my)
 bool hit_start_button(i32 mx, i32 my)
 {
     const i32 y0 = static_cast<i32>(g_h - kTaskbarH);
-    const i32 center = to_i32(g_w) / 2;
-
-    i32 cluster_w = 88;
-    for (u32 i = 0; i < g_win_count; ++i)
-    {
-        if (!g_windows[i].visible)
-            continue;
-        const u32 tw = static_cast<u32>(libk::strlen(g_windows[i].title)) * kCellW + 20;
-        cluster_w += static_cast<i32>(tw) + 6;
-    }
-    const i32 start_x = center - cluster_w / 2;
-
+    const i32 start_x = taskbar_cluster_x();
     return mx >= start_x && mx < start_x + 36 && my >= y0 + 4 &&
            my < y0 + static_cast<i32>(kTaskbarH) - 4;
 }
@@ -1276,16 +1349,8 @@ void on_mouse_tick()
             const i32 ty = to_i32(g_h) - static_cast<i32>(kTaskbarH);
             if (my >= ty && my < to_i32(g_h))
             {
-                const i32 center = to_i32(g_w) / 2;
-                i32 cluster_w = 88;
-                for (u32 i = 0; i < g_win_count; ++i)
-                {
-                    if (!g_windows[i].visible)
-                        continue;
-                    const u32 tw = static_cast<u32>(libk::strlen(g_windows[i].title)) * kCellW + 20;
-                    cluster_w += static_cast<i32>(tw) + 6;
-                }
-                i32 bx = center - cluster_w / 2 + 88;
+                const i32 start_x = taskbar_cluster_x();
+                i32 bx = start_x + 88;
                 for (u32 i = 0; i < g_win_count; i++)
                 {
                     if (!g_windows[i].visible)
