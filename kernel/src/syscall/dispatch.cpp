@@ -103,12 +103,13 @@ i64 sys_read_stdin(u64 ubuf, u64 len)
     usize got = 0;
     while (got < len)
     {
-        // Paint the desktop while we wait. This is the only place the
-        // compositor gets driven when the shell is idle.
+        // Drive the compositor while we wait for input.
         gfx::Compositor::tick();
+
         while (!arch::x86_64::keyboard_has_data())
         {
             asm volatile("sti; hlt");
+            gfx::Compositor::tick();
             while (arch::x86_64::keyboard_poll())
             {
             }
@@ -121,10 +122,44 @@ i64 sys_read_stdin(u64 ubuf, u64 len)
                 arch::x86_64::keyboard_inject(c);
             }
         }
+
         i32 c = arch::x86_64::keyboard_pop();
         if (c < 0)
             continue;
         char ch = static_cast<char>(c);
+
+        // Special keys handled internally by the kernel.
+        if (ch == arch::x86_64::kKeyUp)
+        {
+            gfx::Compositor::term_scroll_by(+1);
+            continue;
+        }
+        if (ch == arch::x86_64::kKeyDown)
+        {
+            gfx::Compositor::term_scroll_by(-1);
+            continue;
+        }
+        if (ch == arch::x86_64::kKeyPgUp)
+        {
+            gfx::Compositor::term_scroll_by(+10);
+            continue;
+        }
+        if (ch == arch::x86_64::kKeyPgDn)
+        {
+            gfx::Compositor::term_scroll_by(-10);
+            continue;
+        }
+        if (ch == arch::x86_64::kKeyHome)
+        {
+            gfx::Compositor::term_scroll_bottom();
+            continue;
+        }
+        if (ch == arch::x86_64::kKeyLeft)
+            continue;
+        if (ch == arch::x86_64::kKeyRight)
+            continue;
+        if (ch == arch::x86_64::kKeyEnd)
+            continue;
 
         if (ch == '\b' || ch == 127)
         {

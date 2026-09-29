@@ -167,7 +167,7 @@ void mouse_irq_handler() noexcept
                 g_y = H - 1;
         }
 
-        if (g_packet_count < 3)
+        if (g_packet_count < 20)
         {
             log::write(log::Level::Warn, "mouse",
                        "packet #%llu flags=0x%llx dx=%d dy=%d at (%d,%d)",

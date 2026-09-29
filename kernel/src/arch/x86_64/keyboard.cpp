@@ -27,11 +27,11 @@ const char kMapShift[128] = {0,    27,   '!', '@', '#', '$', '%', '^', '&', '*',
 
 bool g_shift = false;
 bool g_ctrl = false;
+bool g_extended = false;
 volatile u8 g_buf[kBufSize];
 volatile u32 g_head = 0;
 volatile u32 g_tail = 0;
 u64 g_key_count = 0;
-u64 g_irq_count = 0;
 
 inline void push_char(char c)
 {
@@ -85,21 +85,64 @@ void flush_output() noexcept
     }
 }
 
-// Send a byte to the aux (mouse) device via the i8042.
-// Waits for the mouse's ACK on the data port.
 void mouse_write(u8 byte) noexcept
 {
     write_cmd(0xD4);
     write_data(byte);
-    // Mouse ACKs with 0xFA.
     if (wait_output_full(500000))
         (void)inb(kDataPort);
 }
 
 void process_scancode(u8 sc)
 {
-    if (sc == 0xFA || sc == 0xE0 || sc == 0xE1)
+    // Discard ACKs, extended prefixes are handled below.
+    if (sc == 0xFA)
         return;
+
+    // Extended prefix (E0) — the next byte is a special key.
+    if (sc == 0xE0)
+    {
+        g_extended = true;
+        return;
+    }
+
+    if (g_extended)
+    {
+        g_extended = false;
+        // Make/break both go through here; break has bit 7 set.
+        const bool release = (sc & 0x80) != 0;
+        if (release)
+            return;
+        switch (sc)
+        {
+        case 0x48:
+            push_char(kKeyUp);
+            return;
+        case 0x50:
+            push_char(kKeyDown);
+            return;
+        case 0x4B:
+            push_char(kKeyLeft);
+            return;
+        case 0x4D:
+            push_char(kKeyRight);
+            return;
+        case 0x47:
+            push_char(kKeyHome);
+            return;
+        case 0x4F:
+            push_char(kKeyEnd);
+            return;
+        case 0x49:
+            push_char(kKeyPgUp);
+            return;
+        case 0x51:
+            push_char(kKeyPgDn);
+            return;
+        default:
+            return;
+        }
+    }
 
     if (sc == 0x1D)
     {
@@ -137,7 +180,7 @@ void process_scancode(u8 sc)
         return;
     }
 
-    if (g_key_count < 4)
+    if (g_key_count < 20)
     {
         log::write(log::Level::Warn, "kbd", "key #%llu sc=0x%llx -> '%c'",
                    static_cast<unsigned long long>(g_key_count),
@@ -153,10 +196,8 @@ bool keyboard_init() noexcept
 {
     log::write(log::Level::Info, "kbd", "init start");
 
-    // 1. Flush anything pending.
     flush_output();
 
-    // 2. Read the config byte that firmware already set up.
     write_cmd(0x20);
     u8 cfg = 0;
     if (wait_output_full(500000))
@@ -164,11 +205,6 @@ bool keyboard_init() noexcept
     log::write(log::Level::Info, "kbd", "firmware cfg = 0x%llx",
                static_cast<unsigned long long>(cfg));
 
-    // 3. Build the target config:
-    //    Enable IRQ1 (bit 0), IRQ12 (bit 1), translation (bit 6).
-    //    Enable keyboard clock (clear bit 4).
-    //    Leave the mouse clock bit (bit 5) as firmware had it for now.
-    //    It will be cleared by mouse_init.
     u8 target = cfg;
     target |= 0x01;
     target |= 0x02;
@@ -191,18 +227,15 @@ bool keyboard_init() noexcept
         log::write(log::Level::Info, "kbd", "cfg unchanged");
     }
 
-    // 4. Enable keyboard scanning. Expect 0xFA ACK.
     write_data(0xF4);
     u8 ack = 0;
     if (wait_output_full(500000))
         ack = inb(kDataPort);
     log::write(log::Level::Info, "kbd", "0xF4 -> 0x%llx", static_cast<unsigned long long>(ack));
 
-    // 5. Enable the aux (mouse) port.
     write_cmd(0xA8);
     log::write(log::Level::Info, "kbd", "aux port enabled");
 
-    // 6. Mouse: set defaults, enable reporting.
     mouse_write(0xF6);
     mouse_write(0xF4);
     log::write(log::Level::Info, "kbd", "mouse init sent");
@@ -212,13 +245,12 @@ bool keyboard_init() noexcept
 
 void keyboard_irq_handler() noexcept
 {
-    ++g_irq_count;
     while (inb(kStatusPort) & 0x01)
     {
         const u8 st = inb(kStatusPort);
         const u8 byte = inb(kDataPort);
         if (st & 0x20)
-            continue; // mouse byte
+            continue;
         process_scancode(byte);
     }
 }

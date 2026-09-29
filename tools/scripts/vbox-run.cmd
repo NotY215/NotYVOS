@@ -32,6 +32,11 @@ echo   waiting ... (%__TRIES%/30)
 goto WAITLOOP
 
 :PORTUP
-echo Serial port up. Starting console ...
-pwsh -ExecutionPolicy Bypass -File "%ROOT%\tools\scripts\vbox-serial.ps1"
+echo Serial port up.
+echo Opening serial console in a separate window ...
+start "NOTYVOS Serial" pwsh -ExecutionPolicy Bypass -NoExit -File "%ROOT%\tools\scripts\vbox-serial.ps1"
+
+echo.
+echo VM is running. CLICK ONCE INSIDE THE VM WINDOW before typing.
+echo This CMD window can now be closed or minimized.
 endlocal

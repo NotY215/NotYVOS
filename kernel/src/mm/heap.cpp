@@ -12,7 +12,7 @@ namespace
 {
 
 // NOTE: kPageSize is defined in paging.hpp and is not redefined here.
-constexpr usize kHeapSize = 16 * 1024 * 1024;       // 16 MB
+constexpr usize kHeapSize = 64 * 1024 * 1024;
 constexpr usize kHeapPages = kHeapSize / kPageSize; // 4096 pages
 constexpr usize kHeaderSize = 16;                   // 8 used + 8 pad
 constexpr uptr kHeapVirt = 0xffffffffC0000000ULL;   // kernel VA base

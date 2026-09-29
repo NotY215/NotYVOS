@@ -127,28 +127,21 @@ void handle_irq(u8 irq, InterruptFrame* /*f*/) noexcept
     {
         pit_on_tick();
         sched::scheduler_tick();
-
-        // Repaint at 20 Hz from the timer, plus on every mouse event.
-        // This keeps the taskbar clock fresh and the terminal scrolling.
+        // Mark the clock dirty. The actual repaint happens in the idle loop.
         static u32 tick_div = 0;
-        if (++tick_div >= 5)
-        {
+        if (++tick_div >= 25)
+        { // once per 250 ms
             tick_div = 0;
             gfx::Compositor::update_clock(pit_ticks() / 100);
-            gfx::Compositor::tick();
         }
     }
     else if (irq == 1)
     {
         keyboard_irq_handler();
-        // Terminal text changes on keystrokes. Repaint now.
-        gfx::Compositor::tick();
     }
     else if (irq == 12)
     {
         mouse_irq_handler();
-        // Repaint on every mouse packet batch so the cursor is live.
-        gfx::Compositor::tick();
     }
 }
 
