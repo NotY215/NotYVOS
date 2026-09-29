@@ -53,3 +53,32 @@ int memcmp(const void* a, const void* b, usize n) noexcept
 }
 
 } // namespace notyvos::libk
+
+// ---------------------------------------------------------------------------
+// Freestanding C-linkage wrappers.
+//
+// Under -ffreestanding Clang may emit calls to the standard symbols
+// memset, memcpy, memmove, memcmp for large struct zero-inits and
+// aggregate copies. Those reference the bare C name, not libk::*.
+// Without these definitions the link fails with "undefined symbol: memset".
+// ---------------------------------------------------------------------------
+
+extern "C" void* memset(void* dst, int c, notyvos::usize n) noexcept
+{
+    return notyvos::libk::memset(dst, c, n);
+}
+
+extern "C" void* memcpy(void* dst, const void* src, notyvos::usize n) noexcept
+{
+    return notyvos::libk::memcpy(dst, src, n);
+}
+
+extern "C" void* memmove(void* dst, const void* src, notyvos::usize n) noexcept
+{
+    return notyvos::libk::memmove(dst, src, n);
+}
+
+extern "C" int memcmp(const void* a, const void* b, notyvos::usize n) noexcept
+{
+    return notyvos::libk::memcmp(a, b, n);
+}

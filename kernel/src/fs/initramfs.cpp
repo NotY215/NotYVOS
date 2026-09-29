@@ -55,7 +55,16 @@ isize mem_read(VNode* n, void* buf, usize off, usize len)
 {
     auto* mf = static_cast<MemFile*>(n->priv);
     if (!mf)
+    {
+        log::write(log::Level::Warn, "mem_read", "%s: no priv", n->name);
         return -1;
+    }
+    if (off == 0)
+    {
+        log::write(log::Level::Info, "mem_read", "%s size=%llu data=0x%llx", n->name,
+                   static_cast<unsigned long long>(mf->size),
+                   static_cast<unsigned long long>(reinterpret_cast<uptr>(mf->data)));
+    }
     if (off >= mf->size)
         return 0;
     usize avail = mf->size - off;
@@ -63,11 +72,13 @@ isize mem_read(VNode* n, void* buf, usize off, usize len)
     libk::memcpy(buf, mf->data + off, n_copy);
     return static_cast<isize>(n_copy);
 }
+
 isize mem_size(VNode* n)
 {
     auto* mf = static_cast<MemFile*>(n->priv);
     return mf ? static_cast<isize>(mf->size) : 0;
 }
+
 isize dir_readdir(VNode* n, usize idx, DirEntry* out)
 {
     usize i = 0;

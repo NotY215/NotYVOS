@@ -15,4 +15,12 @@ Task* scheduler_current() noexcept;
 void scheduler_set_current(Task* t) noexcept;
 u64 scheduler_task_count() noexcept;
 
+// Sleep support (2L).
+void scheduler_sleep_until(u64 tick) noexcept;
+u64 scheduler_uptime_ticks() noexcept;
+void scheduler_wake_expired() noexcept;
+
+// SIGINT delivery (2N).
+void scheduler_deliver_sigint();
+
 } // namespace notyvos::sched

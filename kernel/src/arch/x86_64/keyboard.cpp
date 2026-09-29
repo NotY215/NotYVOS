@@ -1,6 +1,7 @@
 #include <kernel/arch/x86_64/io.hpp>
 #include <kernel/arch/x86_64/keyboard.hpp>
 #include <kernel/log.hpp>
+#include <kernel/sched/scheduler.hpp>
 
 namespace notyvos::arch::x86_64
 {
@@ -25,6 +26,7 @@ const char kMapShift[128] = {0,    27,   '!', '@', '#', '$', '%', '^', '&', '*',
                              0,    ' ',  0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0};
 
 bool g_shift = false;
+bool g_ctrl = false;
 volatile u8 g_buf[kBufSize];
 volatile u32 g_head = 0;
 volatile u32 g_tail = 0;
@@ -95,6 +97,19 @@ void process_scancode(u8 sc)
 
     if (sc == 0xFA || sc == 0xE0 || sc == 0xE1)
         return;
+
+    // Ctrl press / release.
+    if (sc == 0x1D)
+    {
+        g_ctrl = true;
+        return;
+    }
+    if (sc == 0x9D)
+    {
+        g_ctrl = false;
+        return;
+    }
+
     if (sc & 0x80)
     {
         const u8 code = static_cast<u8>(sc & 0x7F);
@@ -113,6 +128,14 @@ void process_scancode(u8 sc)
     if (c == 0)
         return;
 
+    // Ctrl+C sends SIGINT to the currently running user task.
+    if (g_ctrl && (c == 'c' || c == 'C'))
+    {
+        log::write(log::Level::Info, "kbd", "Ctrl+C pressed");
+        sched::scheduler_deliver_sigint();
+        return;
+    }
+
     if (g_total_scancodes < 8)
     {
         log::write(log::Level::Warn, "kbd", "key #%llu: 0x%llx -> '%c'",
@@ -129,11 +152,8 @@ bool keyboard_init() noexcept
 {
     log::write(log::Level::Info, "kbd", "starting minimal PS/2 init");
 
-    // Drain anything VirtualBox left in the buffer.
     flush_output();
 
-    // Read the config byte that VirtualBox set up. Do not modify the
-    // IRQ and clock bits unless the IRQ is off.
     write_cmd(0x20);
     u8 cfg = 0;
     if (!wait_output_full(500000))
@@ -147,19 +167,16 @@ bool keyboard_init() noexcept
 
     bool need_write = false;
 
-    // Enable IRQ1 if it is off.
     if ((cfg & 0x01) == 0)
     {
         cfg |= 0x01;
         need_write = true;
     }
-    // Enable translation if it is off (VirtualBox sends set 2 by default).
     if ((cfg & 0x40) == 0)
     {
         cfg |= 0x40;
         need_write = true;
     }
-    // Enable keyboard clock if it is off.
     if (cfg & 0x10)
     {
         cfg &= ~static_cast<u8>(0x10);
@@ -182,7 +199,6 @@ bool keyboard_init() noexcept
         log::write(log::Level::Info, "kbd", "cfg already correct, no write needed");
     }
 
-    // Send 0xF4 (Enable Scanning). Expect 0xFA ACK.
     write_data(0xF4);
     if (wait_output_full(500000))
     {
@@ -195,7 +211,6 @@ bool keyboard_init() noexcept
         log::write(log::Level::Warn, "kbd", "0xF4 timeout");
     }
 
-    // Final status read for the log.
     const u8 st = inb(kStatusPort);
     log::write(log::Level::Info, "kbd", "PS/2 init done. status=0x%llx",
                static_cast<unsigned long long>(st));

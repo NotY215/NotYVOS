@@ -198,30 +198,36 @@ ElfLoadResult load_elf(const void* image, usize size) noexcept
         }
     }
 
-    // Allocate a user stack page above the highest loaded VA.
+    // Allocate a 64 KiB user stack. One page was too small; the shell uses
+    // several hundred bytes per frame and 4 KB overflows on deep call chains.
     uptr stack_top_va = 0;
     if (hi != 0)
     {
-        const u64 stack_base = align_up(hi);
-        const uptr stack_phys = mm::PhysicalMemory::allocate_frame();
-        if (!stack_phys)
-        {
-            log::write(log::Level::Error, "elf", "stack alloc failed");
-            return res;
-        }
-        libk::memset(reinterpret_cast<u8*>(stack_phys + kHhdm), 0, kPageSize);
+        const u64 stack_lo = align_up(hi);
+        const u64 stack_pages = 16;
+        const u64 stack_hi = stack_lo + stack_pages * kPageSize;
 
         constexpr u64 kStackFlags =
             mm::page_flags::Present | mm::page_flags::Writable | mm::page_flags::User;
 
-        if (!install_pte(new_pml4, stack_base, stack_phys, kStackFlags, kMidFlags))
+        for (u64 i = 0; i < stack_pages; ++i)
         {
-            log::write(log::Level::Error, "elf", "stack pte install failed");
-            return res;
+            const uptr sp = mm::PhysicalMemory::allocate_frame();
+            if (!sp)
+            {
+                log::write(log::Level::Error, "elf", "stack alloc failed");
+                return res;
+            }
+            libk::memset(reinterpret_cast<void*>(sp + kHhdm), 0, kPageSize);
+            if (!install_pte(new_pml4, stack_lo + i * kPageSize, sp, kStackFlags, kMidFlags))
+            {
+                log::write(log::Level::Error, "elf", "stack pte install failed");
+                return res;
+            }
         }
-        stack_top_va = stack_base + kPageSize - 16;
-        if (hi < stack_base + kPageSize)
-            hi = stack_base + kPageSize;
+        stack_top_va = stack_hi - 16;
+        if (hi < stack_hi)
+            hi = stack_hi;
     }
 
     res.entry = eh->e_entry;

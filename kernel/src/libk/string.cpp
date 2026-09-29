@@ -65,3 +65,40 @@ char* strcat(char* dst, const char* src) noexcept
 }
 
 } // namespace notyvos::libk
+
+// ---------------------------------------------------------------------------
+// Freestanding C-linkage wrappers.
+//
+// Same reason as in mem.cpp: Clang may emit calls to the bare C symbols
+// for optimized string operations.
+// ---------------------------------------------------------------------------
+
+extern "C" notyvos::usize strlen(const char* s) noexcept
+{
+    return notyvos::libk::strlen(s);
+}
+
+extern "C" int strcmp(const char* a, const char* b) noexcept
+{
+    return notyvos::libk::strcmp(a, b);
+}
+
+extern "C" int strncmp(const char* a, const char* b, notyvos::usize n) noexcept
+{
+    return notyvos::libk::strncmp(a, b, n);
+}
+
+extern "C" char* strcpy(char* dst, const char* src) noexcept
+{
+    return notyvos::libk::strcpy(dst, src);
+}
+
+extern "C" char* strncpy(char* dst, const char* src, notyvos::usize n) noexcept
+{
+    return notyvos::libk::strncpy(dst, src, n);
+}
+
+extern "C" char* strcat(char* dst, const char* src) noexcept
+{
+    return notyvos::libk::strcat(dst, src);
+}

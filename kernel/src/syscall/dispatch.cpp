@@ -2,6 +2,7 @@
 #include <kernel/arch/x86_64/serial.hpp>
 #include <kernel/fb/console.hpp>
 #include <kernel/fs/file.hpp>
+#include <kernel/fs/nyfs.hpp>
 #include <kernel/fs/vfs.hpp>
 #include <kernel/libk/mem.hpp>
 #include <kernel/libk/string.hpp>
@@ -20,9 +21,6 @@
 namespace notyvos::syscall
 {
 
-// Frame pointer for the syscall currently being dispatched. Set at the top
-// of syscall_dispatch, cleared at the bottom. sys_exec uses it to rewrite
-// the return frame so iretq lands at the new program's entry point.
 SyscallFrame* g_current_frame = nullptr;
 
 namespace
@@ -48,6 +46,7 @@ i64 sys_write(u64 fd, u64 buf, u64 len)
         const u64 chunk = (len - done > sizeof(tmp)) ? sizeof(tmp) : (len - done);
         if (!copy_from_user(tmp, buf + done, static_cast<usize>(chunk)))
             return -1;
+
         if (fd == 1 || fd == 2)
         {
             for (u64 i = 0; i < chunk; ++i)
@@ -55,7 +54,17 @@ i64 sys_write(u64 fd, u64 buf, u64 len)
         }
         else
         {
-            return -1;
+            auto* cur = sched::scheduler_current();
+            if (!cur || !cur->files)
+                return -1;
+            auto* f = fs::filetable_get(cur->files, static_cast<i32>(fd));
+            if (!f || !f->vnode || !f->vnode->ops || !f->vnode->ops->write)
+                return -1;
+            const isize n =
+                f->vnode->ops->write(f->vnode, tmp, f->offset, static_cast<usize>(chunk));
+            if (n < 0)
+                return -1;
+            f->offset += static_cast<usize>(n);
         }
         done += chunk;
     }
@@ -423,6 +432,96 @@ i64 sys_brk_impl(u64 new_brk)
     return static_cast<i64>(cur->brk_current);
 }
 
+i64 sys_time_impl()
+{
+    return static_cast<i64>(sched::scheduler_uptime_ticks() * 10);
+}
+
+i64 sys_sleep_impl(u64 ms)
+{
+    if (ms == 0)
+        return 0;
+    const u64 ticks = (ms + 9) / 10;
+    const u64 deadline = sched::scheduler_uptime_ticks() + ticks;
+    sched::scheduler_sleep_until(deadline);
+    return static_cast<i64>(ms);
+}
+
+i64 sys_kill_impl(u64 pid, u64 sig)
+{
+    auto* t = sched::task_by_tid(static_cast<u32>(pid));
+    if (!t)
+        return -1;
+    switch (sig)
+    {
+    case 9:
+    case 15:
+        t->exit_code = -static_cast<i32>(sig);
+        t->state = sched::TaskState::Zombie;
+        log::write(log::Level::Info, "sig", "killed tid=%llu by sig=%llu",
+                   static_cast<unsigned long long>(pid), static_cast<unsigned long long>(sig));
+        break;
+    case 19:
+        t->state = sched::TaskState::Stopped;
+        break;
+    case 18:
+        if (t->state == sched::TaskState::Stopped)
+        {
+            t->state = sched::TaskState::Ready;
+        }
+        break;
+    default:
+        return -1;
+    }
+    return 0;
+}
+
+i64 sys_create_impl(u64 upath)
+{
+    log::write(log::Level::Info, "create", "upath=0x%llx", static_cast<unsigned long long>(upath));
+    char path[256];
+    if (!copy_from_user(path, upath, sizeof(path)))
+        return -1;
+    path[sizeof(path) - 1] = 0;
+
+    const char* name = path;
+    if (name[0] == '/')
+    {
+        const char prefix[] = "/disk/";
+        u32 i = 0;
+        while (prefix[i] && name[i] == prefix[i])
+            ++i;
+        if (prefix[i] == 0)
+            name += i;
+    }
+    if (!name[0])
+        return -1;
+    log::write(log::Level::Info, "create", "stripped name='%s'", name);
+    return fs::nyfs_create(name);
+}
+
+i64 sys_unlink_impl(u64 upath)
+{
+    char path[256];
+    if (!copy_from_user(path, upath, sizeof(path)))
+        return -1;
+    path[sizeof(path) - 1] = 0;
+
+    const char* name = path;
+    if (name[0] == '/')
+    {
+        const char prefix[] = "/disk/";
+        u32 i = 0;
+        while (prefix[i] && name[i] == prefix[i])
+            ++i;
+        if (prefix[i] == 0)
+            name += i;
+    }
+    if (!name[0])
+        return -1;
+    return fs::nyfs_unlink(name);
+}
+
 } // namespace
 
 extern "C" void syscall_dispatch(SyscallFrame* f) noexcept
@@ -473,6 +572,21 @@ extern "C" void syscall_dispatch(SyscallFrame* f) noexcept
         break;
     case nr::kBrk:
         f->rax = static_cast<u64>(sys_brk_impl(f->rdi));
+        break;
+    case nr::kTime:
+        f->rax = static_cast<u64>(sys_time_impl());
+        break;
+    case nr::kSleep:
+        f->rax = static_cast<u64>(sys_sleep_impl(f->rdi));
+        break;
+    case nr::kKill:
+        f->rax = static_cast<u64>(sys_kill_impl(f->rdi, f->rsi));
+        break;
+    case nr::kCreate:
+        f->rax = static_cast<u64>(sys_create_impl(f->rdi));
+        break;
+    case nr::kUnlink:
+        f->rax = static_cast<u64>(sys_unlink_impl(f->rdi));
         break;
     default:
         log::write(log::Level::Warn, "syscall", "unknown nr=%llu",

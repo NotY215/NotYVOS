@@ -23,15 +23,20 @@ void put_uint(u64 v)
     while (n--)
         putc(b[n]);
 }
+
 void put_int(i64 v)
 {
     if (v < 0)
     {
         putc('-');
-        v = -v;
+        /* Avoid overflow on INT64_MIN: cast to unsigned before negating. */
+        u64 uv = (u64)0 - (u64)v;
+        put_uint(uv);
+        return;
     }
     put_uint((u64)v);
 }
+
 void put_hex(u64 v)
 {
     const char* h = "0123456789abcdef";
@@ -81,20 +86,55 @@ void printf(const char* fmt, ...)
         }
         case 'u':
         {
-            u64 v = va_arg(ap, u64);
-            put_uint(v);
+            /* Callers pass int or unsigned int; read 32 bits and widen. */
+            unsigned int v = va_arg(ap, unsigned int);
+            put_uint((u64)v);
             break;
         }
         case 'd':
         {
-            i64 v = va_arg(ap, i64);
-            put_int(v);
+            int v = va_arg(ap, int);
+            put_int((i64)v);
             break;
         }
         case 'x':
         {
-            u64 v = va_arg(ap, u64);
-            put_hex(v);
+            unsigned int v = va_arg(ap, unsigned int);
+            put_hex((u64)v);
+            break;
+        }
+        case 'l':
+        {
+            /* %llu, %llx, %ld, %lld */
+            ++p;
+            if (*p == 'l')
+                ++p;
+            switch (*p)
+            {
+            case 'u':
+            {
+                u64 v = va_arg(ap, u64);
+                put_uint(v);
+                break;
+            }
+            case 'd':
+            {
+                i64 v = va_arg(ap, i64);
+                put_int(v);
+                break;
+            }
+            case 'x':
+            {
+                u64 v = va_arg(ap, u64);
+                put_hex(v);
+                break;
+            }
+            default:
+                putc('%');
+                putc('l');
+                putc(*p);
+                break;
+            }
             break;
         }
         case 'p':

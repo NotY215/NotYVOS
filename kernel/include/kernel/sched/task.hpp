@@ -10,8 +10,11 @@ enum class TaskState : u8
     Unused = 0,
     Ready,
     Running,
+    Sleeping,
+    Stopped,
     Zombie
 };
+
 
 using TaskEntryFn = void (*)(void*);
 

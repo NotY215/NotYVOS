@@ -21,6 +21,7 @@ set(KERNEL_SOURCES
     src/mm/pmm.cpp
     src/mm/vmm.cpp
     src/mm/heap.cpp
+    src/fs/nyfs.cpp
     src/fs/vnode.cpp
     src/fs/file.cpp
     src/fs/vfs.cpp

@@ -23,6 +23,11 @@ typedef u64 usize;
 #define SYS_MMAP 10
 #define SYS_EXEC 11
 #define SYS_BRK 12
+#define SYS_TIME 13
+#define SYS_SLEEP 14
+#define SYS_KILL 15
+#define SYS_CREATE 16
+#define SYS_UNLINK 17
 
 static inline i64 __sc1(i64 n, i64 a1)
 {
@@ -85,6 +90,26 @@ static inline i64 sys_brk(u64 addr)
 {
     return __sc1(SYS_BRK, (i64)addr);
 }
+static inline i64 sys_time(void)
+{
+    return __sc1(SYS_TIME, 0);
+}
+static inline i64 sys_sleep(i64 ms)
+{
+    return __sc1(SYS_SLEEP, ms);
+}
+static inline i64 sys_kill(i64 pid, i64 sig)
+{
+    return __sc3(SYS_KILL, pid, sig, 0);
+}
+static inline i64 sys_create(const char* path)
+{
+    return __sc1(SYS_CREATE, (i64)path);
+}
+static inline i64 sys_unlink(const char* path)
+{
+    return __sc1(SYS_UNLINK, (i64)path);
+}
 
 static inline i64 sys_mmap(void* hint, u64 len, i64 flags)
 {
@@ -120,6 +145,30 @@ void put_uint(u64 v);
 void put_int(i64 v);
 void put_hex(u64 v);
 void printf(const char* fmt, ...);
+
+/* Heap. Allocated via sys_brk. */
+void* malloc(u64 size);
+void free(void* p);
+void* calloc(u64 count, u64 size);
+void* realloc(void* p, u64 new_size);
+
+/* stdio-like API. `FILE` is opaque to callers. */
+typedef struct File File;
+File* fopen(const char* path, const char* mode); /* mode: "r", "w", "a" */
+i64 fread(void* buf, u64 size, u64 count, File* f);
+i64 fwrite(const void* buf, u64 size, u64 count, File* f);
+i64 fclose(File* f);
+i64 fprintf(File* f, const char* fmt, ...);
+
+/* Standard streams. Only valid after `stdio_init()`. */
+extern File* stdin_;
+extern File* stdout_;
+extern File* stderr_;
+#define stdin stdin_
+#define stdout stdout_
+#define stderr stderr_
+
+void stdio_init(void);
 
 typedef struct
 {

@@ -6,11 +6,18 @@ set(USER_INIT_LD   "${USER_DIR}/init/linker.ld")
 set(USER_INIT_ELF  "${BIN_DIR}/init.elf")
 set(USER_HELLO_ELF "${BIN_DIR}/hello.elf")
 
+# Shared libnoty sources used by every user program.
+set(USER_LIB_SRCS
+    "${USER_DIR}/libnoty/string.c"
+    "${USER_DIR}/libnoty/printf.c"
+    "${USER_DIR}/libnoty/malloc.c"
+    "${USER_DIR}/libnoty/stdio.c"
+)
+
 # ---- init.elf ----
 set(USER_INIT_SRCS
     "${USER_DIR}/init/main.c"
-    "${USER_DIR}/libnoty/string.c"
-    "${USER_DIR}/libnoty/printf.c"
+    ${USER_LIB_SRCS}
 )
 
 add_custom_command(
@@ -38,8 +45,7 @@ add_custom_target(notyvos-user ALL DEPENDS "${USER_INIT_ELF}")
 # ---- hello.elf ----
 set(USER_HELLO_SRCS
     "${USER_DIR}/hello/main.c"
-    "${USER_DIR}/libnoty/string.c"
-    "${USER_DIR}/libnoty/printf.c"
+    ${USER_LIB_SRCS}
 )
 
 add_custom_command(

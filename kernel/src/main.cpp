@@ -71,8 +71,10 @@ extern "C"
 #include <kernel/fb/console.hpp>
 #include <kernel/fb/framebuffer.hpp>
 #include <kernel/fs/initramfs.hpp>
+#include <kernel/fs/nyfs.hpp>
 #include <kernel/fs/vfs.hpp>
 #include <kernel/log.hpp>
+#include <kernel/libk/string.hpp>
 #include <kernel/mm/heap.hpp>
 #include <kernel/mm/pmm.hpp>
 #include <kernel/mm/vmm.hpp>
@@ -167,6 +169,13 @@ extern "C" [[noreturn]] void kernel_main()
         }
     }
 
+    // Mount NYFS on the first block device if there is one.
+    fs::VNode* nyfs_root = nullptr;
+    if (block::block_count() > 0)
+    {
+        nyfs_root = fs::nyfs_mount(block::block_get(0));
+    }
+
     arch::x86_64::percpu_init_bsp();
     arch::x86_64::Lapic::init_bsp(info.hhdm->offset);
     arch::x86_64::percpu_register(0, arch::x86_64::Lapic::id(), 0, 0);
@@ -187,6 +196,24 @@ extern "C" [[noreturn]] void kernel_main()
     fs::VNode* root = fs::initramfs_mount(initrd->address, initrd->size);
     if (!root)
         panic("initramfs mount failed");
+
+    // Attach the NYFS root directly as /disk. Do not move its children into
+    // a separate wrapper VNode: nyfs_rescan() rebuilds g_root->children, and
+    // if that node is not in the VFS tree, new files never become visible.
+    if (nyfs_root)
+    {
+        // Rename nyfs_root to "disk" and attach to VFS root.
+        const char* newname = "disk";
+        u32 i = 0;
+        while (newname[i] && i < sizeof(nyfs_root->name) - 1)
+        {
+            nyfs_root->name[i] = newname[i];
+            ++i;
+        }
+        nyfs_root->name[i] = 0;
+        fs::vnode_attach(root, nyfs_root);
+    }
+
     fs::vfs_mount_root(root);
 
     const auto elf = proc::load_elf(elfmod->address, elfmod->size);

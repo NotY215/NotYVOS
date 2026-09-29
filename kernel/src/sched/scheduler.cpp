@@ -1,5 +1,6 @@
 #include <kernel/arch/x86_64/msr.hpp>
 #include <kernel/arch/x86_64/percpu.hpp>
+#include <kernel/arch/x86_64/pit.hpp>
 #include <kernel/arch/x86_64/tss.hpp>
 #include <kernel/log.hpp>
 #include <kernel/mm/heap.hpp>
@@ -12,10 +13,20 @@ extern "C" void notyvos_switch_context(u64* save_slot, u64 new_rsp);
 
 namespace
 {
+
 Task* g_head = nullptr;
 Task* g_tail = nullptr;
 u32 g_task_count = 0;
 Task g_boot_task{};
+
+struct Sleeper
+{
+    Task* task;
+    u64 wake_tick;
+    Sleeper* next;
+};
+Sleeper* g_sleepers = nullptr;
+
 } // namespace
 
 void scheduler_init() noexcept
@@ -58,6 +69,54 @@ void scheduler_set_current(Task* t) noexcept
 u64 scheduler_task_count() noexcept
 {
     return g_task_count;
+}
+
+u64 scheduler_uptime_ticks() noexcept
+{
+    return arch::x86_64::pit_ticks();
+}
+
+void scheduler_sleep_until(u64 tick) noexcept
+{
+    Task* me = scheduler_current();
+    if (!me || me == &g_boot_task)
+    {
+        while (arch::x86_64::pit_ticks() < tick)
+            asm volatile("pause");
+        return;
+    }
+    auto* s = static_cast<Sleeper*>(mm::Heap::allocate(sizeof(Sleeper)));
+    if (!s)
+        return;
+    s->task = me;
+    s->wake_tick = tick;
+    s->next = g_sleepers;
+    g_sleepers = s;
+    me->state = TaskState::Sleeping;
+    scheduler_yield();
+}
+
+void scheduler_wake_expired() noexcept
+{
+    const u64 now = arch::x86_64::pit_ticks();
+    Sleeper** pp = &g_sleepers;
+    while (*pp)
+    {
+        Sleeper* s = *pp;
+        if (s->wake_tick <= now)
+        {
+            if (s->task->state == TaskState::Sleeping)
+            {
+                s->task->state = TaskState::Ready;
+            }
+            *pp = s->next;
+            mm::Heap::deallocate(s);
+        }
+        else
+        {
+            pp = &s->next;
+        }
+    }
 }
 
 static Task* pick_next() noexcept
@@ -114,8 +173,6 @@ static void switch_to(Task* next)
     if (prev == next)
         return;
 
-    // Only demote Running -> Ready. A Zombie stays Zombie so the parent
-    // can find it in sys_wait.
     if (prev && prev->state == TaskState::Running)
     {
         prev->state = TaskState::Ready;
@@ -152,6 +209,7 @@ void scheduler_start() noexcept
 
 void scheduler_tick() noexcept
 {
+    scheduler_wake_expired();
     Task* next = pick_next();
     if (!next)
         return;
@@ -183,6 +241,28 @@ void scheduler_exit_current(int code)
     if (!next)
     {
         log::write(log::Level::Warn, "sched", "no next task; idling");
+        for (;;)
+            asm volatile("hlt");
+    }
+    switch_to(next);
+    for (;;)
+        asm volatile("hlt");
+}
+
+void scheduler_deliver_sigint()
+{
+    Task* me = scheduler_current();
+    if (!me || me == &g_boot_task)
+        return;
+    log::write(log::Level::Info, "sig", "SIGINT -> tid=%llu (%s)",
+               static_cast<unsigned long long>(me->tid), me->name);
+    me->exit_code = -2;
+    me->state = TaskState::Zombie;
+    remove_from_queue(me);
+    Task* next = pick_next();
+    if (!next)
+    {
+        log::write(log::Level::Warn, "sched", "no next task after SIGINT; idling");
         for (;;)
             asm volatile("hlt");
     }
