@@ -18,6 +18,22 @@ $img = [System.Drawing.Image]::FromFile($Src)
 $w = $img.Width
 $h = $img.Height
 
+$target = 1920
+if ($w -gt $target) {
+    $ratio = $target / $w
+    $new_w = $target
+    $new_h = [int]($h * $ratio)
+    $resized = New-Object System.Drawing.Bitmap($new_w, $new_h)
+    $g = [System.Drawing.Graphics]::FromImage($resized)
+    $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+    $g.DrawImage($img, 0, 0, $new_w, $new_h)
+    $g.Dispose()
+    $img.Dispose()
+    $img = $resized
+    $w = $new_w
+    $h = $new_h
+}
+
 $bmp = New-Object System.Drawing.Bitmap($img)
 $rect = New-Object System.Drawing.Rectangle(0, 0, $w, $h)
 $data = $bmp.LockBits($rect,
