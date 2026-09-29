@@ -1,23 +1,32 @@
-# ADR 0008 — Reserved domains not created as empty directories
+# ADR 0008 — Keep future domains separate from implemented code
 
 Status: Accepted
 
 ## Decision
-Reserved subsystems (`runtime/ps3/`, `graphics/`, `drivers/`, `security/`,
-`recovery/`, `apps/`, `overlay/`, `win_compat/`) are documented here but
-not created as empty trees. They are created when their phase begins.
 
-This prevents confusion about what is implemented vs. what is planned.
+NOTYVOS does not create empty directory trees merely to represent future
+subsystems. Implemented functionality stays in the existing kernel, user and
+tools trees. New top-level domains are introduced when their implementation
+actually begins.
 
-## Reserved domains
+This keeps the repository structure honest about what is implemented versus
+planned.
 
-| Directory | Phase | Purpose |
-|---|---|---|
-| `runtime/ps3/` | 4+ | PS3 loader, PPU, SPU, PowerPC decoder, JIT, translation cache, DMA, RSX compatibility |
-| `graphics/` | 3+ | NOTYVOS Graphics API, HAL, compositor, native/Vulkan/DirectX backends |
-| `drivers/` | 3+ | gpu, display, audio, input, storage, network, usb, wifi, bluetooth |
-| `security/` | 3+ | Security subsystem outside kernel module |
-| `recovery/` | 3+ | Trusted recovery image |
-| `apps/` | 3+ | explorer, settings, taskmgr, launcher, notes |
-| `overlay/` | 3+ | In-game overlay |
-| `win_compat/` | 10 | PE/COFF loader, Win32/Win64 API surface, registry, COM, SEH |
+## Current mapping
+
+| Implemented or planned area | Current location / phase |
+|---|---|
+| Native kernel and drivers | kernel/ / Phases 1–3 |
+| Graphics API, HAL, compositor and widgets | kernel/gfx/ / Phases 3A–3E |
+| PS3 loader, PPU, SPU, DMA and JIT | kernel/ps3/ / Phases 4A–5D |
+| User programs and libc | user/ / Phase 2+ |
+| Host tools | tools/ |
+| PS3 firmware domain | Firmware/ / later runtime stages |
+| Native PC firmware | NotYVFirm, planned |
+| RSX compatibility | Phase 6, planned |
+| GameRunner and compatibility layer | Phase 7, planned |
+| Rendering validation | Phase 8, planned |
+| Windows compatibility | Phases 9–10, planned |
+
+The absence of a planned top-level directory does not mean the subsystem is
+forgotten; the roadmap is the source of truth for planned work.
