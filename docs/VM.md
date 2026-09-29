@@ -1,271 +1,113 @@
 # NOTYVOS Virtual Machine Testing
 
-NOTYVOS is developed and tested inside a virtual machine. VirtualBox is the
-current target. QEMU is no longer used.
+NOTYVOS is currently developed and tested in VirtualBox.
 
-## Why VirtualBox
+## Current VM configuration
 
-- Free and open source (GPLv3).
-- Runs on Windows, Linux, and macOS.
-- Reliable UEFI firmware emulation.
-- Supports PS/2 keyboard and mouse, which NOTYVOS's input driver requires.
-- Supports serial ports exposed over TCP, which we use for a two-way
-  serial console: kernel logs out, keystrokes in.
+The repository setup script creates a development VM with:
 
-## Installation
+| Setting | Value |
+|---|---|
+| VM name | NotYVOS |
+| Firmware | EFI |
+| CPUs | 1 |
+| Memory | 2048 MiB |
+| VRAM | 64 MiB |
+| Graphics | VBoxSVGA |
+| 3D acceleration | Off |
+| Chipset | PIIX3 |
+| I/O APIC | Off |
+| HPET | On |
+| Long mode | On |
+| Nested paging | On |
+| Keyboard | PS/2 |
+| Mouse | PS/2 |
+| USB | Off |
+| Audio | Off |
+| COM1 | 0x3F8, IRQ4 |
+| Serial | TCP server, port 2323 |
+| Storage | SATA / Intel AHCI |
+| VM disk | 256 MiB VDI |
 
-1. Download VirtualBox from <https://www.virtualbox.org/wiki/Downloads>.
-2. Run the installer. Accept defaults.
-3. Add VirtualBox to PATH.
+This is a development configuration. The interrupt and device model will
+change as later SMP, USB and native hardware phases are implemented.
 
-   PowerShell, run as Administrator, one time:
+## Why I/O APIC is off
 
-   ```powershell
-   [Environment]::SetEnvironmentVariable(
-       "Path",
-       $env:Path + ";C:\Program Files\Oracle\VirtualBox",
-       "Machine")
-   ```
+The current timer and keyboard path uses the legacy 8259 PIC. The VM is
+therefore configured with I/O APIC disabled so the expected PIC interrupt
+routing remains available.
 
-4. Create an alias `VBox` for `VBoxManage`:
+## Setup scripts
 
-   ```powershell
-   New-Item -ItemType SymbolicLink `
-       -Path "C:\Program Files\Oracle\VirtualBox\VBox.exe" `
-       -Value "C:\Program Files\Oracle\VirtualBox\VBoxManage.exe"
-   ```
+All VM scripts are under tools/scripts/.
 
-5. Open a fresh CMD window and verify:
+### vbox-setup.cmd
 
-   ```cmd
-   where VBox
-   ```
+Creates the NotYVOS VM, virtual disk, SATA controller, ISO attachment, EFI
+configuration, PS/2 devices and serial console.
 
-   Expected: `C:\Program Files\Oracle\VirtualBox\VBox.exe`.
+Run for a fresh VM:
 
-## VM Configuration
+    tools\scripts\vbox-setup.cmd
 
-| Setting | Value | Why |
-|---|---|---|
-| Firmware | EFI | NOTYVOS boots via UEFI |
-| Keyboard | PS/2 | Our keyboard driver reads the i8042 controller |
-| Mouse | PS/2 | Same controller family |
-| I/O APIC | **off** | We only program the 8259 PIC; IO-APIC bypasses it |
-| HPET | on | Needed for accurate timing |
-| Long Mode | on | x86-64 |
-| Nested Paging | on | Performance |
-| Graphics Controller | VBoxSVGA | Required for UEFI framebuffer |
-| USB | off | Prevents USB HID from stealing keyboard input |
-| UART1 | 0x3F8, IRQ4 | Serial console |
-| UART1 Mode | TCP server, port 2323 | Two-way serial channel |
+Warning: the script unregisters and deletes an existing VM with the same
+name.
 
-### Why IO-APIC must be off
+### vbox-run.cmd
 
-NOTYVOS programs the legacy 8259 PIC for IRQs 0 through 15. When the
-IO-APIC is enabled, VirtualBox routes hardware interrupts through the
-IO-APIC to the LAPIC, bypassing the PIC. The timer (IRQ0) still arrives
-because the PIT has a legacy fallback path, but the keyboard (IRQ1) is
-redirected and never reaches our PIC handler. Turning IO-APIC off
-restores the PIC path.
+Powers off the VM if necessary, reattaches the latest Release ISO, starts
+the VM and connects the serial console.
 
-IO-APIC support will be added in a later phase when SMP scheduling lands.
+    tools\scripts\vbox-run.cmd
 
-## Setup Scripts
+### vbox-restart.cmd
 
-All scripts live under `tools/scripts/`. CMD scripts are run directly;
-PowerShell scripts are run with `pwsh`.
+Restarts the VM and reattaches the ISO without being the full serial-console
+wrapper.
 
-### `vbox-setup.cmd` — one-time VM creation
+### vbox-serial.ps1
 
-Creates the VM, configures it, creates the virtual hard disk, and attaches
-the ISO. Unregisters any existing VM with the same name first.
+Connects to COM1 through the TCP serial endpoint on port 2323 and forwards
+input to the guest.
 
-```cmd
-tools\scripts\vbox-setup.cmd
-```
+## Daily workflow
 
-Run once. Do not run this again unless you want to wipe the VM and start
-over.
+1. Build the Release preset.
+2. Run tools/scripts/vbox-run.cmd.
+3. Wait for the desktop and shell.
+4. Run the smoke tests in docs/testing.md.
+5. Inspect serial logs for warnings and errors.
+6. Rebuild after source changes.
 
-### `vbox-restart.cmd` — restart the VM
+## Input
 
-Powers off the VM, reattaches the rebuilt ISO, and starts the VM.
+The guest accepts PS/2 keyboard and mouse input. The serial console also
+provides an input path for shell testing.
 
-```cmd
-tools\scripts\vbox-restart.cmd
-```
+If PS/2 input fails:
+1. confirm I/O APIC is disabled,
+2. confirm PS/2 devices are enabled,
+3. click inside the VM window,
+4. use the serial console as a fallback.
 
-### `vbox-run.cmd` — restart and open the serial console
+## Black screen
 
-Same as `vbox-restart.cmd`, plus it opens the serial console in the same
-CMD window. This is the recommended way to test: all VM output appears in
-the terminal you launched from.
+Check the VBoxSVGA graphics controller and inspect the serial console. Kernel
+logging remains available through COM1 even when framebuffer output is not
+visible.
 
-```cmd
-tools\scripts\vbox-run.cmd
-```
+## ISO errors
 
-### `vbox-serial.ps1` — two-way serial terminal
+Rebuild the selected CMake preset and verify that the generated notyvos.iso
+exists in that preset's build directory before running the VM.
 
-Connects to the VM's TCP serial port. Prints all guest output, forwards
-your keystrokes. Run standalone if you already started the VM.
+## Serial console
 
-```cmd
-pwsh -ExecutionPolicy Bypass -File .\tools\scripts\vbox-serial.ps1
-```
+COM1 is exposed as TCP port 2323. A standalone connection can be started
+with:
 
-## Serial Console
+    pwsh -NoProfile -ExecutionPolicy Bypass -File .\tools\scripts\vbox-serial.ps1
 
-NOTYVOS writes its kernel log to COM1. It also reads input from COM1 as a
-fallback when the PS/2 keyboard fails.
-
-The VM is configured to expose COM1 over TCP port 2323. Two ways to
-connect:
-
-### PowerShell (no additional tools)
-
-```cmd
-pwsh -ExecutionPolicy Bypass -File .\tools\scripts\vbox-serial.ps1
-```
-
-### PuTTY
-
-1. Download PuTTY from <https://www.putty.org/>.
-2. Run `putty.exe`.
-3. Connection type: **Raw**.
-4. Host name: `localhost`.
-5. Port: `2323`.
-6. Click **Open**.
-
-## Daily Workflow
-
-1. Edit kernel source.
-2. Rebuild All in Visual Studio (Release configuration).
-3. Run `tools\scripts\vbox-run.cmd` from CMD.
-4. Watch the boot log appear in the CMD window.
-5. At the `$` prompt, type `help`, `ls`, `cat readme.txt`, `pid`, `fork`.
-6. Close the serial console with Ctrl+C, or close the VM window.
-
-## Boot and Test
-
-1. Run `tools\scripts\vbox-run.cmd`.
-2. Wait for the VM window.
-3. Click once inside the VM window to give it keyboard focus.
-4. At the `$` prompt, type `help`.
-
-If PS/2 works:
-
-- Serial shows `[WRN] kbd: key #N: scancode=0x.. -> 'x'`.
-- Characters appear at the shell prompt in the VM window.
-
-If PS/2 fails but TCP serial works:
-
-- The VM window accepts no input.
-- The serial console window accepts input and it appears at the shell
-  prompt in the VM window.
-
-If neither works:
-
-- Paste the serial log. The kernel is not reaching its input loop.
-
-## Common Problems
-
-### Black screen after Limine
-
-The UEFI firmware and the kernel framebuffer negotiated different video
-modes. Fixes:
-
-1. Confirm graphics controller is `vboxsvga`, not `vmsvga`.
-2. Press Right Ctrl + F1 in the VM window to cycle display modes.
-3. Check the serial console. The kernel logs to serial even when the
-   framebuffer is black.
-
-### Keyboard does not work
-
-1. Confirm `VBox modifyvm NotYVOS --ioapic off`.
-2. Confirm `VBox modifyvm NotYVOS --keyboard ps2`.
-3. Confirm `VBox modifyvm NotYVOS --usb off`.
-4. Click inside the VM window before typing.
-5. If still broken, use the serial console as input.
-
-### `VERR_FILE_NOT_FOUND` when attaching the ISO
-
-The ISO path does not exist. Rebuild All in Visual Studio. Verify:
-
-```cmd
-dir F:\OwnApps\NotYVOS\build\kernel-windows-clang-kernel-release\notyvos.iso
-```
-
-Then run `tools\scripts\vbox-restart.cmd`.
-
-### `ParserError: Variable reference is not valid`
-
-Older versions of the serial script used `$Host_:$Port`. The current
-version uses `${TcpHost}:${TcpPort}`. If you see this error, replace the
-script with the current version from the repository.
-
-### `The file does not have a '.ps1' extension`
-
-You ran a `.cmd` file through `pwsh`. Run `.cmd` files directly:
-
-```cmd
-tools\scripts\vbox-setup.cmd
-```
-
-Not:
-
-```cmd
-pwsh tools\scripts\vbox-setup.cmd
-```
-
-### `timeout: invalid number '/t'`
-
-The Windows `timeout` tool misbehaves when stdin is redirected. The current
-scripts use `ping 127.0.0.1 -n N` instead, which works in every context.
-
-## License
-
-VirtualBox is distributed under the GNU General Public License, version 3.
-NOTYVOS uses VirtualBox as a testing tool. VirtualBox is not part of
-NOTYVOS and is not shipped with it. See
-`THIRD_PARTY_LICENSES/virtualbox.txt`.
-
-## Reference
-
-- VirtualBox downloads: <https://www.virtualbox.org/wiki/Downloads>
-- VirtualBox manual: <https://www.virtualbox.org/manual/>
-- VBoxManage reference: <https://www.virtualbox.org/manual/ch08.html>
-```
-
----
-
-## 6. Run order
-
-In a fresh CMD window (so PATH is up to date):
-
-```cmd
-cd /d F:\OwnApps\NotYVOS
-```
-
-### First time only — create the VM
-
-```cmd
-tools\scripts\vbox-setup.cmd
-```
-
-### Every time after a Rebuild All
-
-```cmd
-tools\scripts\vbox-run.cmd
-```
-
-This single command:
-
-- Powers off any running `NotYVOS` VM.
-- Reattaches the freshly built ISO.
-- Opens the VM window.
-- Opens a serial console in the current CMD window.
-
-Everything the VM prints (kernel log, boot banner, shell output) appears in your CMD window. Type there and the guest receives the input via COM1.
-
----
+VirtualBox is a host-side testing dependency. It is not part of the NOTYVOS
+kernel or OS distribution.
