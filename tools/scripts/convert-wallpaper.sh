@@ -19,18 +19,18 @@ PYTHON="$(command -v python3 || command -v python || true)"
 read -r W H <<< "$("$MAGICK" identify -format '%w %h' "$SRC")"
 
 if [ "$W" -gt "$TARGET" ]; then
-    NEW_W="$TARGET"
-    NEW_H="$("$PYTHON" -c 'import sys; print(int(int(sys.argv[1]) * int(sys.argv[3]) / int(sys.argv[2])))' "$H" "$W" "$TARGET")"
-    GEOMETRY="$NEW_W"x"$NEW_H"
+    FINAL_W="$TARGET"
+    FINAL_H="$("$PYTHON" -c 'import sys; print(int(int(sys.argv[1]) * int(sys.argv[3]) / int(sys.argv[2])))' "$H" "$W" "$TARGET")"
 else
-    GEOMETRY="$W"x"$H"
+    FINAL_W="$W"
+    FINAL_H="$H"
 fi
 
+GEOMETRY="$FINAL_W"x"$FINAL_H"
 TMP="$(mktemp)"
 trap 'rm -f "$TMP"' EXIT
 
 "$MAGICK" "$SRC" -resize "$GEOMETRY!" -depth 8 bgra:"$TMP"
-read -r FINAL_W FINAL_H <<< "$("$MAGICK" identify -format '%w %h' "$TMP")"
 
 "$PYTHON" - "$TMP" "$DST" "$FINAL_W" "$FINAL_H" <<'PY'
 import struct
@@ -39,9 +39,11 @@ import sys
 src, dst, w, h = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
 with open(src, "rb") as f:
     pixels = f.read()
+
 expected = w * h * 4
 if len(pixels) != expected:
     raise SystemExit(f"Unexpected BGRA size: got {len(pixels)}, expected {expected}")
+
 with open(dst, "wb") as f:
     f.write(struct.pack("<II", w, h))
     f.write(pixels)
