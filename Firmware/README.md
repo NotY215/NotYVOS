@@ -1,25 +1,33 @@
 # Firmware
 
-This directory holds user-supplied firmware. Nothing here is redistributed
-with NOTYVOS source.
+This directory contains the user-supplied PS3 firmware domain. Firmware
+domains remain separate from the native PC kernel.
 
-## PS3 firmware (`PS3UPDAT.PUP`)
+## PS3 firmware
 
-This file is required only when the PS3 runtime is enabled (Phase 4+).
-It is a Sony-encrypted container. NOTYVOS does NOT contain:
-  - Sony private or decryption keys
-  - decryption bypasses
-  - extraction tooling
+PS3UPDAT.PUP, when present, is user-supplied and is required only by later
+PS3 runtime stages that need Sony firmware components.
 
-The user is responsible for legally obtaining and preparing the firmware
-component the runtime needs. NOTYVOS will not decrypt the PUP itself.
+NOTYVOS does not redistribute Sony firmware and does not contain:
+- Sony private keys
+- Sony decryption keys
+- decryption bypasses
+- extraction tooling
 
-The runtime expects a decrypted module at a configured path. If the module
-is missing, the runtime refuses to start with a clear message.
+The user is responsible for legally obtaining and preparing any firmware
+component required by the runtime.
 
-## NotYVFirm
+## Firmware domains
 
-NotYVFirm is NOT in this directory. It is the native PC firmware domain
-and lives in `firmware/notyvfirm/` once that subsystem begins (Phase 3+).
+### Native PC domain
 
-Sony firmware and NotYVFirm are separate domains. See ADR 0005.
+NotYVFirm is the planned native PC firmware domain. It is separate from the
+PS3 runtime and does not use Sony PS3 firmware.
+
+### PS3 runtime domain
+
+Sony PS3 firmware belongs only to the PS3 runtime. It must not become a
+dependency of the native NOTYVOS boot path.
+
+See docs/architecture.md, docs/decisions/0005-ps3-firmware-isolation.md and
+docs/decisions/0006-no-sony-keys-embedded.md.
