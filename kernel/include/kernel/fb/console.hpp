@@ -15,6 +15,11 @@ public:
 
     static void clear() noexcept;
 
+    // Switch to compositor-driven rendering. After this call, Console::put
+    // routes through the compositor instead of drawing to the framebuffer.
+    static void switch_to_buffered() noexcept;
+    static bool is_buffered() noexcept;
+
     static void set_colors(u32 fg_argb, u32 bg_argb) noexcept;
     static u32 fg() noexcept;
     static u32 bg() noexcept;

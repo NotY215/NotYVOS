@@ -5,6 +5,8 @@
 #include <kernel/log.hpp>
 #include <kernel/panic.hpp>
 #include <kernel/sched/scheduler.hpp>
+#include <kernel/arch/x86_64/mouse.hpp>
+#include <kernel/gfx/compositor.hpp>
 
 namespace notyvos::arch::x86_64
 {
@@ -125,11 +127,18 @@ void handle_irq(u8 irq, InterruptFrame* /*f*/) noexcept
     {
         pit_on_tick();
         sched::scheduler_tick();
+        gfx::Compositor::tick();
     }
     else if (irq == 1)
     {
         keyboard_irq_handler();
     }
+    else if (irq == 12)
+    {
+        mouse_irq_handler();
+        gfx::Compositor::tick();
+    }
+
 }
 
 } // namespace

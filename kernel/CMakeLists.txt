@@ -26,6 +26,8 @@ set(KERNEL_SOURCES
     src/fs/file.cpp
     src/fs/vfs.cpp
     src/fs/initramfs.cpp
+    src/arch/x86_64/mouse.cpp
+    src/gfx/compositor.cpp
     src/sched/task.cpp
     src/sched/scheduler.cpp
     src/sched/context_switch.S

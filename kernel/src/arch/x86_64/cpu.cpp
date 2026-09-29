@@ -7,6 +7,7 @@
 #include <kernel/arch/x86_64/tss.hpp>
 #include <kernel/arch/x86_64/io.hpp>
 #include <kernel/arch/x86_64/keyboard.hpp>
+#include <kernel/arch/x86_64/mouse.hpp>
 #include <kernel/log.hpp>
 
 namespace notyvos::arch::x86_64
@@ -82,10 +83,13 @@ void cpu_init() noexcept
     // Remap PIC, disable all IRQs, then unmask IRQ0 (timer).
     pic_remap(32, 40);
     pic_disable_all();
-    pic_set_mask(0, false); // PIT
-    pic_set_mask(1, false); // keyboard
+    pic_set_mask(0, false);  // PIT
+    pic_set_mask(1, false);  // keyboard
+    pic_set_mask(2, false);  // cascade (for slave PIC)
+    pic_set_mask(12, false); // PS/2 mouse (on slave)
     pit_init(100);
-    (void)keyboard_init();
+    keyboard_init();
+    mouse_init();
 
     log::write(log::Level::Info, "pic", "final masks: master=0x%llx slave=0x%llx",
                static_cast<unsigned long long>(inb(0x21)),

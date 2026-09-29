@@ -68,6 +68,7 @@ extern "C"
 #include <kernel/block/ahci.hpp>
 #include <kernel/block/block.hpp>
 #include <kernel/boot/limine.hpp>
+#include <kernel/gfx/compositor.hpp>
 #include <kernel/fb/console.hpp>
 #include <kernel/fb/framebuffer.hpp>
 #include <kernel/fs/initramfs.hpp>
@@ -118,6 +119,12 @@ extern "C" [[noreturn]] void kernel_main()
         fb::Console::init();
     }
     log::init();
+
+    // Bring up the desktop, then switch the console to buffered mode so
+    // all later log and shell output appears inside the terminal window.
+    gfx::Compositor::init();
+    fb::Console::switch_to_buffered();
+    log::init(); // clears the compositor terminal
     log::write(log::Level::Info, "boot", "NOTYVOS %s (%s)", NOTYVOS_VERSION, NOTYVOS_GIT_REV);
 
     if (!info.memmap || !info.hhdm)
@@ -126,6 +133,7 @@ extern "C" [[noreturn]] void kernel_main()
                static_cast<unsigned long long>(info.memmap->entry_count));
     log::write(log::Level::Info, "mm", "HHDM offset: 0x%llx",
                static_cast<unsigned long long>(info.hhdm->offset));
+
 
     arch::x86_64::cpu_init();
     mm::PhysicalMemory::init(info.memmap, info.hhdm->offset);

@@ -5,6 +5,12 @@
 
 static char line[LINE_MAX];
 
+/* Static buffers for the write/rm commands. Using statics avoids
+ * the stack-initialization pattern that was triggering a spurious
+ * ud2 in Clang -O2. */
+static char s_path[160];
+static char s_text[256];
+
 static void read_line(void)
 {
     i64 n = sys_read(0, line, LINE_MAX - 1);
@@ -58,7 +64,7 @@ static void cmd_cat(const char* path)
     i64 fd = sys_open(path, 0);
     if (fd < 0)
     {
-        printf("cat: %s: not found\n", path);
+        puts("cat: not found\n");
         return;
     }
     char buf[256];
@@ -74,10 +80,10 @@ static void cmd_cat(const char* path)
 
 static void cmd_ls(const char* path)
 {
-    i64 fd = sys_open(path ? path : "/", 0);
+    i64 fd = sys_open(path, 0);
     if (fd < 0)
     {
-        printf("ls: %s: not found\n", path ? path : "/");
+        puts("ls: not found\n");
         return;
     }
     DirEntry e;
@@ -86,45 +92,70 @@ static void cmd_ls(const char* path)
         i64 n = sys_readdir(fd, i, &e);
         if (n <= 0)
             break;
-        printf("%s\n", e.name);
+        puts(e.name);
+        putc('\n');
     }
     sys_close(fd);
 }
 
-static void cmd_write(const char* path, const char* text, int append)
+/* Build "/disk/<name>" into s_path. Returns the length. */
+static int build_path(const char* name)
 {
+    int i = 0;
+    const char* pfx = "/disk/";
+    while (pfx[i])
+    {
+        s_path[i] = pfx[i];
+        ++i;
+    }
+    for (int k = 0; name[k] && i < 158; ++k)
+        s_path[i++] = name[k];
+    s_path[i] = 0;
+    return i;
+}
+
+static void do_write(const char* path, const char* text)
+{
+    /* Make sure the file exists. */
+    i64 r = sys_create(path);
+    (void)r;
+
     i64 fd = sys_open(path, 0);
     if (fd < 0)
     {
-        i64 r = sys_create(path);
-        if (r < 0)
-        {
-            printf("write: cannot create %s\n", path);
-            return;
-        }
-        fd = sys_open(path, 0);
-        if (fd < 0)
-        {
-            printf("write: cannot open %s\n", path);
-            return;
-        }
+        puts("write: cannot open\n");
+        return;
     }
-    const u64 tlen = strlen(text);
-    sys_write(fd, text, tlen);
+
+    u64 n = strlen(text);
+    i64 wr = sys_write(fd, text, n);
     sys_write(fd, "\n", 1);
     sys_close(fd);
-    (void)append;
+
+    puts("wrote ");
+    put_int((i64)n);
+    puts(" bytes, syscall returned ");
+    put_int(wr);
+    putc('\n');
+}
+
+static void do_rm(const char* path)
+{
+    i64 r = sys_unlink(path);
+    puts("rm -> ");
+    put_int(r);
+    putc('\n');
 }
 
 void _start(void)
 {
     stdio_init();
-    printf("\nNOTYVOS shell (phase 2M+)\n");
-    printf("type 'help' for commands\n");
+    puts("\nNOTYVOS shell (phase 2M+)\n");
+    puts("type 'help' for commands\n");
 
     for (;;)
     {
-        printf("$ ");
+        puts("$ ");
         read_line();
         char* argv[ARG_MAX];
         int argc = tokenize(line, argv, ARG_MAX);
@@ -133,21 +164,21 @@ void _start(void)
 
         if (strcmp(argv[0], "help") == 0)
         {
-            printf("commands:\n");
-            printf("  help              this message\n");
-            printf("  ls [DIR]          list directory\n");
-            printf("  cat FILE          print file\n");
-            printf("  echo TEXT         echo\n");
-            printf("  write FILE TEXT   write to /disk/FILE\n");
-            printf("  rm FILE           delete /disk/FILE\n");
-            printf("  pid               current pid\n");
-            printf("  fork              fork a child\n");
-            printf("  exec PATH         replace image\n");
-            printf("  brk [N]           heap break\n");
-            printf("  time              uptime ms\n");
-            printf("  sleep N           sleep N ms\n");
-            printf("  kill PID          send SIGTERM\n");
-            printf("  exit              quit shell\n");
+            puts("commands:\n");
+            puts("  help              this message\n");
+            puts("  ls [DIR]          list directory\n");
+            puts("  cat FILE          print file\n");
+            puts("  echo TEXT         echo\n");
+            puts("  write FILE TEXT   write to /disk/FILE\n");
+            puts("  rm FILE           delete /disk/FILE\n");
+            puts("  pid               current pid\n");
+            puts("  fork              fork a child\n");
+            puts("  exec PATH         replace image\n");
+            puts("  brk [N]           heap break\n");
+            puts("  time              uptime ms\n");
+            puts("  sleep N           sleep N ms\n");
+            puts("  kill PID          send SIGTERM\n");
+            puts("  exit              quit shell\n");
         }
         else if (strcmp(argv[0], "echo") == 0)
         {
@@ -166,7 +197,7 @@ void _start(void)
         else if (strcmp(argv[0], "cat") == 0)
         {
             if (argc < 2)
-                printf("cat: missing file\n");
+                puts("cat: missing file\n");
             else
                 cmd_cat(argv[1]);
         }
@@ -174,120 +205,133 @@ void _start(void)
         {
             if (argc < 3)
             {
-                printf("usage: write FILE TEXT\n");
+                puts("usage: write FILE TEXT\n");
                 continue;
             }
-            char path[160] = "/disk/";
-            int pi = 6;
-            for (const char* s = argv[1]; *s && pi < 158; ++s)
-                path[pi++] = *s;
-            path[pi] = 0;
-            /* Build text from remaining args */
-            char text[256];
+            (void)build_path(argv[1]);
+
             int ti = 0;
             for (int i = 2; i < argc; ++i)
             {
-                if (i > 2)
-                    text[ti++] = ' ';
-                for (const char* s = argv[i]; *s && ti < 254; ++s)
-                    text[ti++] = *s;
+                if (i > 2 && ti < 254)
+                    s_text[ti++] = ' ';
+                const char* s = argv[i];
+                for (int k = 0; s[k] && ti < 254; ++k)
+                    s_text[ti++] = s[k];
             }
-            text[ti] = 0;
-            cmd_write(path, text, 0);
-            printf("wrote %d bytes to %s\n", ti, path);
+            s_text[ti] = 0;
+
+            do_write(s_path, s_text);
         }
         else if (strcmp(argv[0], "rm") == 0)
         {
             if (argc < 2)
             {
-                printf("usage: rm FILE\n");
+                puts("usage: rm FILE\n");
                 continue;
             }
-            char path[160] = "/disk/";
-            int pi = 6;
-            for (const char* s = argv[1]; *s && pi < 158; ++s)
-                path[pi++] = *s;
-            path[pi] = 0;
-            i64 r = sys_unlink(path);
-            printf("rm %s -> %d\n", path, (int)r);
+            (void)build_path(argv[1]);
+            do_rm(s_path);
         }
         else if (strcmp(argv[0], "pid") == 0)
         {
-            printf("pid=%d\n", (int)sys_getpid());
+            puts("pid=");
+            put_int(sys_getpid());
+            putc('\n');
         }
         else if (strcmp(argv[0], "fork") == 0)
         {
             i64 child = sys_fork();
             if (child == 0)
             {
-                printf("[child pid=%d] hello from fork child\n", (int)sys_getpid());
+                puts("[child] hello from fork child\n");
                 sys_exit(42);
             }
             else if (child < 0)
             {
-                printf("fork failed\n");
+                puts("fork failed\n");
             }
             else
             {
-                printf("[parent] forked child pid=%d\n", (int)child);
+                puts("[parent] forked child pid=");
+                put_int(child);
+                putc('\n');
                 i32 st = 0;
                 i64 reaped = sys_wait(-1, &st);
-                printf("[parent] reaped pid=%d status=%d\n", (int)reaped, st);
+                puts("[parent] reaped pid=");
+                put_int(reaped);
+                puts(" status=");
+                put_int(st);
+                putc('\n');
             }
         }
         else if (strcmp(argv[0], "exec") == 0)
         {
             if (argc < 2)
             {
-                printf("usage: exec PATH\n");
+                puts("usage: exec PATH\n");
                 continue;
             }
             i64 r = sys_exec(argv[1]);
-            printf("exec failed: %d\n", (int)r);
+            puts("exec failed: ");
+            put_int(r);
+            putc('\n');
         }
         else if (strcmp(argv[0], "brk") == 0)
         {
             i64 cur = sys_brk(0);
-            printf("brk = 0x%x\n", (unsigned long)cur);
+            puts("brk = 0x");
+            put_hex((u64)cur);
+            putc('\n');
             if (argc >= 2)
             {
                 i64 want = parse_int(argv[1]);
                 i64 got = sys_brk((u64)(cur + want));
-                printf("brk %+d -> 0x%x\n", (int)want, (unsigned long)got);
+                puts("brk -> 0x");
+                put_hex((u64)got);
+                putc('\n');
             }
         }
         else if (strcmp(argv[0], "time") == 0)
         {
-            printf("uptime = %d ms\n", (int)sys_time());
+            puts("uptime = ");
+            put_int(sys_time());
+            puts(" ms\n");
         }
         else if (strcmp(argv[0], "sleep") == 0)
         {
             i64 ms = 1000;
             if (argc >= 2)
                 ms = parse_int(argv[1]);
-            printf("sleeping %d ms...\n", (int)ms);
+            puts("sleeping...\n");
             sys_sleep(ms);
-            printf("woke up at %d ms\n", (int)sys_time());
+            puts("woke at ");
+            put_int(sys_time());
+            puts(" ms\n");
         }
         else if (strcmp(argv[0], "kill") == 0)
         {
             if (argc < 2)
             {
-                printf("usage: kill PID\n");
+                puts("usage: kill PID\n");
                 continue;
             }
             i64 pid = parse_int(argv[1]);
             i64 r = sys_kill(pid, 15);
-            printf("kill %d -> %d\n", (int)pid, (int)r);
+            puts("kill -> ");
+            put_int(r);
+            putc('\n');
         }
         else if (strcmp(argv[0], "exit") == 0)
         {
-            printf("bye\n");
+            puts("bye\n");
             sys_exit(0);
         }
         else
         {
-            printf("unknown: %s\n", argv[0]);
+            puts("unknown: ");
+            puts(argv[0]);
+            putc('\n');
         }
     }
 }

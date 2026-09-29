@@ -45,8 +45,28 @@ struct NyfsFile
     u32 entry_index;
 };
 
-VNodeOps g_nyfs_file_ops = {nyfs_read, nullptr, nullptr, nullptr, nyfs_size};
-VNodeOps g_nyfs_dir_ops = {nullptr, nullptr, nullptr, nullptr, nullptr};
+
+isize nyfs_readdir(VNode* n, usize idx, DirEntry* out)
+{
+    usize i = 0;
+    for (VNode* c = n->children; c; c = c->next, ++i)
+    {
+        if (i == idx)
+        {
+            libk::strncpy(out->name, c->name, sizeof(out->name) - 1);
+            out->name[sizeof(out->name) - 1] = 0;
+            out->type = c->type;
+            out->ino = c->ino;
+            out->size = 0;
+            if (c->ops && c->ops->size)
+                out->size = static_cast<u64>(c->ops->size(c));
+            return 1;
+        }
+    }
+    return 0;
+};
+VNodeOps g_nyfs_file_ops = {nyfs_read, nyfs_write, nullptr, nullptr, nyfs_size};
+VNodeOps g_nyfs_dir_ops = {nullptr, nullptr, nyfs_readdir, nullptr, nullptr};
 
 bool read_sector(u64 lba, void* buf)
 {
@@ -101,11 +121,21 @@ void make_dir_root()
         g_root->ops = &g_nyfs_dir_ops;
 }
 
-// Rebuild the root directory's children list from the on-disk file table.
 void rebuild_children()
 {
     if (!g_root)
         return;
+
+    /* Free the old children list. */
+    VNode* c = g_root->children;
+    while (c)
+    {
+        VNode* next = c->next;
+        if (c->priv)
+            mm::Heap::deallocate(c->priv);
+        mm::Heap::deallocate(c);
+        c = next;
+    }
     g_root->children = nullptr;
 
     for (u32 i = 0; i < kMaxFiles; ++i)
@@ -205,7 +235,6 @@ isize nyfs_read(VNode* n, void* buf, usize off, usize len)
     const usize avail = e.size - off;
     const usize n_copy = (len < avail) ? len : avail;
 
-    // Read block-by-block from the contiguous data area.
     auto* out = static_cast<u8*>(buf);
     usize done = 0;
     while (done < n_copy)
@@ -236,16 +265,9 @@ isize nyfs_write(VNode* n, const void* buf, usize off, usize len)
     if (e.name_len == 0)
         return -1;
 
-    const usize end_off = off + len;
-    const u64 sectors_needed = (end_off + kBlockSize - 1) / kBlockSize;
-
-    // Simple: allocate contiguous sectors after the current data area end.
-    // We do not reclaim on truncate; the file table only grows.
+    /* Allocate data sectors on first write. */
     if (e.data_lba == 0)
     {
-        Superblock sb{};
-        read_sector(0, &sb);
-        // Scan existing entries to find the highest allocated sector.
         u64 next_free = kDataStart;
         for (u32 i = 0; i < kMaxFiles; ++i)
         {
@@ -261,7 +283,6 @@ isize nyfs_write(VNode* n, const void* buf, usize off, usize len)
         e.data_lba = static_cast<u32>(next_free);
     }
 
-    // Write bytes sector by sector.
     const auto* src = static_cast<const u8*>(buf);
     usize done = 0;
     while (done < len)
@@ -288,16 +309,12 @@ isize nyfs_write(VNode* n, const void* buf, usize off, usize len)
         done += static_cast<usize>(chunk);
     }
 
+    const usize end_off = off + len;
     if (end_off > e.size)
     {
         e.size = static_cast<u32>(end_off);
         write_entry(nf->entry_index, &e);
     }
-
-    Superblock sb{};
-    read_sector(0, &sb);
-    // file_count is informational; recompute lazily.
-    (void)sectors_needed;
 
     return static_cast<isize>(len);
 }
@@ -310,7 +327,6 @@ int nyfs_create(const char* name)
     if (nlen == 0 || nlen > 63)
         return -1;
 
-    // Reject duplicates.
     for (u32 i = 0; i < kMaxFiles; ++i)
     {
         FileEntry e{};
@@ -318,11 +334,10 @@ int nyfs_create(const char* name)
             continue;
         if (e.name_len == nlen && libk::memcmp(e.name, name, nlen) == 0)
         {
-            return -1;
+            return 0; /* already exists, treat as success */
         }
     }
 
-    // Find first free slot.
     for (u32 i = 0; i < kMaxFiles; ++i)
     {
         FileEntry e{};

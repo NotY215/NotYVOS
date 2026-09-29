@@ -20,11 +20,12 @@ void filetable_destroy(FileTable* ft)
         mm::Heap::deallocate(ft);
 }
 
+// FDs 0, 1, 2 are reserved for stdin, stdout, stderr. Allocate from 3.
 i32 filetable_alloc(FileTable* ft, VNode* vnode, u32 flags)
 {
     if (!ft || !vnode)
         return -1;
-    for (u32 i = 0; i < kMaxFds; ++i)
+    for (u32 i = 3; i < kMaxFds; ++i)
     {
         if (!ft->fds[i].used)
         {
@@ -49,7 +50,7 @@ File* filetable_get(FileTable* ft, i32 fd)
 
 void filetable_close(FileTable* ft, i32 fd)
 {
-    if (!ft || fd < 0 || fd >= static_cast<i32>(kMaxFds))
+    if (!ft || fd < 3 || fd >= static_cast<i32>(kMaxFds))
         return;
     ft->fds[fd].used = false;
     ft->fds[fd].vnode = nullptr;

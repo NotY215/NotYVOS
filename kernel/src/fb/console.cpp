@@ -1,7 +1,8 @@
-#include "font8x8.hpp"
-#include <kernel/arch/x86_64/serial.hpp>
 #include <kernel/fb/console.hpp>
 #include <kernel/fb/framebuffer.hpp>
+#include <kernel/arch/x86_64/serial.hpp>
+#include <kernel/gfx/compositor.hpp>
+#include "font8x8.hpp"
 
 namespace notyvos::fb
 {
@@ -25,6 +26,8 @@ struct State
     u32 bg = 0x00101018;
     bool cursor_drawn = false;
 };
+
+bool g_buffered = false;
 
 State g;
 } // namespace
@@ -82,6 +85,12 @@ u32 Console::cursor_row() noexcept
 
 void Console::clear() noexcept
 {
+    if (g_buffered)
+    {
+        gfx::Compositor::term_clear();
+        return;
+    }
+
     if (!g.ready)
         return;
     erase_cursor();
@@ -159,6 +168,15 @@ void Console::newline() noexcept
     }
 }
 
+void Console::switch_to_buffered() noexcept
+{
+    g_buffered = true;
+}
+bool Console::is_buffered() noexcept
+{
+    return g_buffered;
+}
+
 void Console::backspace() noexcept
 {
     if (g.col == 0)
@@ -175,6 +193,12 @@ void Console::advance_cursor() noexcept
 
 void Console::put(char c) noexcept
 {
+    if (g_buffered)
+    {
+        gfx::Compositor::term_put(c);
+        return;
+    }
+
     if (!g.ready)
         return;
 
@@ -227,4 +251,17 @@ void Console::puts(const char* s) noexcept
         put(*s++);
 }
 
+} // namespace notyvos::fb
+
+#include <kernel/gfx/compositor.hpp>
+namespace notyvos::fb
+{
+void compositor_term_put(char c)
+{
+    gfx::Compositor::term_put(c);
+}
+void compositor_term_clear()
+{
+    gfx::Compositor::term_clear();
+}
 } // namespace notyvos::fb
