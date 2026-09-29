@@ -26,26 +26,37 @@
 #define LIMINE_MODULE_REQUEST_ID LIMINE_MODULE_REQUEST
 #endif
 #endif
+#ifndef LIMINE_RSDP_REQUEST_ID
+#ifdef LIMINE_RSDP_REQUEST
+#define LIMINE_RSDP_REQUEST_ID LIMINE_RSDP_REQUEST
+#endif
+#endif
 
 extern "C"
 {
     __attribute__((used, section(".limine_requests_start"))) static volatile uint64_t
         limine_requests_start_marker[4] = LIMINE_REQUESTS_START_MARKER;
+
     __attribute__((used,
                    section(".limine_requests"))) static volatile uint64_t limine_base_revision[3] =
         LIMINE_BASE_REVISION(3);
+
     __attribute__((used, section(".limine_requests"))) static volatile limine_framebuffer_request
         framebuffer_request = {
             .id = LIMINE_FRAMEBUFFER_REQUEST_ID, .revision = 0, .response = nullptr};
+
     __attribute__((
         used, section(".limine_requests"))) static volatile limine_memmap_request memmap_request = {
         .id = LIMINE_MEMMAP_REQUEST_ID, .revision = 0, .response = nullptr};
+
     __attribute__((
         used, section(".limine_requests"))) static volatile limine_hhdm_request hhdm_request = {
         .id = LIMINE_HHDM_REQUEST_ID, .revision = 0, .response = nullptr};
+
     __attribute__((used,
                    section(".limine_requests"))) static volatile limine_mp_request mp_request = {
         .id = LIMINE_MP_REQUEST_ID, .revision = 0, .response = nullptr, .flags = 0};
+
     __attribute__((
         used, section(".limine_requests"))) static volatile limine_module_request module_request = {
         .id = LIMINE_MODULE_REQUEST_ID,
@@ -53,18 +64,25 @@ extern "C"
         .response = nullptr,
         .internal_module_count = 0,
         .internal_modules = nullptr};
+
+    __attribute__((
+        used, section(".limine_requests"))) static volatile limine_rsdp_request rsdp_request = {
+        .id = LIMINE_RSDP_REQUEST_ID, .revision = 0, .response = nullptr};
+
     __attribute__((
         used,
         section(".limine_requests_end"))) static volatile uint64_t limine_requests_end_marker[2] =
         LIMINE_REQUESTS_END_MARKER;
 } // extern "C"
 
+#include <kernel/acpi/acpi.hpp>
 #include <kernel/arch/x86_64/cpu.hpp>
 #include <kernel/arch/x86_64/isr.hpp>
 #include <kernel/arch/x86_64/lapic.hpp>
 #include <kernel/arch/x86_64/percpu.hpp>
 #include <kernel/arch/x86_64/serial.hpp>
 #include <kernel/arch/x86_64/smp.hpp>
+#include <kernel/audio/hda.hpp>
 #include <kernel/block/ahci.hpp>
 #include <kernel/block/block.hpp>
 #include <kernel/boot/limine.hpp>
@@ -73,11 +91,14 @@ extern "C"
 #include <kernel/fs/initramfs.hpp>
 #include <kernel/fs/nyfs.hpp>
 #include <kernel/fs/vfs.hpp>
+#include <kernel/gfx/api.hpp>
 #include <kernel/gfx/compositor.hpp>
+#include <kernel/gfx/hal.hpp>
 #include <kernel/log.hpp>
 #include <kernel/mm/heap.hpp>
 #include <kernel/mm/pmm.hpp>
 #include <kernel/mm/vmm.hpp>
+#include <kernel/net/e1000.hpp>
 #include <kernel/panic.hpp>
 #include <kernel/proc/elf.hpp>
 #include <kernel/sched/scheduler.hpp>
@@ -127,13 +148,23 @@ extern "C" [[noreturn]] void kernel_main()
     log::write(log::Level::Info, "mm", "HHDM offset: 0x%llx",
                static_cast<unsigned long long>(info.hhdm->offset));
 
-    // ---- CPU, memory subsystems. No compositor yet. ----
     arch::x86_64::cpu_init();
     mm::PhysicalMemory::init(info.memmap, info.hhdm->offset);
     mm::VirtualMemory::init(info.hhdm->offset);
     mm::Heap::init();
 
-    // ---- Storage and filesystems. ----
+    // ---- ACPI: RSDP comes from Limine, no memory scanning. ----
+    if (rsdp_request.response)
+    {
+        acpi::init(info.hhdm->offset, rsdp_request.response->address);
+    }
+    else
+    {
+        log::write(log::Level::Warn, "acpi",
+                   "Limine did not provide an RSDP; power management disabled");
+    }
+
+    // ---- Block storage ----
     block::block_init();
     block::ahci_init();
 
@@ -176,13 +207,17 @@ extern "C" [[noreturn]] void kernel_main()
         nyfs_root = fs::nyfs_mount(block::block_get(0));
     }
 
-    // ---- SMP, per-CPU, LAPIC. ----
+    // ---- Networking + Audio ----
+    net::e1000_init();
+    audio::hda_init();
+
+    // ---- SMP, per-CPU, LAPIC ----
     arch::x86_64::percpu_init_bsp();
     arch::x86_64::Lapic::init_bsp(info.hhdm->offset);
     arch::x86_64::percpu_register(0, arch::x86_64::Lapic::id(), 0, 0);
     arch::x86_64::smp_init(mp_request.response);
 
-    // ---- VFS. ----
+    // ---- VFS ----
     if (!module_request.response || module_request.response->module_count < 2)
     {
         log::write(log::Level::Error, "init", "need 2 Limine modules");
@@ -212,14 +247,17 @@ extern "C" [[noreturn]] void kernel_main()
 
     fs::vfs_mount_root(root);
 
-    // ---- Now the compositor can allocate. Heap and VFS are ready. ----
+    // ---- Graphics stack ----
     gfx::Compositor::init();
     fb::Console::switch_to_buffered();
     log::init();
     log::write(log::Level::Info, "boot", "NOTYVOS %s (%s)", NOTYVOS_VERSION, NOTYVOS_GIT_REV);
     log::write(log::Level::Info, "boot", "desktop active");
 
-    // ---- Scheduler + init. ----
+    gfx::register_software_backend();
+    gfx::Device::init();
+
+    // ---- Scheduler + init ----
     sched::scheduler_init();
 
     const auto elf = proc::load_elf(elfmod->address, elfmod->size);

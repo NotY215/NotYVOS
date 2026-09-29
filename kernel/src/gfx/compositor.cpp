@@ -1,10 +1,14 @@
 #include "../fb/font8x8.hpp"
+#include <kernel/acpi/acpi.hpp>
 #include <kernel/arch/x86_64/io.hpp>
 #include <kernel/arch/x86_64/mouse.hpp>
 #include <kernel/arch/x86_64/pit.hpp>
 #include <kernel/fb/framebuffer.hpp>
 #include <kernel/fs/vfs.hpp>
+#include <kernel/gfx/api.hpp>
+#include <kernel/gfx/apps.hpp>
 #include <kernel/gfx/compositor.hpp>
+#include <kernel/gfx/hal.hpp>
 #include <kernel/libk/mem.hpp>
 #include <kernel/libk/string.hpp>
 #include <kernel/log.hpp>
@@ -77,7 +81,6 @@ Shortcut g_shortcuts[4] = {
     {"Bin", ShortcutKind::Bin, 32, 206},
 };
 
-// Start menu items.
 enum class MenuItem : u8
 {
     None = 0,
@@ -123,7 +126,7 @@ i32 g_drag_off_y = 0;
 i32 g_hover_shortcut = -1;
 i32 g_focus_shortcut = -1;
 
-i32 g_hover_menu = -1; // index into g_menu_items
+i32 g_hover_menu = -1;
 bool g_start_open = false;
 
 u64 g_last_click_tick = 0;
@@ -139,7 +142,6 @@ inline i32 to_i32(u32 v) noexcept
 // ---------------------------------------------------------------------------
 // Scene drawing primitives
 // ---------------------------------------------------------------------------
-
 void s_fill(i32 x, i32 y, i32 w, i32 h, u32 c)
 {
     if (!g_scene)
@@ -209,6 +211,16 @@ void s_text(i32 px, i32 py, const char* s, u32 fg, u32 bg)
         x += static_cast<i32>(kCellW);
         s++;
     }
+}
+
+// Widget toolkit glue.
+void widget_rect_cb(i32 x, i32 y, i32 w, i32 h, u32 c)
+{
+    s_fill(x, y, w, h, c);
+}
+void widget_text_cb(i32 x, i32 y, const char* s, u32 fg, u32 bg)
+{
+    s_text(x, y, s, fg, bg);
 }
 
 // ---------------------------------------------------------------------------
@@ -375,7 +387,6 @@ void scene_draw_taskbar()
     const i32 y0 = static_cast<i32>(g_h - kTaskbarH);
     s_fill(0, y0, to_i32(g_w), static_cast<i32>(kTaskbarH), kTaskbar);
 
-    // Start button (highlight if menu open).
     const u32 start_bg = g_start_open ? kTaskBtnOn : kTaskBtn;
     s_fill(4, y0 + 4, 100, static_cast<i32>(kTaskbarH) - 8, start_bg);
     for (i32 i = 0; i < 2; i++)
@@ -515,44 +526,31 @@ void scene_draw_terminal_content(i32 gx, i32 gy)
 
 void scene_draw_window_content(const Window& win, i32 gx, i32 gy, i32 gw, i32 gh)
 {
-    (void)gh;
     if (win.kind == WindowKind::Terminal)
     {
         scene_draw_terminal_content(gx, gy);
         return;
     }
+    const i32 mx = arch::x86_64::mouse_x();
+    const i32 my = arch::x86_64::mouse_y();
+    const bool down = arch::x86_64::mouse_left();
+
     if (win.kind == WindowKind::Explorer)
     {
-        s_text(gx + 12, gy + 12, "/", kTextFg, kClientBg);
-        s_text(gx + 12, gy + 12 + static_cast<i32>(kCellH), "  disk/", kTextFg, kClientBg);
-        s_text(gx + 12, gy + 12 + static_cast<i32>(kCellH) * 2, "  hello.elf", kTextFg, kClientBg);
-        s_text(gx + 12, gy + 12 + static_cast<i32>(kCellH) * 3, "  readme.txt", kTextFg, kClientBg);
-        s_text(gx + 12, gy + 12 + static_cast<i32>(kCellH) * 4, "  hello.txt", kTextFg, kClientBg);
-        s_text(gx + 12, gy + 12 + static_cast<i32>(kCellH) * 5, "  wallpaper.raw", kTextFg,
-               kClientBg);
-        (void)gw;
+        apps_draw_explorer(gx, gy, gw, gh, mx, my, down);
         return;
     }
     if (win.kind == WindowKind::Settings)
     {
-        s_text(gx + 12, gy + 12, "System Settings", kTextFg, kClientBg);
-        s_text(gx + 12, gy + 12 + static_cast<i32>(kCellH) * 2, "Display: 800x600", kTextFg,
-               kClientBg);
-        s_text(gx + 12, gy + 12 + static_cast<i32>(kCellH) * 3, "Storage: NYFS on SATA", kTextFg,
-               kClientBg);
-        s_text(gx + 12, gy + 12 + static_cast<i32>(kCellH) * 4, "Input: PS/2 kb + mouse", kTextFg,
-               kClientBg);
-        (void)gw;
+        apps_draw_settings(gx, gy, gw, gh, mx, my, down);
         return;
     }
     if (win.kind == WindowKind::Bin)
     {
-        s_text(gx + 12, gy + 12, "Recycle Bin is empty.", kTextFg, kClientBg);
-        (void)gw;
+        apps_draw_bin(gx, gy, gw, gh, mx, my, down);
         return;
     }
     s_text(gx + 12, gy + 12, win.title, kTextFg, kClientBg);
-    (void)gw;
 }
 
 void scene_draw_window(const Window& win)
@@ -746,12 +744,10 @@ void minimize_window(u32 idx)
         g_windows[i].focused = false;
 }
 
-// Create a new window of a given kind, positioned in the middle.
 Window* open_window(WindowKind kind, const char* title, i32 w, i32 h)
 {
     if (g_win_count >= kMaxWindows)
         return nullptr;
-    // If a window of this kind exists, un-minimize and focus it.
     for (u32 i = 0; i < g_win_count; i++)
     {
         if (g_windows[i].kind == kind && kind != WindowKind::Terminal)
@@ -785,6 +781,65 @@ Window* open_window(WindowKind kind, const char* title, i32 w, i32 h)
     return &g_windows[g_win_count - 1];
 }
 
+void create_terminal_window()
+{
+    if (g_win_count >= kMaxWindows)
+        return;
+
+    Window& t = g_windows[g_win_count];
+    t.x = 180;
+    t.y = 40;
+    t.w = to_i32(g_w) - 220;
+    t.h = to_i32(g_h) - static_cast<i32>(kTaskbarH) - 80;
+    t.visible = true;
+    t.focused = true;
+    t.minimized = false;
+    t.maximized = false;
+    t.kind = WindowKind::Terminal;
+    const char* s = "Terminal";
+    u32 i = 0;
+    while (s[i] && i < kWinTitleMax - 1)
+    {
+        t.title[i] = s[i];
+        i++;
+    }
+    t.title[i] = 0;
+
+    const i32 cw = t.w;
+    const i32 ch = t.h - static_cast<i32>(kTitleH);
+    g_term_cols = static_cast<u32>(cw) / kCellW;
+    g_term_rows = static_cast<u32>(ch) / kCellH;
+    if (g_term_cols > 120)
+        g_term_cols = 120;
+    if (g_term_rows > 60)
+        g_term_rows = 60;
+    if (g_term_cols == 0)
+        g_term_cols = 1;
+    if (g_term_rows == 0)
+        g_term_rows = 1;
+    if (g_term_cursor >= g_term_cols * g_term_rows)
+        g_term_cursor = 0;
+
+    ++g_win_count;
+    focus_window(g_win_count - 1);
+    g_dirty_scene = true;
+}
+
+void launch_terminal()
+{
+    for (u32 i = 0; i < g_win_count; i++)
+    {
+        if (g_windows[i].kind == WindowKind::Terminal)
+        {
+            g_windows[i].minimized = false;
+            focus_window(i);
+            g_dirty_scene = true;
+            return;
+        }
+    }
+    create_terminal_window();
+}
+
 void launch_shortcut(ShortcutKind kind)
 {
     switch (kind)
@@ -799,16 +854,7 @@ void launch_shortcut(ShortcutKind kind)
         break;
     case ShortcutKind::Terminal:
         log::write(log::Level::Info, "gfx", "launch: Terminal");
-        for (u32 i = 0; i < g_win_count; i++)
-        {
-            if (g_windows[i].kind == WindowKind::Terminal)
-            {
-                g_windows[i].minimized = false;
-                focus_window(i);
-                g_dirty_scene = true;
-                break;
-            }
-        }
+        launch_terminal();
         break;
     case ShortcutKind::Bin:
         log::write(log::Level::Info, "gfx", "launch: Recycle Bin");
@@ -834,10 +880,10 @@ void launch_menu_item(MenuItem m)
         launch_shortcut(ShortcutKind::Bin);
         break;
     case MenuItem::Shutdown:
-        Compositor::machine_shutdown();
+        acpi::power_off();
         break;
     case MenuItem::Restart:
-        Compositor::machine_restart();
+        acpi::restart();
         break;
     default:
         break;
@@ -853,7 +899,6 @@ void on_mouse_tick()
     const bool just_pressed = left && !g_prev_left;
     const bool just_released = !left && g_prev_left;
 
-    // Hover updates.
     const i32 h_shortcut = hit_shortcut(mx, my);
     if (h_shortcut != g_hover_shortcut)
     {
@@ -869,7 +914,6 @@ void on_mouse_tick()
 
     if (just_pressed)
     {
-        // Start button toggles the menu.
         if (hit_start_button(mx, my))
         {
             g_start_open = !g_start_open;
@@ -881,7 +925,6 @@ void on_mouse_tick()
             return;
         }
 
-        // Menu click if open.
         if (g_start_open)
         {
             if (h_menu >= 0)
@@ -900,7 +943,6 @@ void on_mouse_tick()
             }
             else
             {
-                // Click outside the menu closes it.
                 g_start_open = false;
                 g_dirty_scene = true;
             }
@@ -938,6 +980,12 @@ void on_mouse_tick()
             else
             {
                 focus_window(static_cast<u32>(idx));
+                if (w.kind == WindowKind::Explorer)
+                    apps_click_explorer(mx, my, just_pressed);
+                if (w.kind == WindowKind::Settings)
+                    apps_click_settings(mx, my, just_pressed);
+                if (w.kind == WindowKind::Bin)
+                    apps_click_bin(mx, my, just_pressed);
                 g_dirty_scene = true;
             }
         }
@@ -958,7 +1006,6 @@ void on_mouse_tick()
         }
         else
         {
-            // Taskbar window buttons.
             const i32 ty = to_i32(g_h) - static_cast<i32>(kTaskbarH);
             if (my >= ty && my < to_i32(g_h))
             {
@@ -1090,29 +1137,17 @@ void try_load_wallpaper()
 } // namespace
 
 // ---------------------------------------------------------------------------
-// Power actions
+// Power actions — now delegate to ACPI
 // ---------------------------------------------------------------------------
 
 void Compositor::machine_shutdown() noexcept
 {
-    log::write(log::Level::Info, "power", "shutdown requested");
-    // Try the common ACPI / Bochs / QEMU shutdown ports.
-    asm volatile("outw %0, %1" ::"a"(static_cast<u16>(0x2000)), "Nd"(static_cast<u16>(0x604)));
-    asm volatile("outw %0, %1" ::"a"(static_cast<u16>(0x2000)), "Nd"(static_cast<u16>(0xB004)));
-    asm volatile("outw %0, %1" ::"a"(static_cast<u16>(0x3400)), "Nd"(static_cast<u16>(0x4004)));
-    // Fallback: keyboard controller reset. VirtualBox will reboot.
-    asm volatile("outb %0, %1" ::"a"(static_cast<u8>(0xFE)), "Nd"(static_cast<u16>(0x64)));
-    for (;;)
-        asm volatile("hlt");
+    acpi::power_off();
 }
 
 void Compositor::machine_restart() noexcept
 {
-    log::write(log::Level::Info, "power", "restart requested");
-    // Keyboard controller pulse reset line.
-    asm volatile("outb %0, %1" ::"a"(static_cast<u8>(0xFE)), "Nd"(static_cast<u16>(0x64)));
-    for (;;)
-        asm volatile("hlt");
+    acpi::restart();
 }
 
 // ---------------------------------------------------------------------------
@@ -1189,6 +1224,9 @@ void Compositor::init() noexcept
     g_cursor_x = -1000;
     cursor_draw(mx, my);
 
+    // Bind the widget toolkit's drawing primitives.
+    apps_bind_impl(widget_rect_cb, widget_text_cb);
+
     log::write(log::Level::Info, "comp", "desktop %llu x %llu, terminal %llu x %llu",
                static_cast<unsigned long long>(g_w), static_cast<unsigned long long>(g_h),
                static_cast<unsigned long long>(g_term_cols),
@@ -1213,7 +1251,10 @@ void Compositor::tick() noexcept
 
     if (g_dirty_scene)
     {
+        gfx::hal_set_target(g_scene, g_w, g_h, g_w);
+        gfx::Device::begin_frame();
         scene_render();
+        gfx::Device::end_frame();
         fb_blit_full();
         g_dirty_scene = false;
         g_cursor_x = -1000;

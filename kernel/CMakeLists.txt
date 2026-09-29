@@ -11,6 +11,14 @@ set(NOTYVOS_INITRAMFS    "${CMAKE_BINARY_DIR}/initramfs.tar")
 set(KERNEL_SOURCES
     src/main.cpp
     src/log.cpp
+    src/acpi/acpi.cpp
+    src/gfx/widget.cpp
+    src/gfx/apps.cpp
+    src/gfx/hal.cpp
+    src/gfx/api.cpp
+    src/gfx/backend_software.cpp
+    src/net/e1000.cpp
+    src/audio/hda.cpp
     src/block/block.cpp
     src/block/ahci.cpp
     src/panic.cpp
