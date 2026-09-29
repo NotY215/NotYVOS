@@ -17,6 +17,7 @@
 #include <kernel/sched/task.hpp>
 #include <kernel/syscall/syscall.hpp>
 #include <kernel/syscall/uaccess.hpp>
+#include <kernel/gfx/compositor.hpp>
 
 namespace notyvos::syscall
 {
@@ -102,6 +103,9 @@ i64 sys_read_stdin(u64 ubuf, u64 len)
     usize got = 0;
     while (got < len)
     {
+        // Paint the desktop while we wait. This is the only place the
+        // compositor gets driven when the shell is idle.
+        gfx::Compositor::tick();
         while (!arch::x86_64::keyboard_has_data())
         {
             asm volatile("sti; hlt");

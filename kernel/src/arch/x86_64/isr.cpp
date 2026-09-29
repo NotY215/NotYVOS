@@ -1,12 +1,12 @@
 #include <kernel/arch/x86_64/isr.hpp>
 #include <kernel/arch/x86_64/keyboard.hpp>
+#include <kernel/arch/x86_64/mouse.hpp>
 #include <kernel/arch/x86_64/pic.hpp>
 #include <kernel/arch/x86_64/pit.hpp>
+#include <kernel/gfx/compositor.hpp>
 #include <kernel/log.hpp>
 #include <kernel/panic.hpp>
 #include <kernel/sched/scheduler.hpp>
-#include <kernel/arch/x86_64/mouse.hpp>
-#include <kernel/gfx/compositor.hpp>
 
 namespace notyvos::arch::x86_64
 {
@@ -127,7 +127,8 @@ void handle_irq(u8 irq, InterruptFrame* /*f*/) noexcept
     {
         pit_on_tick();
         sched::scheduler_tick();
-        gfx::Compositor::tick();
+        // Only update the clock value; rendering happens from the idle task.
+        gfx::Compositor::update_clock(pit_ticks() / 100);
     }
     else if (irq == 1)
     {
@@ -136,9 +137,9 @@ void handle_irq(u8 irq, InterruptFrame* /*f*/) noexcept
     else if (irq == 12)
     {
         mouse_irq_handler();
-        gfx::Compositor::tick();
+        // Mark dirty so the next idle tick repaints.
+        gfx::Compositor::invalidate();
     }
-
 }
 
 } // namespace
@@ -153,17 +154,6 @@ extern "C" void notyvos_isr_dispatch(InterruptFrame* frame) noexcept
     else if (vec < 48)
     {
         const u8 irq = static_cast<u8>(vec - 32);
-
-        // Log the first time each IRQ line is delivered, once per IRQ, so
-        // we can see exactly which lines are firing and which are silent.
-        static bool g_irq_seen[16] = {};
-        if (!g_irq_seen[irq])
-        {
-            g_irq_seen[irq] = true;
-            log::write(log::Level::Warn, "isr", "first IRQ%llu delivered (vec=%llu)",
-                       static_cast<unsigned long long>(irq), static_cast<unsigned long long>(vec));
-        }
-
         handle_irq(irq, frame);
         pic_send_eoi(irq);
     }

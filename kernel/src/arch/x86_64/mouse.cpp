@@ -61,33 +61,27 @@ u8 read_data() noexcept
 
 void mouse_write(u8 v) noexcept
 {
-    write_cmd(0xD4); // tell controller the next byte goes to the mouse
+    write_cmd(0xD4);
     write_data(v);
-    (void)read_data(); // ACK
+    (void)read_data();
 }
 
 } // namespace
 
 bool mouse_init() noexcept
 {
-    log::write(log::Level::Info, "mouse", "init");
-
-    // Step 1: enable auxiliary device.
     write_cmd(0xA8);
 
-    // Step 2: read config, set bit 1 (IRQ12), clear bit 5 (aux clock enable).
     write_cmd(0x20);
     u8 cfg = read_data();
-    cfg |= 0x02;
-    cfg &= ~static_cast<u8>(0x20);
+    cfg |= 0x02;                   // IRQ12
+    cfg &= ~static_cast<u8>(0x20); // enable aux clock
     write_cmd(0x60);
     write_data(cfg);
 
-    // Step 3: enable data reporting on the mouse.
-    mouse_write(0xF6); // set defaults
-    mouse_write(0xF4); // enable reporting
+    mouse_write(0xF6);
+    mouse_write(0xF4);
 
-    // Centre cursor on the framebuffer if we know its size.
     if (fb::Framebuffer::ready())
     {
         g_x = static_cast<i32>(fb::Framebuffer::width() / 2);
@@ -101,17 +95,16 @@ bool mouse_init() noexcept
 
 void mouse_irq_handler() noexcept
 {
-    // Status bit 5 = byte came from aux (mouse) device.
     while (inb(kStatusPort) & 0x01)
     {
         const u8 st = inb(kStatusPort);
         const u8 byte = inb(kDataPort);
 
         if ((st & 0x20) == 0)
-            continue; // keyboard byte, ignore
+            continue; // keyboard byte
 
         if (g_cycle == 0 && (byte & 0x08) == 0)
-            continue; // resync
+            continue;
 
         g_packet[g_cycle++] = byte;
         if (g_cycle < 3)
@@ -120,17 +113,17 @@ void mouse_irq_handler() noexcept
 
         const u8 flags = g_packet[0];
         if (flags & 0xC0)
-            continue; // overflow
+            continue;
 
         i32 dx = static_cast<i32>(g_packet[1]);
         i32 dy = static_cast<i32>(g_packet[2]);
         if (flags & 0x10)
-            dx |= ~0xFF; // sign-extend X
+            dx |= ~0xFF;
         if (flags & 0x20)
-            dy |= ~0xFF; // sign-extend Y
+            dy |= ~0xFF;
 
         g_x += dx;
-        g_y -= dy; // screen Y grows downward
+        g_y -= dy;
 
         g_left = (flags & 0x01) != 0;
         g_right = (flags & 0x02) != 0;

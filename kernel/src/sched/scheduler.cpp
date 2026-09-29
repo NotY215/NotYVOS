@@ -2,6 +2,7 @@
 #include <kernel/arch/x86_64/percpu.hpp>
 #include <kernel/arch/x86_64/pit.hpp>
 #include <kernel/arch/x86_64/tss.hpp>
+#include <kernel/gfx/compositor.hpp>
 #include <kernel/log.hpp>
 #include <kernel/mm/heap.hpp>
 #include <kernel/sched/scheduler.hpp>
@@ -81,8 +82,12 @@ void scheduler_sleep_until(u64 tick) noexcept
     Task* me = scheduler_current();
     if (!me || me == &g_boot_task)
     {
+        // Boot task spins, does not sleep.
         while (arch::x86_64::pit_ticks() < tick)
+        {
+            gfx::Compositor::tick();
             asm volatile("pause");
+        }
         return;
     }
     auto* s = static_cast<Sleeper*>(mm::Heap::allocate(sizeof(Sleeper)));
@@ -202,7 +207,10 @@ void scheduler_start() noexcept
     {
         log::write(log::Level::Warn, "sched", "no runnable task; idling");
         for (;;)
+        {
+            gfx::Compositor::tick();
             asm volatile("hlt");
+        }
     }
     switch_to(next);
 }
@@ -242,7 +250,10 @@ void scheduler_exit_current(int code)
     {
         log::write(log::Level::Warn, "sched", "no next task; idling");
         for (;;)
+        {
+            gfx::Compositor::tick();
             asm volatile("hlt");
+        }
     }
     switch_to(next);
     for (;;)
@@ -264,7 +275,10 @@ void scheduler_deliver_sigint()
     {
         log::write(log::Level::Warn, "sched", "no next task after SIGINT; idling");
         for (;;)
+        {
+            gfx::Compositor::tick();
             asm volatile("hlt");
+        }
     }
     switch_to(next);
     for (;;)

@@ -83,10 +83,10 @@ void cpu_init() noexcept
     // Remap PIC, disable all IRQs, then unmask IRQ0 (timer).
     pic_remap(32, 40);
     pic_disable_all();
-    pic_set_mask(0, false);  // PIT
-    pic_set_mask(1, false);  // keyboard
-    pic_set_mask(2, false);  // cascade (for slave PIC)
-    pic_set_mask(12, false); // PS/2 mouse (on slave)
+    pic_set_mask(0, false);
+    pic_set_mask(1, false);
+    pic_set_mask(2, false);
+    pic_set_mask(12, false);
     pit_init(100);
     keyboard_init();
     mouse_init();

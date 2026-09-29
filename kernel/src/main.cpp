@@ -68,14 +68,13 @@ extern "C"
 #include <kernel/block/ahci.hpp>
 #include <kernel/block/block.hpp>
 #include <kernel/boot/limine.hpp>
-#include <kernel/gfx/compositor.hpp>
 #include <kernel/fb/console.hpp>
 #include <kernel/fb/framebuffer.hpp>
 #include <kernel/fs/initramfs.hpp>
 #include <kernel/fs/nyfs.hpp>
 #include <kernel/fs/vfs.hpp>
+#include <kernel/gfx/compositor.hpp>
 #include <kernel/log.hpp>
-#include <kernel/libk/string.hpp>
 #include <kernel/mm/heap.hpp>
 #include <kernel/mm/pmm.hpp>
 #include <kernel/mm/vmm.hpp>
@@ -119,12 +118,6 @@ extern "C" [[noreturn]] void kernel_main()
         fb::Console::init();
     }
     log::init();
-
-    // Bring up the desktop, then switch the console to buffered mode so
-    // all later log and shell output appears inside the terminal window.
-    gfx::Compositor::init();
-    fb::Console::switch_to_buffered();
-    log::init(); // clears the compositor terminal
     log::write(log::Level::Info, "boot", "NOTYVOS %s (%s)", NOTYVOS_VERSION, NOTYVOS_GIT_REV);
 
     if (!info.memmap || !info.hhdm)
@@ -134,16 +127,16 @@ extern "C" [[noreturn]] void kernel_main()
     log::write(log::Level::Info, "mm", "HHDM offset: 0x%llx",
                static_cast<unsigned long long>(info.hhdm->offset));
 
-
+    // ---- CPU, memory subsystems. No compositor yet. ----
     arch::x86_64::cpu_init();
     mm::PhysicalMemory::init(info.memmap, info.hhdm->offset);
     mm::VirtualMemory::init(info.hhdm->offset);
     mm::Heap::init();
 
+    // ---- Storage and filesystems. ----
     block::block_init();
     block::ahci_init();
 
-    // Block self-test: write a pattern to the last sector, read it back.
     if (block::block_count() > 0)
     {
         auto* dev = block::block_get(0);
@@ -177,20 +170,19 @@ extern "C" [[noreturn]] void kernel_main()
         }
     }
 
-    // Mount NYFS on the first block device if there is one.
     fs::VNode* nyfs_root = nullptr;
     if (block::block_count() > 0)
     {
         nyfs_root = fs::nyfs_mount(block::block_get(0));
     }
 
+    // ---- SMP, per-CPU, LAPIC. ----
     arch::x86_64::percpu_init_bsp();
     arch::x86_64::Lapic::init_bsp(info.hhdm->offset);
     arch::x86_64::percpu_register(0, arch::x86_64::Lapic::id(), 0, 0);
     arch::x86_64::smp_init(mp_request.response);
 
-    sched::scheduler_init();
-
+    // ---- VFS. ----
     if (!module_request.response || module_request.response->module_count < 2)
     {
         log::write(log::Level::Error, "init", "need 2 Limine modules");
@@ -205,12 +197,8 @@ extern "C" [[noreturn]] void kernel_main()
     if (!root)
         panic("initramfs mount failed");
 
-    // Attach the NYFS root directly as /disk. Do not move its children into
-    // a separate wrapper VNode: nyfs_rescan() rebuilds g_root->children, and
-    // if that node is not in the VFS tree, new files never become visible.
     if (nyfs_root)
     {
-        // Rename nyfs_root to "disk" and attach to VFS root.
         const char* newname = "disk";
         u32 i = 0;
         while (newname[i] && i < sizeof(nyfs_root->name) - 1)
@@ -223,6 +211,16 @@ extern "C" [[noreturn]] void kernel_main()
     }
 
     fs::vfs_mount_root(root);
+
+    // ---- Now the compositor can allocate. Heap and VFS are ready. ----
+    gfx::Compositor::init();
+    fb::Console::switch_to_buffered();
+    log::init();
+    log::write(log::Level::Info, "boot", "NOTYVOS %s (%s)", NOTYVOS_VERSION, NOTYVOS_GIT_REV);
+    log::write(log::Level::Info, "boot", "desktop active");
+
+    // ---- Scheduler + init. ----
+    sched::scheduler_init();
 
     const auto elf = proc::load_elf(elfmod->address, elfmod->size);
     if (!elf.entry)

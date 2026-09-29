@@ -73,8 +73,29 @@ add_custom_target(notyvos-hello ALL DEPENDS "${USER_HELLO_ELF}")
 # ---- initramfs.tar ----
 set(INITRAMFS_DIR "${BIN_DIR}/initramfs-staging")
 set(INITRAMFS_TAR "${BIN_DIR}/initramfs.tar")
+set(WALLPAPER_SRC "${CMAKE_SOURCE_DIR}/wallpaper/1.png")
+set(WALLPAPER_RAW "${BIN_DIR}/wallpaper.raw")
 
 find_program(NOTYVOS_TAR NAMES tar REQUIRED)
+
+# Convert PNG -> raw at build time (Windows only). If the source is missing,
+# the kernel falls back to a gradient background.
+if(WIN32 AND EXISTS "${WALLPAPER_SRC}")
+    add_custom_command(
+        OUTPUT "${WALLPAPER_RAW}"
+        COMMAND powershell -ExecutionPolicy Bypass -File
+                "${CMAKE_SOURCE_DIR}/tools/scripts/convert-wallpaper.ps1"
+                -Src "${WALLPAPER_SRC}"
+                -Dst "${WALLPAPER_RAW}"
+        DEPENDS "${WALLPAPER_SRC}" "${CMAKE_SOURCE_DIR}/tools/scripts/convert-wallpaper.ps1"
+        COMMENT "Converting wallpaper"
+        VERBATIM
+    )
+    add_custom_target(notyvos-wallpaper ALL DEPENDS "${WALLPAPER_RAW}")
+else()
+    # Provide an empty target so the initramfs dependency chain still works.
+    add_custom_target(notyvos-wallpaper ALL)
+endif()
 
 add_custom_command(
     OUTPUT "${INITRAMFS_TAR}"
@@ -86,13 +107,34 @@ add_custom_command(
             "${USER_DIR}/initramfs/readme.txt" "${INITRAMFS_DIR}/readme.txt"
     COMMAND ${CMAKE_COMMAND} -E copy
             "${USER_HELLO_ELF}" "${INITRAMFS_DIR}/hello.elf"
-    COMMAND ${CMAKE_COMMAND} -E chdir "${INITRAMFS_DIR}"
-            "${NOTYVOS_TAR}" -cf "${INITRAMFS_TAR}"
-            hello.txt readme.txt hello.elf
     DEPENDS "${USER_DIR}/initramfs/hello.txt"
             "${USER_DIR}/initramfs/readme.txt"
             "${USER_HELLO_ELF}"
-    COMMENT "Building initramfs.tar"
     VERBATIM
 )
+
+if(WIN32 AND EXISTS "${WALLPAPER_SRC}")
+    add_custom_command(
+        OUTPUT "${INITRAMFS_TAR}"
+        COMMAND ${CMAKE_COMMAND} -E copy "${WALLPAPER_RAW}" "${INITRAMFS_DIR}/wallpaper.raw"
+        COMMAND ${CMAKE_COMMAND} -E chdir "${INITRAMFS_DIR}"
+                "${NOTYVOS_TAR}" -cf "${INITRAMFS_TAR}"
+                hello.txt readme.txt hello.elf wallpaper.raw
+        DEPENDS notyvos-wallpaper "${WALLPAPER_RAW}"
+        APPEND
+        COMMENT "Building initramfs.tar (with wallpaper)"
+        VERBATIM
+    )
+else()
+    add_custom_command(
+        OUTPUT "${INITRAMFS_TAR}"
+        COMMAND ${CMAKE_COMMAND} -E chdir "${INITRAMFS_DIR}"
+                "${NOTYVOS_TAR}" -cf "${INITRAMFS_TAR}"
+                hello.txt readme.txt hello.elf
+        APPEND
+        COMMENT "Building initramfs.tar"
+        VERBATIM
+    )
+endif()
+
 add_custom_target(notyvos-initramfs ALL DEPENDS "${INITRAMFS_TAR}")

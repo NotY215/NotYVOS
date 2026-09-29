@@ -15,11 +15,6 @@ public:
 
     static void clear() noexcept;
 
-    // Switch to compositor-driven rendering. After this call, Console::put
-    // routes through the compositor instead of drawing to the framebuffer.
-    static void switch_to_buffered() noexcept;
-    static bool is_buffered() noexcept;
-
     static void set_colors(u32 fg_argb, u32 bg_argb) noexcept;
     static u32 fg() noexcept;
     static u32 bg() noexcept;
@@ -30,11 +25,12 @@ public:
     static u32 cursor_row() noexcept;
 
     static void set_cursor(u32 col, u32 row) noexcept;
-
-    // Force a redraw of the blinking-block cursor at the current position.
-    // Called automatically after every put(); exposed for the shell to call
-    // after a set_cursor().
     static void refresh_cursor() noexcept;
+
+    // Switch to compositor-driven rendering. After this call, Console::put
+    // routes through the compositor instead of drawing to the framebuffer.
+    static void switch_to_buffered() noexcept;
+    static bool is_buffered() noexcept;
 
 private:
     static void scroll_up_one() noexcept;
