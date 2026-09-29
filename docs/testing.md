@@ -1,14 +1,107 @@
 # Testing
 
-Phase 0 test = boot smoke test:
+## Current test environment
 
-1. Build ISO.
-2. Launch QEMU with ISO.
-3. Verify serial output contains:
-     NOTYVOS kernel alive
-     [INF] boot: NOTYVOS 0.1.0 (<rev>)
-     [INF] fb: framebuffer <W>x<H> pitch=<P> bpp=<B>
-     [INF] mm: memory map entries: <N>
-     [INF] mm: HHDM offset: 0x...
-     [INF] boot: Phase 0 boot OK. Halting.
-4. Verify framebuffer shows NOTYVOS / kernel alive / Phase 0 boot OK.
+The documented development target is VirtualBox. QEMU is not the current
+runtime test workflow.
+
+Use:
+
+    tools\scripts\vbox-run.cmd
+
+after a Release build.
+
+## Boot smoke test
+
+A successful boot should show the kernel banner and initialization logs on
+the serial console, then reach the desktop and start init.elf.
+
+Look for messages covering:
+- NOTYVOS version
+- memory map and HHDM initialization
+- ACPI initialization
+- AHCI/block initialization
+- NYFS mount or format
+- VFS/initramfs mount
+- graphics backend registration
+- PS3 runtime self-tests
+- scheduler start
+- user init
+
+## Userland smoke test
+
+At the shell prompt:
+
+    help
+    about
+    ls /
+    ls /disk
+    cat /readme.txt
+    echo hello
+    pid
+    fork
+    time
+    sleep 100
+    brk
+    write test hello
+    ls /disk
+    cat /disk/test
+    rm test
+    ls /disk
+
+The fork command creates a child and exercises parent waiting/reaping.
+The write command creates/writes a persistent NYFS file under /disk.
+
+Use Ctrl+C to exercise the current SIGINT path. The exit command does not
+shut down the system because the shell is the init process.
+
+## Desktop smoke test
+
+Verify:
+- desktop background or wallpaper is visible
+- taskbar and Start menu render
+- desktop shortcuts respond to the mouse
+- Explorer opens and lists VFS entries
+- Settings tabs respond
+- Bin window renders
+- windows can be focused and dragged
+- minimize/maximize/close controls behave as implemented
+- context menu opens
+- PS/2 mouse movement and wheel input work
+
+## Storage test
+
+The kernel performs a small read/write verification against the last sector
+of the first available writable block device during boot. This is a
+development smoke test only.
+
+NYFS is then mounted on that device. The current implementation formats a
+device when a valid NYFS superblock is not present.
+
+Do not treat NYFS as a mature filesystem. It currently has a fixed metadata
+layout and does not provide journaling, crash recovery or a general block
+allocator.
+
+## PS3 runtime self-tests
+
+Boot runs:
+- PowerPC decoder recognition
+- PS3 ELF header parsing
+- PPU execution
+- SPU execution and mailbox FIFO behavior
+- DMA main/local transfers and barriers
+- baseline JIT self-test
+
+A self-test log entry marked Warn indicates that the relevant test did not
+match its expected result.
+
+## Phase 5A verification
+
+The latest Phase 5A state requires a fresh rebuild and boot. Until that
+verification is completed, Phase 5A remains marked as
+Boot fixes applied — rebuild + boot to verify.
+
+## Regression rule
+
+When a subsystem changes, test the boot path first, then its direct userland
+or desktop behavior, followed by the relevant runtime self-tests.
