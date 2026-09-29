@@ -15,13 +15,15 @@ constexpr u16 kCmdPort = 0x64;
 
 u8 g_cycle = 0;
 u8 g_packet[3] = {};
-i32 g_x = 640;
-i32 g_y = 400;
+i32 g_x = 512;
+i32 g_y = 384;
 bool g_left = false, g_right = false, g_middle = false;
+u64 g_packet_count = 0;
+u64 g_irq_count = 0;
 
 bool wait_write() noexcept
 {
-    for (u32 i = 0; i < 100000; ++i)
+    for (u32 i = 0; i < 1000000; ++i)
     {
         if ((inb(kStatusPort) & 0x02) == 0)
             return true;
@@ -32,7 +34,7 @@ bool wait_write() noexcept
 
 bool wait_read() noexcept
 {
-    for (u32 i = 0; i < 100000; ++i)
+    for (u32 i = 0; i < 1000000; ++i)
     {
         if (inb(kStatusPort) & 0x01)
             return true;
@@ -70,15 +72,36 @@ void mouse_write(u8 v) noexcept
 
 bool mouse_init() noexcept
 {
+    log::write(log::Level::Info, "mouse", "init");
+
+    // Enable the aux port.
     write_cmd(0xA8);
 
+    // Read-modify-write config: set IRQ12 (bit 1), clear mouse clock
+    // disable (bit 5).
     write_cmd(0x20);
     u8 cfg = read_data();
-    cfg |= 0x02;                   // IRQ12
-    cfg &= ~static_cast<u8>(0x20); // enable aux clock
-    write_cmd(0x60);
-    write_data(cfg);
+    u8 target = cfg;
+    target |= 0x02;
+    target &= ~static_cast<u8>(0x20);
 
+    if (target != cfg)
+    {
+        write_cmd(0x60);
+        write_data(target);
+        write_cmd(0x20);
+        u8 rb = read_data();
+        log::write(log::Level::Info, "mouse", "cfg 0x%llx -> 0x%llx (readback 0x%llx)",
+                   static_cast<unsigned long long>(cfg), static_cast<unsigned long long>(target),
+                   static_cast<unsigned long long>(rb));
+    }
+    else
+    {
+        log::write(log::Level::Info, "mouse", "cfg unchanged (0x%llx)",
+                   static_cast<unsigned long long>(cfg));
+    }
+
+    // Mouse: set defaults, then enable reporting.
     mouse_write(0xF6);
     mouse_write(0xF4);
 
@@ -95,6 +118,7 @@ bool mouse_init() noexcept
 
 void mouse_irq_handler() noexcept
 {
+    ++g_irq_count;
     while (inb(kStatusPort) & 0x01)
     {
         const u8 st = inb(kStatusPort);
@@ -142,6 +166,16 @@ void mouse_irq_handler() noexcept
             if (g_y > H - 1)
                 g_y = H - 1;
         }
+
+        if (g_packet_count < 3)
+        {
+            log::write(log::Level::Warn, "mouse",
+                       "packet #%llu flags=0x%llx dx=%d dy=%d at (%d,%d)",
+                       static_cast<unsigned long long>(g_packet_count),
+                       static_cast<unsigned long long>(flags), static_cast<i64>(dx),
+                       static_cast<i64>(dy), static_cast<i64>(g_x), static_cast<i64>(g_y));
+        }
+        ++g_packet_count;
     }
 }
 

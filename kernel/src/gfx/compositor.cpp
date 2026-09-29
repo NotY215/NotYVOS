@@ -217,6 +217,10 @@ void draw_window(const Window& win) noexcept
 
     if (win.kind == WindowKind::Terminal)
     {
+        const i32 gx = win.x;
+        const i32 gy = win.y + static_cast<i32>(kTitleH);
+
+        // Text
         for (u32 row = 0; row < g_term_rows; ++row)
         {
             for (u32 col = 0; col < g_term_cols; ++col)
@@ -224,11 +228,22 @@ void draw_window(const Window& win) noexcept
                 const char ch = g_term[row * g_term_cols + col];
                 if (ch == 0 || ch == ' ')
                     continue;
-                bglyph(win.x + static_cast<i32>(col) * static_cast<i32>(kCellW),
-                       win.y + static_cast<i32>(kTitleH) +
-                           static_cast<i32>(row) * static_cast<i32>(kCellH),
-                       ch, kTextFg, kClientBg);
+                bglyph(gx + static_cast<i32>(col) * static_cast<i32>(kCellW),
+                       gy + static_cast<i32>(row) * static_cast<i32>(kCellH), ch, kTextFg,
+                       kClientBg);
             }
+        }
+
+        // Block cursor at g_term_cursor.
+        const u32 ccol = g_term_cursor % g_term_cols;
+        const u32 crow = g_term_cursor / g_term_cols;
+        if (crow < g_term_rows)
+        {
+            // Draw a solid block as an underline 3 px tall at the cell bottom.
+            bfill(gx + static_cast<i32>(ccol) * static_cast<i32>(kCellW),
+                  gy + static_cast<i32>(crow) * static_cast<i32>(kCellH) +
+                      static_cast<i32>(kCellH) - 4,
+                  static_cast<i32>(kCellW), 3, 0x00FFFFFF);
         }
     }
     else if (win.kind == WindowKind::About)
@@ -459,7 +474,7 @@ void try_load_wallpaper() noexcept
         return;
     }
     const isize sz = vn->ops->size(vn);
-    if (sz < 16 || sz > 32 * 1024 * 1024)
+    if (sz < 16 || sz > 256 * 1024 * 1024)
     {
         log::write(log::Level::Warn, "comp", "wallpaper.raw size invalid: %lld",
                    static_cast<long long>(sz));

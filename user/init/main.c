@@ -5,9 +5,8 @@
 
 static char line[LINE_MAX];
 
-/* Static buffers for the write/rm commands. Using statics avoids
- * the stack-initialization pattern that was triggering a spurious
- * ud2 in Clang -O2. */
+/* Static buffers. Avoids the stack-initialization pattern that tripped a
+ * spurious ud2 in Clang -O2. Also simpler to reason about. */
 static char s_path[160];
 static char s_text[256];
 
@@ -116,9 +115,7 @@ static int build_path(const char* name)
 
 static void do_write(const char* path, const char* text)
 {
-    /* Make sure the file exists. */
-    i64 r = sys_create(path);
-    (void)r;
+    (void)sys_create(path);
 
     i64 fd = sys_open(path, 0);
     if (fd < 0)
@@ -147,16 +144,52 @@ static void do_rm(const char* path)
     putc('\n');
 }
 
+static void print_help(void)
+{
+    puts("commands:\n");
+    puts("  help              this message\n");
+    puts("  ls [DIR]          list directory\n");
+    puts("  cat FILE          print file\n");
+    puts("  echo TEXT         echo\n");
+    puts("  write FILE TEXT   write to /disk/FILE\n");
+    puts("  rm FILE           delete /disk/FILE\n");
+    puts("  pid               current pid\n");
+    puts("  fork              fork a child\n");
+    puts("  exec PATH         replace image (hello.elf)\n");
+    puts("  brk [N]           heap break\n");
+    puts("  time              uptime ms\n");
+    puts("  sleep N           sleep N ms\n");
+    puts("  kill PID          send SIGTERM\n");
+    puts("  about             system info\n");
+    puts("  exit              shell is init; exit is refused\n");
+}
+
+static void print_about(void)
+{
+    puts("NOTYVOS\n");
+    puts("Phase 3B — window manager\n");
+    puts("Desktop: framebuffer compositor, back buffer, PS/2 mouse\n");
+    puts("Shell: pid ");
+    put_int(sys_getpid());
+    putc('\n');
+    puts("Uptime: ");
+    put_int(sys_time());
+    puts(" ms\n");
+    puts("Storage: NYFS on AHCI SATA, mounted at /disk\n");
+    puts("Keyboard: PS/2 i8042, IRQ1. Serial fallback on COM1.\n");
+}
+
 void _start(void)
 {
     stdio_init();
-    puts("\nNOTYVOS shell (phase 2M+)\n");
+    puts("\nNOTYVOS shell (phase 3B)\n");
     puts("type 'help' for commands\n");
 
     for (;;)
     {
         puts("$ ");
         read_line();
+
         char* argv[ARG_MAX];
         int argc = tokenize(line, argv, ARG_MAX);
         if (argc == 0)
@@ -164,21 +197,11 @@ void _start(void)
 
         if (strcmp(argv[0], "help") == 0)
         {
-            puts("commands:\n");
-            puts("  help              this message\n");
-            puts("  ls [DIR]          list directory\n");
-            puts("  cat FILE          print file\n");
-            puts("  echo TEXT         echo\n");
-            puts("  write FILE TEXT   write to /disk/FILE\n");
-            puts("  rm FILE           delete /disk/FILE\n");
-            puts("  pid               current pid\n");
-            puts("  fork              fork a child\n");
-            puts("  exec PATH         replace image\n");
-            puts("  brk [N]           heap break\n");
-            puts("  time              uptime ms\n");
-            puts("  sleep N           sleep N ms\n");
-            puts("  kill PID          send SIGTERM\n");
-            puts("  exit              quit shell\n");
+            print_help();
+        }
+        else if (strcmp(argv[0], "about") == 0)
+        {
+            print_about();
         }
         else if (strcmp(argv[0], "echo") == 0)
         {
@@ -244,7 +267,9 @@ void _start(void)
             i64 child = sys_fork();
             if (child == 0)
             {
-                puts("[child] hello from fork child\n");
+                puts("[child] hello from fork child, pid=");
+                put_int(sys_getpid());
+                putc('\n');
                 sys_exit(42);
             }
             else if (child < 0)
@@ -324,8 +349,16 @@ void _start(void)
         }
         else if (strcmp(argv[0], "exit") == 0)
         {
-            puts("bye\n");
-            sys_exit(0);
+            /* The shell is init (pid 1). If it exits, the system has no
+             * running task and idles forever. Refuse and keep the prompt. */
+            puts("exit: this shell is init; the system would idle.\n");
+            puts("      Use Ctrl+C to interrupt, or power off the VM.\n");
+        }
+        else if (strcmp(argv[0], "clear") == 0)
+        {
+            /* Placeholder. The compositor does not parse ANSI yet, so this
+             * does nothing visible. Kept so scripts do not break. */
+            puts("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n");
         }
         else
         {

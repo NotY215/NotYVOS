@@ -30,8 +30,8 @@ bool g_ctrl = false;
 volatile u8 g_buf[kBufSize];
 volatile u32 g_head = 0;
 volatile u32 g_tail = 0;
-u64 g_total_scancodes = 0;
-u64 g_raw_bytes_seen = 0;
+u64 g_key_count = 0;
+u64 g_irq_count = 0;
 
 inline void push_char(char c)
 {
@@ -42,9 +42,9 @@ inline void push_char(char c)
     g_head = next;
 }
 
-bool wait_input_clear(u32 timeout_iter = 1000000) noexcept
+bool wait_input_clear(u32 timeout = 1000000) noexcept
 {
-    for (u32 i = 0; i < timeout_iter; ++i)
+    for (u32 i = 0; i < timeout; ++i)
     {
         if ((inb(kStatusPort) & 0x02) == 0)
             return true;
@@ -53,9 +53,9 @@ bool wait_input_clear(u32 timeout_iter = 1000000) noexcept
     return false;
 }
 
-bool wait_output_full(u32 timeout_iter = 1000000) noexcept
+bool wait_output_full(u32 timeout = 1000000) noexcept
 {
-    for (u32 i = 0; i < timeout_iter; ++i)
+    for (u32 i = 0; i < timeout; ++i)
     {
         if (inb(kStatusPort) & 0x01)
             return true;
@@ -85,20 +85,22 @@ void flush_output() noexcept
     }
 }
 
+// Send a byte to the aux (mouse) device via the i8042.
+// Waits for the mouse's ACK on the data port.
+void mouse_write(u8 byte) noexcept
+{
+    write_cmd(0xD4);
+    write_data(byte);
+    // Mouse ACKs with 0xFA.
+    if (wait_output_full(500000))
+        (void)inb(kDataPort);
+}
+
 void process_scancode(u8 sc)
 {
-    ++g_raw_bytes_seen;
-    if (g_raw_bytes_seen <= 3)
-    {
-        log::write(log::Level::Warn, "kbd", "raw byte #%llu: 0x%llx",
-                   static_cast<unsigned long long>(g_raw_bytes_seen),
-                   static_cast<unsigned long long>(sc));
-    }
-
     if (sc == 0xFA || sc == 0xE0 || sc == 0xE1)
         return;
 
-    // Ctrl press / release.
     if (sc == 0x1D)
     {
         g_ctrl = true;
@@ -128,21 +130,20 @@ void process_scancode(u8 sc)
     if (c == 0)
         return;
 
-    // Ctrl+C sends SIGINT to the currently running user task.
     if (g_ctrl && (c == 'c' || c == 'C'))
     {
-        log::write(log::Level::Info, "kbd", "Ctrl+C pressed");
+        log::write(log::Level::Info, "kbd", "Ctrl+C");
         sched::scheduler_deliver_sigint();
         return;
     }
 
-    if (g_total_scancodes < 8)
+    if (g_key_count < 4)
     {
-        log::write(log::Level::Warn, "kbd", "key #%llu: 0x%llx -> '%c'",
-                   static_cast<unsigned long long>(g_total_scancodes),
+        log::write(log::Level::Warn, "kbd", "key #%llu sc=0x%llx -> '%c'",
+                   static_cast<unsigned long long>(g_key_count),
                    static_cast<unsigned long long>(sc), c);
     }
-    ++g_total_scancodes;
+    ++g_key_count;
     push_char(c);
 }
 
@@ -150,80 +151,75 @@ void process_scancode(u8 sc)
 
 bool keyboard_init() noexcept
 {
-    log::write(log::Level::Info, "kbd", "starting minimal PS/2 init");
+    log::write(log::Level::Info, "kbd", "init start");
 
+    // 1. Flush anything pending.
     flush_output();
 
+    // 2. Read the config byte that firmware already set up.
     write_cmd(0x20);
     u8 cfg = 0;
-    if (!wait_output_full(500000))
-    {
-        log::write(log::Level::Error, "kbd", "cfg read failed");
-        return false;
-    }
-    cfg = inb(kDataPort);
-    log::write(log::Level::Info, "kbd", "initial cfg = 0x%llx",
+    if (wait_output_full(500000))
+        cfg = inb(kDataPort);
+    log::write(log::Level::Info, "kbd", "firmware cfg = 0x%llx",
                static_cast<unsigned long long>(cfg));
 
-    bool need_write = false;
+    // 3. Build the target config:
+    //    Enable IRQ1 (bit 0), IRQ12 (bit 1), translation (bit 6).
+    //    Enable keyboard clock (clear bit 4).
+    //    Leave the mouse clock bit (bit 5) as firmware had it for now.
+    //    It will be cleared by mouse_init.
+    u8 target = cfg;
+    target |= 0x01;
+    target |= 0x02;
+    target |= 0x40;
+    target &= ~static_cast<u8>(0x10);
 
-    if ((cfg & 0x01) == 0)
-    {
-        cfg |= 0x01;
-        need_write = true;
-    }
-    if ((cfg & 0x40) == 0)
-    {
-        cfg |= 0x40;
-        need_write = true;
-    }
-    if (cfg & 0x10)
-    {
-        cfg &= ~static_cast<u8>(0x10);
-        need_write = true;
-    }
-
-    if (need_write)
+    if (target != cfg)
     {
         write_cmd(0x60);
-        write_data(cfg);
+        write_data(target);
         write_cmd(0x20);
         u8 rb = 0;
         if (wait_output_full(500000))
             rb = inb(kDataPort);
         log::write(log::Level::Info, "kbd", "wrote cfg 0x%llx, readback 0x%llx",
-                   static_cast<unsigned long long>(cfg), static_cast<unsigned long long>(rb));
+                   static_cast<unsigned long long>(target), static_cast<unsigned long long>(rb));
     }
     else
     {
-        log::write(log::Level::Info, "kbd", "cfg already correct, no write needed");
+        log::write(log::Level::Info, "kbd", "cfg unchanged");
     }
 
+    // 4. Enable keyboard scanning. Expect 0xFA ACK.
     write_data(0xF4);
+    u8 ack = 0;
     if (wait_output_full(500000))
-    {
-        const u8 ack = inb(kDataPort);
-        log::write(log::Level::Info, "kbd", "0xF4 ack = 0x%llx",
-                   static_cast<unsigned long long>(ack));
-    }
-    else
-    {
-        log::write(log::Level::Warn, "kbd", "0xF4 timeout");
-    }
+        ack = inb(kDataPort);
+    log::write(log::Level::Info, "kbd", "0xF4 -> 0x%llx", static_cast<unsigned long long>(ack));
 
-    const u8 st = inb(kStatusPort);
-    log::write(log::Level::Info, "kbd", "PS/2 init done. status=0x%llx",
-               static_cast<unsigned long long>(st));
+    // 5. Enable the aux (mouse) port.
+    write_cmd(0xA8);
+    log::write(log::Level::Info, "kbd", "aux port enabled");
+
+    // 6. Mouse: set defaults, enable reporting.
+    mouse_write(0xF6);
+    mouse_write(0xF4);
+    log::write(log::Level::Info, "kbd", "mouse init sent");
 
     return true;
 }
 
 void keyboard_irq_handler() noexcept
 {
+    ++g_irq_count;
     while (inb(kStatusPort) & 0x01)
     {
-        const u8 sc = inb(kDataPort);
-        process_scancode(sc);
+        const u8 st = inb(kStatusPort);
+        const u8 byte = inb(kDataPort);
+        if (st & 0x20)
+            continue; // mouse byte
+        process_scancode(byte);
     }
 }
 
@@ -231,8 +227,11 @@ bool keyboard_poll() noexcept
 {
     if ((inb(kStatusPort) & 0x01) == 0)
         return false;
-    const u8 sc = inb(kDataPort);
-    process_scancode(sc);
+    const u8 st = inb(kStatusPort);
+    const u8 byte = inb(kDataPort);
+    if (st & 0x20)
+        return false;
+    process_scancode(byte);
     return true;
 }
 
@@ -251,7 +250,7 @@ bool keyboard_has_data() noexcept
 }
 u64 keyboard_irq_count() noexcept
 {
-    return g_total_scancodes;
+    return g_key_count;
 }
 void keyboard_inject(char c) noexcept
 {

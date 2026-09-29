@@ -1,14 +1,14 @@
-#include <kernel/syscall/syscall.hpp>
 #include <kernel/arch/x86_64/cpu.hpp>
 #include <kernel/arch/x86_64/gdt.hpp>
 #include <kernel/arch/x86_64/idt.hpp>
-#include <kernel/arch/x86_64/pic.hpp>
-#include <kernel/arch/x86_64/pit.hpp>
-#include <kernel/arch/x86_64/tss.hpp>
 #include <kernel/arch/x86_64/io.hpp>
 #include <kernel/arch/x86_64/keyboard.hpp>
 #include <kernel/arch/x86_64/mouse.hpp>
+#include <kernel/arch/x86_64/pic.hpp>
+#include <kernel/arch/x86_64/pit.hpp>
+#include <kernel/arch/x86_64/tss.hpp>
 #include <kernel/log.hpp>
+#include <kernel/syscall/syscall.hpp>
 
 namespace notyvos::arch::x86_64
 {
@@ -17,7 +17,6 @@ namespace
 {
 CpuInfo g_info{};
 
-// IST stacks. 16 KB each is generous for Phase 1B.
 alignas(16) u8 g_df_stack[16384];
 alignas(16) u8 g_nmi_stack[16384];
 
@@ -70,33 +69,34 @@ void cpu_init() noexcept
 
     gdt_init();
 
-    // IST stacks must be installed before LTR picks up the TSS descriptor.
     const u64 df_top = reinterpret_cast<u64>(g_df_stack) + sizeof(g_df_stack);
     const u64 nmi_top = reinterpret_cast<u64>(g_nmi_stack) + sizeof(g_nmi_stack);
     tss_set_ist(1, df_top);
     tss_set_ist(2, nmi_top);
 
     tss_init();
-
     idt_init();
 
-    // Remap PIC, disable all IRQs, then unmask IRQ0 (timer).
+    // ---- PIC ----
     pic_remap(32, 40);
     pic_disable_all();
-    pic_set_mask(0, false);
-    pic_set_mask(1, false);
-    pic_set_mask(2, false);
-    pic_set_mask(12, false);
+    pic_set_mask(0, false);  // PIT
+    pic_set_mask(1, false);  // Keyboard
+    pic_set_mask(2, false);  // Cascade
+    pic_set_mask(12, false); // PS/2 mouse (slave IRQ4)
+
     pit_init(100);
     keyboard_init();
     mouse_init();
 
-    log::write(log::Level::Info, "pic", "final masks: master=0x%llx slave=0x%llx",
-               static_cast<unsigned long long>(inb(0x21)),
-               static_cast<unsigned long long>(inb(0xA1)));
-
     syscall::syscall_init();
+
     log_features(g_info);
+
+    const u8 master = inb(0x21);
+    const u8 slave = inb(0xA1);
+    log::write(log::Level::Info, "pic", "final masks: master=0x%llx slave=0x%llx",
+               static_cast<unsigned long long>(master), static_cast<unsigned long long>(slave));
 }
 
 } // namespace notyvos::arch::x86_64
