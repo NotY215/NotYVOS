@@ -1,59 +1,51 @@
 # Third-Party Licenses
 
-NOTYVOS itself is licensed under **AGPL-3.0-or-later**.
+NOTYVOS itself is licensed under AGPL-3.0-or-later.
 
-Third-party components retain their **own** licenses. NOTYVOS does not
-require third-party components to be AGPL-licensed. Each component's
-license is listed below and its full text is stored in this directory.
+Third-party components retain their own licenses. This directory records the
+components currently present or used by the repository.
 
-## Components bundled in the NOTYVOS repository
+## Components bundled or fetched for the project
 
-| Component | Version | License | File |
+| Component | Version | License | Location / role |
 |---|---|---|---|
-| Limine | v12.9.0 | BSD-2-Clause | `limine.txt` |
-| Inter font family | upstream latest | SIL OFL-1.1 | `inter-font.txt` |
+| Limine | v12.9.0 | BSD-2-Clause | third_party/limine/ |
+| Inter font family | bundled upstream release | SIL OFL-1.1 | Fonts/ |
+| Brave Browser installer | win64 package | MPL-2.0 | Inbuilt Devices/ |
+| VLC Media Player installer | 3.0.23 win64 package | GPLv2+ / LGPLv2+ | Inbuilt Devices/ |
 
-## Applications distributed as installers (not part of the OS source)
+The Brave and VLC files are application installers. They are not kernel
+components and are not linked into the kernel.
 
-| Application | Distribution | License | Notes |
-|---|---|---|---|
-| Brave Browser | `Inbuilt_Soft/brave_installer-win64.exe` | MPL-2.0 | Browser code open source under MPL-2.0. |
-| VLC Media Player | `Inbuilt_Soft/vlc-3.0.23-win64.exe` | GPLv2-or-later (player), LGPLv2-or-later (libVLC) | See `vlc.txt`. |
+## Development and testing tools
 
-These installers are user-space application packages. They are NOT kernel
-components. They are NOT part of NOTYVOS source code. Their licenses are
-independent of NOTYVOS's AGPL-3.0 license.
-
-## Development and testing tools (host-side, not shipped)
-
-| Tool | License | File | Notes |
-|---|---|---|---|
-| Oracle VirtualBox | GPL-3.0-or-later | `virtualbox.txt` | Used by developers to test NOTYVOS. Not shipped with NOTYVOS. |
-| QEMU (deprecated) | GPL-2.0 | — | No longer used in the workflow as of the VirtualBox migration. |
-
-## User-provided components (never committed)
-
-| Component | Source | License |
+| Tool | License | Role |
 |---|---|---|
-| PS3 firmware module | User-supplied, legally obtained | Sony proprietary |
-| PS3 game software | User-supplied, legally obtained | Respective copyright holders |
-| Windows applications | User-supplied | Respective copyright holders |
+| Oracle VirtualBox | GPL-3.0-or-later | Current VM test environment |
+| QEMU | GPL-2.0 | Retained only as legacy/build configuration data |
 
-## Compatibility rule
+VirtualBox is not shipped as part of the OS. QEMU is not part of the active
+runtime test workflow.
 
-Any third-party component added to the NOTYVOS repository must have a
-license compatible with **AGPL-3.0-or-later** for the manner in which it
-is used (linked, bundled, or distributed together).
+## User-provided components
 
-- BSD-2-Clause (Limine): compatible.
-- SIL OFL-1.1 (Inter fonts): compatible.
-- MPL-2.0 (Brave browser code): compatible for separate-process use.
-- GPLv2-or-later (VLC): compatible; if linked into the kernel tree, the
-  combined work remains AGPL-3.0-or-later.
-- GPL-3.0-or-later (VirtualBox, host-side): compatible because VirtualBox
-  is a separate process on the host machine and is never distributed
-  together with NOTYVOS.
-- Proprietary firmware: not linked, not redistributed; user-supplied only.
+| Component | Source / status |
+|---|---|
+| PS3 firmware | User-supplied, legally obtained, Sony proprietary |
+| PS3 game software | User-supplied, respective copyright holders |
+| Windows applications | User-supplied, respective copyright holders |
 
-If you are unsure whether a component is compatible, open an ADR before
-adding it.
+NOTYVOS does not redistribute Sony private keys, decryption keys, or
+decryption bypass tooling.
+
+## License files
+
+- Limine: limine.txt
+- Inter: inter-font.txt
+- VLC: vlc.txt
+- VirtualBox: virtualbox.txt
+
+The Brave installer is documented as a separate application package; its
+license is not a kernel dependency.
+
+Third-party licensing must be reviewed before adding new bundled components.
