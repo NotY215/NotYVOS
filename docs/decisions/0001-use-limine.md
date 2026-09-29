@@ -1,18 +1,20 @@
-# ADR 0001 — Use Limine as initial bootloader
+# ADR 0001 — Use Limine as the bootloader
 
 Status: Accepted
-Date: 2025
-
-## Context
-We need a UEFI bootloader to reach our kernel. Building one from scratch
-now would delay kernel work by months.
 
 ## Decision
-Use Limine v8.x with the Limine protocol. Pin the version in
-cmake/limine.cmake. Replace with a custom NOTYVOS bootloader when the OS
-is mature.
+
+NOTYVOS uses the Limine protocol and pins Limine to v12.9.0 in the CMake
+configuration.
+
+The current ISO contains Limine UEFI boot files and the NOTYVOS kernel. The
+repository keeps the bootloader integration small so kernel development is
+not coupled to a custom bootloader implementation.
 
 ## Consequences
-- Limine does NOT make NOTYVOS Linux.
-- Boot menu format is limine.conf.
-- Higher-half kernel linked at 0xffffffff80000000.
+
+- Limine provides the initial boot environment and boot-time information.
+- The kernel is linked at the NOTYVOS higher-half address.
+- limine.conf remains the boot configuration source.
+- A future custom bootloader remains possible, but it is not part of the
+  current roadmap.
