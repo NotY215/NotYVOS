@@ -5,8 +5,6 @@
 
 static char line[LINE_MAX];
 
-/* Static buffers. Avoids the stack-initialization pattern that tripped a
- * spurious ud2 in Clang -O2. Also simpler to reason about. */
 static char s_path[160];
 static char s_text[256];
 
@@ -97,7 +95,6 @@ static void cmd_ls(const char* path)
     sys_close(fd);
 }
 
-/* Build "/disk/<name>" into s_path. Returns the length. */
 static int build_path(const char* name)
 {
     int i = 0;
@@ -148,6 +145,7 @@ static void print_help(void)
 {
     puts("commands:\n");
     puts("  help              this message\n");
+    puts("  cls / clear       clear the screen\n");
     puts("  ls [DIR]          list directory\n");
     puts("  cat FILE          print file\n");
     puts("  echo TEXT         echo\n");
@@ -167,7 +165,7 @@ static void print_help(void)
 static void print_about(void)
 {
     puts("NOTYVOS\n");
-    puts("Phase 3B — window manager\n");
+    puts("Phase 3F — Native GPU backend\n");
     puts("Desktop: framebuffer compositor, back buffer, PS/2 mouse\n");
     puts("Shell: pid ");
     put_int(sys_getpid());
@@ -177,12 +175,14 @@ static void print_about(void)
     puts(" ms\n");
     puts("Storage: NYFS on AHCI SATA, mounted at /disk\n");
     puts("Keyboard: PS/2 i8042, IRQ1. Serial fallback on COM1.\n");
+    puts("Mouse: PS/2 with wheel, IRQ12.\n");
+    puts("Graphics: software + VBE HAL backends.\n");
 }
 
 void _start(void)
 {
     stdio_init();
-    puts("\nNOTYVOS shell (phase 3B)\n");
+    puts("\nNOTYVOS shell (phase 3F)\n");
     puts("type 'help' for commands\n");
 
     for (;;)
@@ -198,6 +198,11 @@ void _start(void)
         if (strcmp(argv[0], "help") == 0)
         {
             print_help();
+        }
+        else if (strcmp(argv[0], "cls") == 0 || strcmp(argv[0], "clear") == 0)
+        {
+            /* Form feed — the compositor clears the terminal on this byte. */
+            putc(0x0C);
         }
         else if (strcmp(argv[0], "about") == 0)
         {
@@ -349,16 +354,8 @@ void _start(void)
         }
         else if (strcmp(argv[0], "exit") == 0)
         {
-            /* The shell is init (pid 1). If it exits, the system has no
-             * running task and idles forever. Refuse and keep the prompt. */
             puts("exit: this shell is init; the system would idle.\n");
             puts("      Use Ctrl+C to interrupt, or power off the VM.\n");
-        }
-        else if (strcmp(argv[0], "clear") == 0)
-        {
-            /* Placeholder. The compositor does not parse ANSI yet, so this
-             * does nothing visible. Kept so scripts do not break. */
-            puts("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n");
         }
         else
         {

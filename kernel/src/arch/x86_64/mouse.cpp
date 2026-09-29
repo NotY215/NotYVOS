@@ -14,12 +14,14 @@ constexpr u16 kStatusPort = 0x64;
 constexpr u16 kCmdPort = 0x64;
 
 u8 g_cycle = 0;
-u8 g_packet[3] = {};
+u8 g_packet[4] = {};
+u32 g_packet_len = 3;
 i32 g_x = 512;
 i32 g_y = 384;
+i32 g_wheel = 0;
 bool g_left = false, g_right = false, g_middle = false;
 u64 g_packet_count = 0;
-u64 g_irq_count = 0;
+bool g_intellimouse = false;
 
 bool wait_write() noexcept
 {
@@ -61,11 +63,48 @@ u8 read_data() noexcept
     return inb(kDataPort);
 }
 
-void mouse_write(u8 v) noexcept
+// Send a byte to the mouse (via 0xD4) and return the ACK.
+u8 mouse_write(u8 v) noexcept
 {
     write_cmd(0xD4);
     write_data(v);
-    (void)read_data();
+    return read_data();
+}
+
+// Ask the mouse for its device ID.
+u8 mouse_get_id() noexcept
+{
+    mouse_write(0xF2);
+    return read_data();
+}
+
+// Set the sample rate (used for the IntelliMouse magic sequence).
+void mouse_set_sample(u8 rate) noexcept
+{
+    mouse_write(0xF3);
+    mouse_write(rate);
+}
+
+void try_enable_wheel() noexcept
+{
+    // Magic sequence from the IntelliMouse spec.
+    mouse_set_sample(200);
+    mouse_set_sample(100);
+    mouse_set_sample(80);
+    const u8 id = mouse_get_id();
+    log::write(log::Level::Info, "mouse", "device id after IntelliMouse magic: 0x%llx",
+               static_cast<unsigned long long>(id));
+    if (id == 0x03 || id == 0x04)
+    {
+        g_intellimouse = true;
+        g_packet_len = 4;
+        log::write(log::Level::Info, "mouse", "wheel enabled (4-byte packets)");
+    }
+    else
+    {
+        g_packet_len = 3;
+        log::write(log::Level::Info, "mouse", "no wheel (3-byte packets)");
+    }
 }
 
 } // namespace
@@ -74,35 +113,19 @@ bool mouse_init() noexcept
 {
     log::write(log::Level::Info, "mouse", "init");
 
-    // Enable the aux port.
     write_cmd(0xA8);
 
-    // Read-modify-write config: set IRQ12 (bit 1), clear mouse clock
-    // disable (bit 5).
     write_cmd(0x20);
     u8 cfg = read_data();
-    u8 target = cfg;
-    target |= 0x02;
-    target &= ~static_cast<u8>(0x20);
+    cfg |= 0x02;
+    cfg &= ~static_cast<u8>(0x20);
+    write_cmd(0x60);
+    write_data(cfg);
 
-    if (target != cfg)
-    {
-        write_cmd(0x60);
-        write_data(target);
-        write_cmd(0x20);
-        u8 rb = read_data();
-        log::write(log::Level::Info, "mouse", "cfg 0x%llx -> 0x%llx (readback 0x%llx)",
-                   static_cast<unsigned long long>(cfg), static_cast<unsigned long long>(target),
-                   static_cast<unsigned long long>(rb));
-    }
-    else
-    {
-        log::write(log::Level::Info, "mouse", "cfg unchanged (0x%llx)",
-                   static_cast<unsigned long long>(cfg));
-    }
-
-    // Mouse: set defaults, then enable reporting.
+    // Set defaults, then try to enable the wheel.
     mouse_write(0xF6);
+    try_enable_wheel();
+    // Enable data reporting.
     mouse_write(0xF4);
 
     if (fb::Framebuffer::ready())
@@ -118,7 +141,6 @@ bool mouse_init() noexcept
 
 void mouse_irq_handler() noexcept
 {
-    ++g_irq_count;
     while (inb(kStatusPort) & 0x01)
     {
         const u8 st = inb(kStatusPort);
@@ -126,12 +148,11 @@ void mouse_irq_handler() noexcept
 
         if ((st & 0x20) == 0)
             continue; // keyboard byte
-
         if (g_cycle == 0 && (byte & 0x08) == 0)
             continue;
 
         g_packet[g_cycle++] = byte;
-        if (g_cycle < 3)
+        if (g_cycle < g_packet_len)
             continue;
         g_cycle = 0;
 
@@ -153,6 +174,15 @@ void mouse_irq_handler() noexcept
         g_right = (flags & 0x02) != 0;
         g_middle = (flags & 0x04) != 0;
 
+        if (g_packet_len == 4)
+        {
+            // 4th byte is signed Z movement (wheel).
+            i8 z = static_cast<i8>(g_packet[3] & 0x0F);
+            if (z & 0x08)
+                z = static_cast<i8>(z | 0xF0); // sign extend 4-bit
+            g_wheel += static_cast<i32>(z);
+        }
+
         if (fb::Framebuffer::ready())
         {
             const i32 W = static_cast<i32>(fb::Framebuffer::width());
@@ -169,11 +199,10 @@ void mouse_irq_handler() noexcept
 
         if (g_packet_count < 20)
         {
-            log::write(log::Level::Warn, "mouse",
-                       "packet #%llu flags=0x%llx dx=%d dy=%d at (%d,%d)",
+            log::write(log::Level::Warn, "mouse", "packet #%llu flags=0x%llx dx=%d dy=%d wheel=%d",
                        static_cast<unsigned long long>(g_packet_count),
                        static_cast<unsigned long long>(flags), static_cast<i64>(dx),
-                       static_cast<i64>(dy), static_cast<i64>(g_x), static_cast<i64>(g_y));
+                       static_cast<i64>(dy), static_cast<i64>(g_wheel));
         }
         ++g_packet_count;
     }
@@ -187,6 +216,15 @@ i32 mouse_y() noexcept
 {
     return g_y;
 }
+i32 mouse_wheel() noexcept
+{
+    return g_wheel;
+}
+void mouse_wheel_clear() noexcept
+{
+    g_wheel = 0;
+}
+
 bool mouse_left() noexcept
 {
     return g_left;

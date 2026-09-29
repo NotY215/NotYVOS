@@ -11,16 +11,6 @@ set(NOTYVOS_INITRAMFS    "${CMAKE_BINARY_DIR}/initramfs.tar")
 set(KERNEL_SOURCES
     src/main.cpp
     src/log.cpp
-    src/acpi/acpi.cpp
-    src/gfx/widget.cpp
-    src/gfx/apps.cpp
-    src/gfx/hal.cpp
-    src/gfx/api.cpp
-    src/gfx/backend_software.cpp
-    src/net/e1000.cpp
-    src/audio/hda.cpp
-    src/block/block.cpp
-    src/block/ahci.cpp
     src/panic.cpp
     src/libk/mem.cpp
     src/libk/string.cpp
@@ -29,20 +19,28 @@ set(KERNEL_SOURCES
     src/mm/pmm.cpp
     src/mm/vmm.cpp
     src/mm/heap.cpp
-    src/fs/nyfs.cpp
     src/fs/vnode.cpp
     src/fs/file.cpp
     src/fs/vfs.cpp
     src/fs/initramfs.cpp
-    src/arch/x86_64/mouse.cpp
+    src/fs/nyfs.cpp
+    src/ps3/loader.cpp
+    src/ps3/powerpc/decode.cpp
+    src/ps3/self_test.cpp
+    src/gpu/gpu.cpp
+    src/gfx/hal.cpp
+    src/gfx/api.cpp
+    src/gfx/widget.cpp
+    src/gfx/apps.cpp
     src/gfx/compositor.cpp
+    src/gfx/backend_software.cpp
+    src/gfx/backend_vbe.cpp
     src/sched/task.cpp
     src/sched/scheduler.cpp
     src/sched/context_switch.S
     src/proc/pid.cpp
     src/proc/elf.cpp
     src/proc/fork.cpp
-    src/arch/x86_64/fork_entry.S
     src/syscall/syscall.cpp
     src/syscall/dispatch.cpp
     src/syscall/uaccess.cpp
@@ -59,12 +57,20 @@ set(KERNEL_SOURCES
     src/arch/x86_64/pic.cpp
     src/arch/x86_64/pit.cpp
     src/arch/x86_64/keyboard.cpp
+    src/arch/x86_64/mouse.cpp
     src/arch/x86_64/lapic.cpp
     src/arch/x86_64/percpu.cpp
     src/arch/x86_64/smp.cpp
     src/arch/x86_64/smp_entry.S
     src/arch/x86_64/usermode.cpp
+    src/arch/x86_64/fork_entry.S
     src/arch/x86_64/entry.S
+    src/block/block.cpp
+    src/block/ahci.cpp
+    src/net/e1000.cpp
+    src/audio/hda.cpp
+    src/acpi/acpi.cpp
+    src/gpu/gpu.cpp
 )
 
 add_executable(notyvos-kernel ${KERNEL_SOURCES})

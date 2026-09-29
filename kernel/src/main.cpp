@@ -103,6 +103,8 @@ extern "C"
 #include <kernel/proc/elf.hpp>
 #include <kernel/sched/scheduler.hpp>
 #include <kernel/types.hpp>
+#include <kernel/gfx/backend_vbe.hpp>
+#include <kernel/ps3/self_test.hpp>
 
 using namespace notyvos;
 
@@ -210,6 +212,7 @@ extern "C" [[noreturn]] void kernel_main()
     // ---- Networking + Audio ----
     net::e1000_init();
     audio::hda_init();
+    ps3::self_test();
 
     // ---- SMP, per-CPU, LAPIC ----
     arch::x86_64::percpu_init_bsp();
@@ -255,6 +258,7 @@ extern "C" [[noreturn]] void kernel_main()
     log::write(log::Level::Info, "boot", "desktop active");
 
     gfx::register_software_backend();
+    gfx::vbe_backend_init();
     gfx::Device::init();
 
     // ---- Scheduler + init ----

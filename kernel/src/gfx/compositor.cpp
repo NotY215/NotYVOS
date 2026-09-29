@@ -7,8 +7,10 @@
 #include <kernel/fs/vfs.hpp>
 #include <kernel/gfx/api.hpp>
 #include <kernel/gfx/apps.hpp>
+#include <kernel/gfx/backend_vbe.hpp>
 #include <kernel/gfx/compositor.hpp>
 #include <kernel/gfx/hal.hpp>
+#include <kernel/gpu/gpu.hpp>
 #include <kernel/libk/mem.hpp>
 #include <kernel/libk/string.hpp>
 #include <kernel/log.hpp>
@@ -33,15 +35,12 @@ constexpr u32 kBtnGap = 2;
 constexpr u32 kShortcutW = 120;
 constexpr u32 kShortcutH = 40;
 
-constexpr u32 kStartW = 220;
-constexpr u32 kStartItemH = 28;
+constexpr u32 kCtxW = 180;
+constexpr u32 kCtxItemH = 24;
+constexpr u32 kCtxSepH = 6;
 
 constexpr u32 kBgTop = 0x00283046;
 constexpr u32 kBgBottom = 0x00182032;
-constexpr u32 kTaskbar = 0x00181E2A;
-constexpr u32 kTaskFg = 0x00C8C8C8;
-constexpr u32 kTaskBtn = 0x00305070;
-constexpr u32 kTaskBtnOn = 0x005080B0;
 constexpr u32 kTitle = 0x003060A0;
 constexpr u32 kTitleOff = 0x00405060;
 constexpr u32 kTitleFg = 0x00FFFFFF;
@@ -88,13 +87,26 @@ enum class MenuItem : u8
     Settings,
     Terminal,
     Bin,
-    Separator,
     Shutdown,
     Restart
 };
-const MenuItem g_menu_items[8] = {MenuItem::Explorer, MenuItem::Settings,  MenuItem::Terminal,
-                                  MenuItem::Bin,      MenuItem::Separator, MenuItem::Shutdown,
-                                  MenuItem::Restart,  MenuItem::None};
+
+enum class CtxItem : u8
+{
+    None = 0,
+    New,
+    Refresh,
+    Sep1,
+    Cut,
+    Copy,
+    Paste,
+    Sep2,
+    Rename,
+    Properties
+};
+const CtxItem g_ctx_items[10] = {
+    CtxItem::New,   CtxItem::Refresh, CtxItem::Sep1,   CtxItem::Cut,        CtxItem::Copy,
+    CtxItem::Paste, CtxItem::Sep2,    CtxItem::Rename, CtxItem::Properties, CtxItem::None};
 
 bool g_ready = false;
 u32 g_w = 0, g_h = 0;
@@ -118,6 +130,7 @@ i32 g_cursor_y = -1000;
 i32 g_prev_mx = -1;
 i32 g_prev_my = -1;
 bool g_prev_left = false;
+bool g_prev_right = false;
 
 i32 g_drag_win = -1;
 i32 g_drag_off_x = 0;
@@ -129,6 +142,11 @@ i32 g_focus_shortcut = -1;
 i32 g_hover_menu = -1;
 bool g_start_open = false;
 
+bool g_ctx_open = false;
+i32 g_ctx_x = 0;
+i32 g_ctx_y = 0;
+i32 g_ctx_hover = -1;
+
 u64 g_last_click_tick = 0;
 i32 g_last_click_shortcut = -1;
 
@@ -139,9 +157,6 @@ inline i32 to_i32(u32 v) noexcept
     return static_cast<i32>(v);
 }
 
-// ---------------------------------------------------------------------------
-// Scene drawing primitives
-// ---------------------------------------------------------------------------
 void s_fill(i32 x, i32 y, i32 w, i32 h, u32 c)
 {
     if (!g_scene)
@@ -213,7 +228,6 @@ void s_text(i32 px, i32 py, const char* s, u32 fg, u32 bg)
     }
 }
 
-// Widget toolkit glue.
 void widget_rect_cb(i32 x, i32 y, i32 w, i32 h, u32 c)
 {
     s_fill(x, y, w, h, c);
@@ -222,10 +236,6 @@ void widget_text_cb(i32 x, i32 y, const char* s, u32 fg, u32 bg)
 {
     s_text(x, y, s, fg, bg);
 }
-
-// ---------------------------------------------------------------------------
-// Framebuffer
-// ---------------------------------------------------------------------------
 
 inline void fb_put(i32 x, i32 y, u32 c)
 {
@@ -301,12 +311,10 @@ void fb_blit_from_scene(i32 x, i32 y, i32 w, i32 h)
 
 void fb_blit_full()
 {
-    fb_blit_from_scene(0, 0, to_i32(g_w), to_i32(g_h));
+    if (!g_scene)
+        return;
+    vbe_blit(g_scene, g_w, g_h, g_w, 0, 0, g_w, g_h);
 }
-
-// ---------------------------------------------------------------------------
-// Cursor
-// ---------------------------------------------------------------------------
 
 const u16 kArrow[16] = {
     0x8000, 0xC000, 0xE000, 0xF000, 0xF800, 0xFC00, 0xFE00, 0xFF00,
@@ -337,10 +345,6 @@ void cursor_draw(i32 x, i32 y)
     g_cursor_x = x;
     g_cursor_y = y;
 }
-
-// ---------------------------------------------------------------------------
-// Scene
-// ---------------------------------------------------------------------------
 
 void scene_draw_background()
 {
@@ -385,72 +389,106 @@ void scene_draw_desktop_icons()
 void scene_draw_taskbar()
 {
     const i32 y0 = static_cast<i32>(g_h - kTaskbarH);
-    s_fill(0, y0, to_i32(g_w), static_cast<i32>(kTaskbarH), kTaskbar);
+    s_fill(0, y0, to_i32(g_w), static_cast<i32>(kTaskbarH), 0x00101018);
 
-    const u32 start_bg = g_start_open ? kTaskBtnOn : kTaskBtn;
-    s_fill(4, y0 + 4, 100, static_cast<i32>(kTaskbarH) - 8, start_bg);
-    for (i32 i = 0; i < 2; i++)
-    {
-        for (i32 j = 0; j < 2; j++)
-        {
-            s_fill(12 + i * 8, y0 + 9 + j * 8, 6, 6, kTaskFg);
-        }
-    }
-    s_text(34, y0 + 8, "Start", kTaskFg, start_bg);
+    const i32 center = to_i32(g_w) / 2;
 
-    i32 bx = 112;
-    for (u32 i = 0; i < g_win_count; i++)
+    i32 cluster_w = 44 + 44;
+    for (u32 i = 0; i < g_win_count; ++i)
     {
         if (!g_windows[i].visible)
             continue;
-        const u32 color = g_windows[i].focused ? kTaskBtnOn : kTaskBtn;
         const u32 tw = static_cast<u32>(libk::strlen(g_windows[i].title)) * kCellW + 20;
-        s_fill(bx, y0 + 4, static_cast<i32>(tw), static_cast<i32>(kTaskbarH) - 8, color);
-        s_text(bx + 10, y0 + 8, g_windows[i].title, kTaskFg, color);
-        bx += static_cast<i32>(tw) + 4;
+        cluster_w += static_cast<i32>(tw) + 6;
+    }
+    i32 x = center - cluster_w / 2;
+
+    {
+        const bool open = g_start_open;
+        const u32 bg = open ? 0x004080C0 : 0x00202028;
+        s_fill(x, y0 + 4, 36, static_cast<i32>(kTaskbarH) - 8, bg);
+        for (i32 i = 0; i < 2; ++i)
+        {
+            for (i32 j = 0; j < 2; ++j)
+            {
+                s_fill(x + 8 + i * 10, y0 + 10 + j * 10, 8, 8, 0x00E0E0E0);
+            }
+        }
+        x += 44;
     }
 
-    char buf[24];
-    int n = 0;
-    u64 s = g_clock_sec;
-    if (s == 0)
-        buf[n++] = '0';
-    while (s && n < 20)
     {
-        buf[n++] = static_cast<char>('0' + s % 10);
-        s /= 10;
+        const u32 bg = 0x00202028;
+        s_fill(x, y0 + 4, 36, static_cast<i32>(kTaskbarH) - 8, bg);
+        for (i32 i = 0; i < 10; ++i)
+        {
+            s_fill(x + 10 + i, y0 + 10, 1, 1, 0x00C0C0C0);
+            s_fill(x + 10 + i, y0 + 19, 1, 1, 0x00C0C0C0);
+            s_fill(x + 10, y0 + 10 + i, 1, 1, 0x00C0C0C0);
+            s_fill(x + 19, y0 + 10 + i, 1, 1, 0x00C0C0C0);
+        }
+        s_fill(x + 20, y0 + 20, 5, 2, 0x00C0C0C0);
+        s_fill(x + 24, y0 + 22, 2, 5, 0x00C0C0C0);
+        x += 44;
     }
-    buf[n++] = 's';
-    for (int i = 0; i < n / 2; i++)
-    {
-        const char t = buf[i];
-        buf[i] = buf[n - 1 - i];
-        buf[n - 1 - i] = t;
-    }
-    buf[n] = 0;
-    const i32 tw = n * static_cast<i32>(kCellW);
-    const i32 ty = y0 + static_cast<i32>((kTaskbarH - kCellH) / 2);
-    s_text(to_i32(g_w) - tw - 12, ty, buf, kTaskFg, kTaskbar);
-}
 
-const char* menu_label(MenuItem m)
-{
-    switch (m)
+    for (u32 i = 0; i < g_win_count; ++i)
     {
-    case MenuItem::Explorer:
-        return "Explorer";
-    case MenuItem::Settings:
-        return "Settings";
-    case MenuItem::Terminal:
-        return "Terminal";
-    case MenuItem::Bin:
-        return "Recycle Bin";
-    case MenuItem::Shutdown:
-        return "Shut down";
-    case MenuItem::Restart:
-        return "Restart";
-    default:
-        return "";
+        if (!g_windows[i].visible)
+            continue;
+        const u32 color = g_windows[i].focused ? 0x004080C0 : 0x00202028;
+        const u32 tw = static_cast<u32>(libk::strlen(g_windows[i].title)) * kCellW + 20;
+        s_fill(x, y0 + 4, static_cast<i32>(tw), static_cast<i32>(kTaskbarH) - 8, color);
+        if (g_windows[i].focused)
+        {
+            s_fill(x + 8, y0 + static_cast<i32>(kTaskbarH) - 4, static_cast<i32>(tw) - 16, 2,
+                   0x0060A0D0);
+        }
+        s_text(x + 10, y0 + 8, g_windows[i].title, 0x00FFFFFF, color);
+        x += static_cast<i32>(tw) + 6;
+    }
+
+    const i32 tray_x = to_i32(g_w) - 130;
+
+    for (i32 k = 0; k < 3; ++k)
+    {
+        s_fill(tray_x + k * 20, y0 + 12, 6, 6, 0x00A0A0A0);
+    }
+
+    {
+        char buf[16];
+        int n = 0;
+        const u32 total = static_cast<u32>(g_clock_sec);
+        const u32 hh = (total / 3600) % 24;
+        const u32 mm = (total / 60) % 60;
+        auto push2 = [&](u32 v)
+        {
+            buf[n++] = static_cast<char>('0' + (v / 10) % 10);
+            buf[n++] = static_cast<char>('0' + v % 10);
+        };
+        push2(hh);
+        buf[n++] = ':';
+        push2(mm);
+        buf[n] = 0;
+        s_text(tray_x + 68, y0 + 4, buf, 0x00F0F0F0, 0x00101018);
+    }
+
+    {
+        char buf[16];
+        int n = 0;
+        const u32 total_days = static_cast<u32>(g_clock_sec / 86400);
+        auto push2 = [&](u32 v)
+        {
+            buf[n++] = static_cast<char>('0' + (v / 10) % 10);
+            buf[n++] = static_cast<char>('0' + v % 10);
+        };
+        push2(total_days % 100);
+        buf[n++] = '/';
+        push2(1);
+        buf[n++] = '/';
+        push2(2026 % 100);
+        buf[n] = 0;
+        s_text(tray_x + 68, y0 + 16, buf, 0x00C0C0C0, 0x00101018);
     }
 }
 
@@ -458,37 +496,128 @@ void scene_draw_start_menu()
 {
     if (!g_start_open)
         return;
+
+    const i32 menu_w = 380;
+    const i32 item_h = 40;
+    const i32 header_h = 36;
+    const i32 menu_h = header_h + item_h * 6 + 20;
+
     const i32 y0 = static_cast<i32>(g_h - kTaskbarH);
-    i32 menu_h = 0;
-    for (u32 i = 0; g_menu_items[i] != MenuItem::None; i++)
-    {
-        menu_h += static_cast<i32>(kStartItemH);
-    }
-    const i32 mx = 4;
+    const i32 mx = to_i32(g_w) / 2 - menu_w / 2;
     const i32 my = y0 - menu_h;
 
-    s_fill(mx, my, static_cast<i32>(kStartW), menu_h, kMenuBg);
-    s_rect(mx, my, static_cast<i32>(kStartW), menu_h, kMenuSep);
+    s_fill(mx, my, menu_w, menu_h, 0x00202838);
+    s_rect(mx, my, menu_w, menu_h, 0x00586078);
 
-    i32 cy = my;
-    for (u32 i = 0; g_menu_items[i] != MenuItem::None; i++)
+    s_fill(mx + 1, my + 1, menu_w - 2, header_h - 2, 0x001A2030);
+    for (i32 i = 0; i < 16; ++i)
     {
-        const MenuItem it = g_menu_items[i];
-        if (it == MenuItem::Separator)
+        for (i32 j = 0; j < 16; ++j)
         {
-            s_fill(mx + 8, cy + 2, static_cast<i32>(kStartW) - 16, 1, kMenuSep);
-            cy += 6;
+            const bool corner =
+                (i < 3 && j < 3) || (i < 3 && j > 12) || (i > 12 && j < 3) || (i > 12 && j > 12);
+            if (!corner)
+                s_fill(mx + 12 + i, my + 10 + j, 1, 1, 0x0060A0D0);
+        }
+    }
+    s_text(mx + 40, my + 10, "NOTYVOS user", 0x00FFFFFF, 0x001A2030);
+
+    const char* items[6] = {"Explorer",    "Settings",  "Terminal",
+                            "Recycle Bin", "Shut down", "Restart"};
+
+    i32 cy = my + header_h + 4;
+    for (u32 i = 0; i < 6; ++i)
+    {
+        const bool hover = (static_cast<i32>(i) == g_hover_menu);
+        const u32 bg = hover ? 0x00406080 : 0x00202838;
+        if (hover)
+            s_fill(mx + 4, cy, menu_w - 8, item_h - 4, bg);
+        s_text(mx + 20, cy + 12, items[i], 0x00E0E0E0, bg);
+
+        s_fill(mx + menu_w - 26, cy + 16, 8, 2, 0x00A0A0A0);
+        s_fill(mx + menu_w - 22, cy + 18, 2, 4, 0x00A0A0A0);
+        s_fill(mx + menu_w - 22, cy + 12, 2, 4, 0x00A0A0A0);
+
+        cy += item_h;
+    }
+}
+
+const char* ctx_label(CtxItem it)
+{
+    switch (it)
+    {
+    case CtxItem::New:
+        return "New";
+    case CtxItem::Refresh:
+        return "Refresh";
+    case CtxItem::Cut:
+        return "Cut";
+    case CtxItem::Copy:
+        return "Copy";
+    case CtxItem::Paste:
+        return "Paste";
+    case CtxItem::Rename:
+        return "Rename";
+    case CtxItem::Properties:
+        return "Properties";
+    default:
+        return "";
+    }
+}
+
+i32 ctx_menu_height()
+{
+    i32 h = 0;
+    for (u32 i = 0; g_ctx_items[i] != CtxItem::None; i++)
+    {
+        h += (g_ctx_items[i] == CtxItem::Sep1 || g_ctx_items[i] == CtxItem::Sep2)
+                 ? static_cast<i32>(kCtxSepH)
+                 : static_cast<i32>(kCtxItemH);
+    }
+    return h;
+}
+
+void scene_draw_context_menu()
+{
+    if (!g_ctx_open)
+        return;
+    const i32 h = ctx_menu_height();
+
+    i32 x = g_ctx_x;
+    i32 y = g_ctx_y;
+    if (x + static_cast<i32>(kCtxW) > to_i32(g_w))
+        x = to_i32(g_w) - static_cast<i32>(kCtxW);
+    if (y + h > to_i32(g_h) - static_cast<i32>(kTaskbarH))
+        y = to_i32(g_h) - static_cast<i32>(kTaskbarH) - h;
+    if (x < 0)
+        x = 0;
+    if (y < 0)
+        y = 0;
+    g_ctx_x = x;
+    g_ctx_y = y;
+
+    s_fill(x, y, static_cast<i32>(kCtxW), h, kMenuBg);
+    s_rect(x, y, static_cast<i32>(kCtxW), h, kMenuSep);
+
+    i32 cy = y;
+    for (u32 i = 0; g_ctx_items[i] != CtxItem::None; i++)
+    {
+        const CtxItem it = g_ctx_items[i];
+        if (it == CtxItem::Sep1 || it == CtxItem::Sep2)
+        {
+            s_fill(x + 8, cy + 2, static_cast<i32>(kCtxW) - 16, 1, kMenuSep);
+            cy += static_cast<i32>(kCtxSepH);
             continue;
         }
-        const bool hover = (static_cast<i32>(i) == g_hover_menu);
+        const bool hover = (static_cast<i32>(i) == g_ctx_hover);
         if (hover)
         {
-            s_fill(mx + 2, cy + 1, static_cast<i32>(kStartW) - 4, static_cast<i32>(kStartItemH) - 2,
+            s_fill(x + 2, cy + 1, static_cast<i32>(kCtxW) - 4, static_cast<i32>(kCtxItemH) - 2,
                    kMenuHi);
         }
-        s_text(mx + 16, cy + (static_cast<i32>(kStartItemH) - static_cast<i32>(kCellH)) / 2,
-               menu_label(it), kMenuFg, hover ? kMenuHi : kMenuBg);
-        cy += static_cast<i32>(kStartItemH);
+        s_text(x + 16, cy + (static_cast<i32>(kCtxItemH) - static_cast<i32>(kCellH)) / 2,
+               ctx_label(it), kMenuFg, hover ? kMenuHi : kMenuBg);
+        cy += static_cast<i32>(kCtxItemH);
     }
 }
 
@@ -597,11 +726,8 @@ void scene_render()
         scene_draw_window(g_windows[i]);
     scene_draw_taskbar();
     scene_draw_start_menu();
+    scene_draw_context_menu();
 }
-
-// ---------------------------------------------------------------------------
-// Hit testing
-// ---------------------------------------------------------------------------
 
 i32 hit_window(i32 mx, i32 my)
 {
@@ -655,27 +781,64 @@ i32 hit_title_button(const Window& w, i32 mx, i32 my)
 bool hit_start_button(i32 mx, i32 my)
 {
     const i32 y0 = static_cast<i32>(g_h - kTaskbarH);
-    return mx >= 4 && mx < 104 && my >= y0 + 4 && my < y0 + static_cast<i32>(kTaskbarH) - 4;
+    const i32 center = to_i32(g_w) / 2;
+
+    i32 cluster_w = 88;
+    for (u32 i = 0; i < g_win_count; ++i)
+    {
+        if (!g_windows[i].visible)
+            continue;
+        const u32 tw = static_cast<u32>(libk::strlen(g_windows[i].title)) * kCellW + 20;
+        cluster_w += static_cast<i32>(tw) + 6;
+    }
+    const i32 start_x = center - cluster_w / 2;
+
+    return mx >= start_x && mx < start_x + 36 && my >= y0 + 4 &&
+           my < y0 + static_cast<i32>(kTaskbarH) - 4;
 }
 
 i32 hit_menu_item(i32 mx, i32 my)
 {
     if (!g_start_open)
         return -1;
-    i32 menu_h = 0;
-    for (u32 i = 0; g_menu_items[i] != MenuItem::None; i++)
-        menu_h += static_cast<i32>(kStartItemH);
+
+    const i32 menu_w = 380;
+    const i32 item_h = 40;
+    const i32 header_h = 36;
+    const i32 menu_h = header_h + item_h * 6 + 20;
+
     const i32 y0 = static_cast<i32>(g_h - kTaskbarH);
+    const i32 mx_l = to_i32(g_w) / 2 - menu_w / 2;
     const i32 my_top = y0 - menu_h;
-    const i32 mx_l = 4;
-    const i32 mx_r = mx_l + static_cast<i32>(kStartW);
-    if (mx < mx_l || mx >= mx_r || my < my_top || my >= y0)
+
+    if (mx < mx_l || mx >= mx_l + menu_w || my < my_top || my >= y0)
         return -1;
 
-    i32 cy = my_top;
-    for (u32 i = 0; g_menu_items[i] != MenuItem::None; i++)
+    const i32 first = my_top + header_h + 4;
+    if (my < first)
+        return -1;
+
+    const i32 idx = (my - first) / item_h;
+    if (idx < 0 || idx >= 6)
+        return -1;
+    return idx;
+}
+
+i32 hit_ctx_item(i32 mx, i32 my)
+{
+    if (!g_ctx_open)
+        return -1;
+    if (mx < g_ctx_x || mx >= g_ctx_x + static_cast<i32>(kCtxW))
+        return -1;
+    if (my < g_ctx_y)
+        return -1;
+
+    i32 cy = g_ctx_y;
+    for (u32 i = 0; g_ctx_items[i] != CtxItem::None; i++)
     {
-        const i32 ch = (g_menu_items[i] == MenuItem::Separator) ? 6 : static_cast<i32>(kStartItemH);
+        const i32 ch = (g_ctx_items[i] == CtxItem::Sep1 || g_ctx_items[i] == CtxItem::Sep2)
+                           ? static_cast<i32>(kCtxSepH)
+                           : static_cast<i32>(kCtxItemH);
         if (my >= cy && my < cy + ch)
             return static_cast<i32>(i);
         cy += ch;
@@ -846,11 +1009,11 @@ void launch_shortcut(ShortcutKind kind)
     {
     case ShortcutKind::Explorer:
         log::write(log::Level::Info, "gfx", "launch: Explorer");
-        open_window(WindowKind::Explorer, "Explorer", 360, 260);
+        open_window(WindowKind::Explorer, "Explorer", 640, 440);
         break;
     case ShortcutKind::Settings:
         log::write(log::Level::Info, "gfx", "launch: Settings");
-        open_window(WindowKind::Settings, "Settings", 360, 220);
+        open_window(WindowKind::Settings, "Settings", 640, 440);
         break;
     case ShortcutKind::Terminal:
         log::write(log::Level::Info, "gfx", "launch: Terminal");
@@ -858,7 +1021,7 @@ void launch_shortcut(ShortcutKind kind)
         break;
     case ShortcutKind::Bin:
         log::write(log::Level::Info, "gfx", "launch: Recycle Bin");
-        open_window(WindowKind::Bin, "Recycle Bin", 340, 200);
+        open_window(WindowKind::Bin, "Recycle Bin", 620, 400);
         break;
     }
 }
@@ -890,14 +1053,65 @@ void launch_menu_item(MenuItem m)
     }
 }
 
+void ctx_action(CtxItem it)
+{
+    switch (it)
+    {
+    case CtxItem::New:
+        log::write(log::Level::Info, "ctx", "New");
+        break;
+    case CtxItem::Refresh:
+        log::write(log::Level::Info, "ctx", "Refresh");
+        g_dirty_scene = true;
+        break;
+    case CtxItem::Cut:
+        log::write(log::Level::Info, "ctx", "Cut");
+        break;
+    case CtxItem::Copy:
+        log::write(log::Level::Info, "ctx", "Copy");
+        break;
+    case CtxItem::Paste:
+        log::write(log::Level::Info, "ctx", "Paste");
+        break;
+    case CtxItem::Rename:
+        log::write(log::Level::Info, "ctx", "Rename");
+        break;
+    case CtxItem::Properties:
+        log::write(log::Level::Info, "ctx", "Properties");
+        break;
+    default:
+        break;
+    }
+}
+
+void open_context_menu(i32 x, i32 y)
+{
+    g_ctx_open = true;
+    g_ctx_x = x;
+    g_ctx_y = y;
+    g_ctx_hover = -1;
+    g_dirty_scene = true;
+}
+
+void close_context_menu()
+{
+    if (!g_ctx_open)
+        return;
+    g_ctx_open = false;
+    g_ctx_hover = -1;
+    g_dirty_scene = true;
+}
+
 void on_mouse_tick()
 {
     const i32 mx = arch::x86_64::mouse_x();
     const i32 my = arch::x86_64::mouse_y();
     const bool left = arch::x86_64::mouse_left();
+    const bool right = arch::x86_64::mouse_right();
 
-    const bool just_pressed = left && !g_prev_left;
-    const bool just_released = !left && g_prev_left;
+    const bool just_left_pressed = left && !g_prev_left;
+    const bool just_left_released = !left && g_prev_left;
+    const bool just_right_pressed = right && !g_prev_right;
 
     const i32 h_shortcut = hit_shortcut(mx, my);
     if (h_shortcut != g_hover_shortcut)
@@ -911,8 +1125,60 @@ void on_mouse_tick()
         g_hover_menu = h_menu;
         g_dirty_scene = true;
     }
+    const i32 h_ctx = hit_ctx_item(mx, my);
+    if (h_ctx != g_ctx_hover)
+    {
+        g_ctx_hover = h_ctx;
+        g_dirty_scene = true;
+    }
 
-    if (just_pressed)
+    if (just_right_pressed)
+    {
+        if (g_ctx_open)
+        {
+            close_context_menu();
+        }
+        else
+        {
+            const i32 widx = hit_window(mx, my);
+            const i32 ty = to_i32(g_h) - static_cast<i32>(kTaskbarH);
+            const bool over_taskbar = (my >= ty);
+            const bool over_start = hit_start_button(mx, my);
+            if (widx < 0 && !over_taskbar && !over_start)
+            {
+                open_context_menu(mx, my);
+            }
+        }
+        g_prev_right = right;
+        g_prev_mx = mx;
+        g_prev_my = my;
+        g_prev_left = left;
+        return;
+    }
+
+    if (just_left_pressed && g_ctx_open)
+    {
+        if (h_ctx >= 0)
+        {
+            const CtxItem it = g_ctx_items[static_cast<u32>(h_ctx)];
+            if (it != CtxItem::Sep1 && it != CtxItem::Sep2)
+            {
+                close_context_menu();
+                ctx_action(it);
+            }
+        }
+        else
+        {
+            close_context_menu();
+        }
+        g_prev_left = left;
+        g_prev_right = right;
+        g_prev_mx = mx;
+        g_prev_my = my;
+        return;
+    }
+
+    if (just_left_pressed)
     {
         if (hit_start_button(mx, my))
         {
@@ -922,24 +1188,25 @@ void on_mouse_tick()
             g_prev_mx = mx;
             g_prev_my = my;
             g_prev_left = left;
+            g_prev_right = right;
             return;
         }
 
         if (g_start_open)
         {
-            if (h_menu >= 0)
+            if (h_menu >= 0 && h_menu < 6)
             {
-                const MenuItem it = g_menu_items[static_cast<u32>(h_menu)];
-                if (it != MenuItem::Separator)
-                {
-                    g_start_open = false;
-                    launch_menu_item(it);
-                    g_dirty_scene = true;
-                    g_prev_mx = mx;
-                    g_prev_my = my;
-                    g_prev_left = left;
-                    return;
-                }
+                const MenuItem kinds[6] = {MenuItem::Explorer, MenuItem::Settings,
+                                           MenuItem::Terminal, MenuItem::Bin,
+                                           MenuItem::Shutdown, MenuItem::Restart};
+                g_start_open = false;
+                launch_menu_item(kinds[static_cast<u32>(h_menu)]);
+                g_dirty_scene = true;
+                g_prev_mx = mx;
+                g_prev_my = my;
+                g_prev_left = left;
+                g_prev_right = right;
+                return;
             }
             else
             {
@@ -981,11 +1248,11 @@ void on_mouse_tick()
             {
                 focus_window(static_cast<u32>(idx));
                 if (w.kind == WindowKind::Explorer)
-                    apps_click_explorer(mx, my, just_pressed);
+                    apps_click_explorer(mx, my, just_left_pressed);
                 if (w.kind == WindowKind::Settings)
-                    apps_click_settings(mx, my, just_pressed);
+                    apps_click_settings(mx, my, just_left_pressed);
                 if (w.kind == WindowKind::Bin)
-                    apps_click_bin(mx, my, just_pressed);
+                    apps_click_bin(mx, my, just_left_pressed);
                 g_dirty_scene = true;
             }
         }
@@ -1009,7 +1276,16 @@ void on_mouse_tick()
             const i32 ty = to_i32(g_h) - static_cast<i32>(kTaskbarH);
             if (my >= ty && my < to_i32(g_h))
             {
-                i32 bx = 112;
+                const i32 center = to_i32(g_w) / 2;
+                i32 cluster_w = 88;
+                for (u32 i = 0; i < g_win_count; ++i)
+                {
+                    if (!g_windows[i].visible)
+                        continue;
+                    const u32 tw = static_cast<u32>(libk::strlen(g_windows[i].title)) * kCellW + 20;
+                    cluster_w += static_cast<i32>(tw) + 6;
+                }
+                i32 bx = center - cluster_w / 2 + 88;
                 for (u32 i = 0; i < g_win_count; i++)
                 {
                     if (!g_windows[i].visible)
@@ -1022,7 +1298,7 @@ void on_mouse_tick()
                         g_dirty_scene = true;
                         break;
                     }
-                    bx += static_cast<i32>(tw) + 4;
+                    bx += static_cast<i32>(tw) + 6;
                 }
             }
             else
@@ -1037,7 +1313,7 @@ void on_mouse_tick()
         }
     }
 
-    if (just_released)
+    if (just_left_released)
     {
         g_drag_win = -1;
     }
@@ -1062,9 +1338,22 @@ void on_mouse_tick()
         g_dirty_scene = true;
     }
 
+    const i32 wheel = arch::x86_64::mouse_wheel();
+    if (wheel != 0)
+    {
+        arch::x86_64::mouse_wheel_clear();
+        const i32 idx = hit_window(mx, my);
+        if (idx >= 0 && g_windows[static_cast<u32>(idx)].kind == WindowKind::Terminal)
+        {
+            Compositor::term_scroll_by(wheel * 3);
+            g_dirty_scene = true;
+        }
+    }
+
     g_prev_mx = mx;
     g_prev_my = my;
     g_prev_left = left;
+    g_prev_right = right;
 }
 
 void try_load_wallpaper()
@@ -1136,23 +1425,14 @@ void try_load_wallpaper()
 
 } // namespace
 
-// ---------------------------------------------------------------------------
-// Power actions — now delegate to ACPI
-// ---------------------------------------------------------------------------
-
 void Compositor::machine_shutdown() noexcept
 {
     acpi::power_off();
 }
-
 void Compositor::machine_restart() noexcept
 {
     acpi::restart();
 }
-
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
 
 void Compositor::init() noexcept
 {
@@ -1224,7 +1504,6 @@ void Compositor::init() noexcept
     g_cursor_x = -1000;
     cursor_draw(mx, my);
 
-    // Bind the widget toolkit's drawing primitives.
     apps_bind_impl(widget_rect_cb, widget_text_cb);
 
     log::write(log::Level::Info, "comp", "desktop %llu x %llu, terminal %llu x %llu",
@@ -1252,6 +1531,7 @@ void Compositor::tick() noexcept
     if (g_dirty_scene)
     {
         gfx::hal_set_target(g_scene, g_w, g_h, g_w);
+        gpu::bind_surface(g_scene, g_w, g_h, g_w);
         gfx::Device::begin_frame();
         scene_render();
         gfx::Device::end_frame();
@@ -1321,6 +1601,11 @@ void Compositor::term_put(char c) noexcept
 {
     if (!g_ready)
         return;
+    if (c == '\f')
+    {
+        term_clear();
+        return;
+    }
     if (c == '\n')
     {
         const u32 col = g_term_cursor % g_term_cols;
