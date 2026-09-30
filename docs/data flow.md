@@ -674,3 +674,6 @@ future work.
 
 The diagrams for future phases are architecture/data-flow plans only and
 must not be read as implemented functionality.
+
+
+<!-- Source-level flow notation: hardware/input -> exact source symbol -> state -> consumer. -->
