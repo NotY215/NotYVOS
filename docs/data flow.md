@@ -677,3 +677,1009 @@ must not be read as implemented functionality.
 
 
 <!-- Source-level flow notation: hardware/input -> exact source symbol -> state -> consumer. -->
+
+
+# Source-level completed flows
+
+The diagrams above give subsystem relationships. The flows below are the
+source-level version: each line represents an actual value, state object, or
+control transfer between implementation boundaries.
+
+## 1A
+```text
+Limine framebuffer_request.response
+        │
+        ▼
+boot::query()
+        │
+        ▼
+BootInfo.framebuffer
+        │
+        ▼
+fb::Framebuffer::init()
+        │
+        ▼
+fb::Console::init()
+
+kernel_main()
+        │
+        ▼
+arch::x86_64::SerialPort::init(COM1)
+        │
+        ▼
+SerialPort::write()
+        │
+        ▼
+serial diagnostic output
+```
+
+## 1B
+```text
+CPU exception / hardware IRQ
+        │
+        ▼
+IDT vector
+        │
+        ▼
+arch::x86_64 ISR entry
+        │
+        ▼
+registered interrupt handler
+        │
+        ├─► exception state
+        │       │
+        │       ▼
+        │   log::write() / panic()
+        │
+        └─► device/timer state
+                │
+                ▼
+            scheduler / device consumer
+```
+
+## 1C
+```text
+Limine memmap response
+        │
+        ▼
+mm::PhysicalMemory::init(memmap, hhdm_offset)
+        │
+        ▼
+physical-region metadata
+        │
+        ▼
+free-frame state
+        │
+        ▼
+physical frame allocation
+        │
+        ▼
+page tables / process memory / kernel allocations
+```
+
+## 1D
+```text
+Limine HHDM response
+        │
+        ▼
+mm::VirtualMemory::init(hhdm_offset)
+        │
+        ▼
+HHDM translation state
+        │
+        ▼
+page-table operations
+        │
+        ├─► kernel virtual mappings
+        └─► process virtual mappings
+                │
+                ▼
+             user CR3
+```
+
+## 1E
+```text
+physical frames + virtual mappings
+        │
+        ├─► mm::Heap::init()
+        │       │
+        │       ▼
+        │   Heap::allocate()
+        │       │
+        │       ▼
+        │   kernel objects
+        │
+        └─► mm::ExecArena::init()
+                │
+                ▼
+            executable pages
+                │
+                ▼
+            PS3 translated code
+```
+
+## 1F
+```text
+kernel subsystem
+        │
+        ▼
+log::write(level, tag, format, ...)
+        │
+        ├─► serial sink
+        └─► framebuffer/buffered console
+                │
+                ▼
+             diagnostic text
+
+fatal condition
+        │
+        ▼
+panic(message)
+        │
+        ▼
+diagnostic output
+        │
+        ▼
+kernel halt
+```
+
+## 1G
+```text
+Limine MP response
+        │
+        ▼
+arch::x86_64::percpu_init_bsp()
+        │
+        ▼
+BSP per-CPU state
+        │
+        ▼
+Lapic::init_bsp(hhdm)
+        │
+        ▼
+percpu_register(...)
+        │
+        ▼
+arch::x86_64::smp_init(mp_response)
+        │
+        ▼
+additional CPUs
+        │
+        ▼
+per-CPU state + LAPIC state
+```
+
+## 2A
+```text
+task_create_user(...)
+        │
+        ▼
+user CR3 + user stack + entry RIP
+        │
+        ▼
+Ring 3 execution
+        │
+        ▼
+syscall instruction
+        │
+        ▼
+syscall_entry.S
+        │
+        ▼
+syscall dispatcher
+        │
+        ▼
+kernel syscall implementation
+        │
+        ▼
+return value
+        │
+        ▼
+sysret
+        │
+        ▼
+Ring 3 caller
+```
+
+## 2B
+```text
+sched::scheduler_add(task)
+        │
+        ▼
+runnable task state
+        │
+        ▼
+timer/preemption event
+        │
+        ▼
+scheduler selection
+        │
+        ▼
+context_switch.S
+        │
+        ▼
+next task register/context state
+        │
+        ▼
+task execution
+```
+
+## 2C
+```text
+ELF64 bytes
+        │
+        ▼
+proc::load_elf(bytes, size)
+        │
+        ├─► ELF header
+        ├─► PT_LOAD segments
+        ├─► user stack
+        └─► entry / CR3 / user bounds
+                │
+                ▼
+sched::task_create_user(...)
+                │
+                ▼
+user ELF entry point
+```
+
+## 2C-followup
+```text
+parent process
+        │
+        ▼
+fork syscall
+        │
+        ▼
+child process metadata + cloned user mappings
+        │
+        ▼
+child PID returned to parent
+        │
+        ▼
+parent wait path
+        │
+        ▼
+child termination state
+        │
+        ▼
+child state reaped
+        │
+        ▼
+status copied back to parent
+```
+
+## 2D
+```text
+Ring 3 pointer + syscall arguments
+        │
+        ▼
+syscall_entry.S
+        │
+        ▼
+syscall dispatcher
+        │
+        ▼
+copy_from_user(kdst, uaddr, n)
+        │
+        ▼
+kernel-owned validated buffer
+        │
+        ▼
+kernel subsystem
+        │
+        ▼
+copy_to_user(uaddr, ksrc, n)
+        │
+        ▼
+Ring 3 destination buffer
+```
+
+Source: kernel/src/syscall/uaccess.cpp and dispatch.cpp.
+
+## 2D-followup
+```text
+readdir(path/fd)
+        │
+        ▼
+syscall dispatcher
+        │
+        ▼
+VFS directory VNode
+        │
+        ▼
+directory entry state
+        │
+        ▼
+copy_to_user(...)
+        │
+        ▼
+user directory buffer
+
+mmap request
+        │
+        ▼
+syscall dispatcher
+        │
+        ▼
+virtual-memory mapping path
+        │
+        ▼
+anonymous user mapping
+        │
+        ▼
+returned user virtual address
+```
+
+## 2E
+```text
+user pathname
+        │
+        ▼
+VFS path lookup
+        │
+        ▼
+fs::VNode
+        │
+        ▼
+fs::File
+        │
+        ▼
+per-task FileTable
+        │
+        ▼
+file descriptor
+        │
+        ├─► read
+        ├─► write
+        ├─► seek
+        └─► readdir
+                │
+                ▼
+             filesystem backend
+```
+
+## 2F
+```text
+Limine module[0]
+        │
+        ▼
+initrd address + size
+        │
+        ▼
+fs::initramfs_mount(address, size)
+        │
+        ▼
+ustar headers
+        │
+        ▼
+VNode tree
+        │
+        ▼
+VFS root "/"
+        │
+        ├─► hello.txt
+        ├─► readme.txt
+        └─► hello.elf
+```
+
+## 2G
+```text
+PS/2 keyboard state
+        │
+        ▼
+user shell input
+        │
+        ▼
+user/init/main.c
+        │
+        ▼
+libnoty string/printf/stdio helpers
+        │
+        ▼
+syscall wrapper
+        │
+        ▼
+kernel syscall dispatcher
+        │
+        ▼
+VFS / process / memory operation
+        │
+        ▼
+return value or file data
+        │
+        ▼
+libnoty formatting
+        │
+        ▼
+shell output
+```
+
+## 2I
+```text
+exec(path)
+        │
+        ▼
+copy_from_user(path)
+        │
+        ▼
+VFS file bytes
+        │
+        ▼
+proc::load_elf(...)
+        │
+        ▼
+new address-space state
+        │
+        ▼
+new ELF entry
+        │
+        ▼
+same task continues as new image
+
+brk(new_end)
+        │
+        ▼
+task brk_start / brk_current
+        │
+        ▼
+user heap mapping state
+        │
+        ▼
+libnoty malloc()
+```
+
+## 2K
+```text
+user write(fd, buffer, size)
+        │
+        ▼
+syscall dispatcher
+        │
+        ▼
+copy_from_user(...)
+        │
+        ▼
+VNode / File
+        │
+        ▼
+NYFS metadata lookup
+        │
+        ├─► 512-byte superblock
+        ├─► 64-entry file table
+        └─► file data sectors
+                │
+                ▼
+        block::block_write(...)
+                │
+                ▼
+        AHCI block device
+                │
+                ▼
+        persistent disk
+
+persistent disk
+        │
+        ▼
+AHCI read
+        │
+        ▼
+NYFS metadata/data
+        │
+        ▼
+VNode / File
+        │
+        ▼
+copy_to_user(...)
+        │
+        ▼
+user buffer
+```
+
+## 2L
+```text
+timer tick
+        │
+        ▼
+scheduler time state
+        │
+        ├─► time() ─► uptime value ─► user return
+        │
+        └─► sleep(duration)
+                │
+                ▼
+            blocked task + wake deadline
+                │
+                ▼
+            timer reaches deadline
+                │
+                ▼
+            runnable task
+                │
+                ▼
+            scheduler resumes task
+```
+
+## 2M
+```text
+fopen/fread/fwrite
+        │
+        ▼
+user/libnoty/stdio.c
+        │
+        ▼
+syscall wrapper
+        │
+        ▼
+File descriptor
+        │
+        ▼
+VFS
+        │
+        ▼
+initramfs / NYFS
+        │
+        ▼
+bytes returned to user buffer
+
+malloc(size)
+        │
+        ▼
+user/libnoty/malloc.c
+        │
+        ▼
+user heap state
+        │
+        ▼
+brk / mapped memory
+        │
+        ▼
+allocated pointer
+```
+
+## 2N
+```text
+PS/2 keyboard
+        │
+        ▼
+Ctrl+C input
+        │
+        ▼
+shell input path
+        │
+        ▼
+signal delivery syscall
+        │
+        ▼
+target task signal state
+        │
+        ▼
+target termination handling
+        │
+        ▼
+scheduler removes target from runnable execution
+        │
+        ▼
+shell resumes
+```
+
+## 3A
+```text
+PS/2 mouse packet
+        │
+        ▼
+mouse state
+        │
+        ▼
+Compositor update/input path
+        │
+        ├─► g_cursor_x / g_cursor_y
+        ├─► hover state
+        ├─► focus state
+        └─► drag state
+                │
+                ▼
+        scene state
+                │
+                ▼
+        scene drawing
+                │
+                ▼
+        g_scene
+                │
+                ▼
+        vbe_blit(...)
+                │
+                ▼
+        framebuffer
+```
+
+## 3B
+```text
+mouse/keyboard interaction
+        │
+        ▼
+window hit test
+        │
+        ▼
+g_windows[]
+        │
+        ├─► focused window
+        ├─► drag window + offsets
+        └─► window control state
+                │
+                ▼
+        compositor scene
+                │
+                ▼
+             g_scene
+```
+
+## 3C
+```text
+Start button
+        │
+        ▼
+g_start_open
+        │
+        ▼
+MenuItem state
+        │
+        ├─► Explorer / Settings / Terminal / Bin
+        │       │
+        │       ▼
+        │   application/window state
+        │       │
+        │       ▼
+        │   compositor
+        │
+        └─► power action
+                │
+                ▼
+            ACPI control path
+```
+
+## 3D
+```text
+Limine RSDP
+        │
+        ▼
+acpi::init(...)
+        │
+        ▼
+ACPI tables
+        │
+        ▼
+power/restart control
+
+AHCI
+        │
+        ▼
+block::block_read/write
+        │
+        ▼
+NYFS / VFS
+
+e1000
+        │
+        ▼
+network device state
+
+HDA
+        │
+        ▼
+audio device state
+
+PS/2
+        │
+        ├─► keyboard state
+        └─► mouse state
+                │
+                ▼
+            compositor
+
+Button / Label / ListView
+        │
+        ▼
+widget callbacks
+        │
+        ▼
+Graphics API
+        │
+        ▼
+compositor scene
+```
+
+## 3E
+```text
+desktop/widget draw request
+        │
+        ▼
+gfx:: API
+        │
+        ▼
+gfx:: HAL
+        │
+        ├─► software backend
+        │       │
+        │       ▼
+        │   software rasterization
+        │
+        └─► VBE backend
+                │
+                ▼
+            framebuffer presentation
+```
+
+Boot registration path:
+
+```text
+gfx::register_software_backend()
+        │
+        ▼
+gfx::vbe_backend_init()
+        │
+        ▼
+gfx::Device::init()
+        │
+        ▼
+active graphics device/backend
+```
+
+## 4A
+```text
+PS3 ELF bytes
+        │
+        ▼
+is_ps3_executable(...)
+        │
+        ▼
+parse_ps3_executable(...)
+        │
+        ▼
+Ps3Program
+        │
+        ├─► entry
+        ├─► program headers
+        └─► loadable segments
+                │
+                ▼
+        PowerPC code
+                │
+                ▼
+        powerpc::decode(word)
+                │
+                ▼
+        decoded instruction
+```
+
+## 4B
+```text
+ppu::Context.pc
+        │
+        ▼
+Context::read32 callback
+        │
+        ▼
+big-endian PPC word
+        │
+        ▼
+powerpc instruction fields
+        │
+        ▼
+ppu::step(ctx)
+        │
+        ├─► ctx->gpr[]
+        ├─► CR / LR / CTR / XER
+        ├─► read32/write32 callbacks
+        ├─► branch target
+        └─► syscall callback
+                │
+                ▼
+        updated ctx->pc
+                │
+                ▼
+        ppu::run(ctx, max_steps)
+```
+
+## 4C
+```text
+spu::Context.pc
+        │
+        ▼
+fetch32(ctx, pc)
+        │
+        ▼
+11-bit SPU opcode
+        │
+        ▼
+spu::step(ctx)
+        │
+        ├─► 128 vector registers
+        ├─► 256 KiB local_store
+        ├─► inbound mailbox
+        ├─► outbound mailbox
+        └─► dma_read / dma_write callbacks
+                │
+                ▼
+        updated SPU context
+```
+
+## 4D
+```text
+main-memory / local-store transfer request
+        │
+        ▼
+dma::queue(...)
+        │
+        ▼
+DMA Engine queue entry
+        │
+        ▼
+dma::drain(...)
+        │
+        ├─► Dir::MainToLocal ─► local buffer
+        └─► Dir::LocalToMain ─► main buffer
+                │
+                ▼
+        completion/tag state
+                │
+                ▼
+        dma::sync_barrier()
+        dma::atomic_fence()
+```
+
+## 4E
+```text
+PPU ctx->pc
+        │
+        ▼
+translation-cache lookup
+        │
+        ├─► HIT
+        │     │
+        │     ▼
+        │   cached translated block
+        │
+        └─► MISS
+              │
+              ▼
+          translate/decode block
+              │
+              ▼
+          x86-64 emitter
+              │
+              ▼
+          mm::ExecArena
+              │
+              ▼
+          executable bytes
+              │
+              ▼
+          translation-cache insert
+              │
+              ▼
+          translated block
+        │
+        ▼
+JIT trampoline
+        │
+        ▼
+native x86-64 execution
+        │
+        ▼
+updated guest/PPU context
+```
+
+## 5A
+```text
+PPU execution request
+        │
+        ▼
+JIT translation lookup
+        │
+        ├─► cache hit ─► translated block
+        │
+        └─► cache miss
+                │
+                ▼
+            translator
+                │
+                ▼
+            x86-64 emitter
+                │
+                ▼
+            executable arena
+                │
+                ▼
+            cache insert
+                │
+                ▼
+            translated block
+                    │
+                    ▼
+              JIT trampoline
+                    │
+                    ▼
+              x86-64 CPU
+                    │
+                    ▼
+              PPU context continues
+
+unsupported translation
+        │
+        ▼
+ppu::step(ctx)
+        │
+        ▼
+interpreter fallback
+```
+
+Source: kernel/src/ps3/jit/jit.cpp. The current implementation retains an
+interpreter fallback when the translator cannot handle the instruction at the
+current guest PC.
+
+---
+
+# Exact boot-to-runtime chain
+
+```text
+Limine
+  │
+  ▼
+boot::query()
+  │
+  ├─► framebuffer ─► fb::Framebuffer::init() ─► fb::Console::init()
+  │
+  ├─► memmap/HHDM ─► PhysicalMemory::init()
+  │                  ├─► VirtualMemory::init()
+  │                  ├─► Heap::init()
+  │                  └─► ExecArena::init()
+  │
+  ├─► RSDP ─► acpi::init()
+  │
+  ├─► block devices ─► block::block_init()
+  │                    ├─► block::ahci_init()
+  │                    └─► fs::nyfs_mount()
+  │
+  ├─► MP response ─► percpu_init_bsp()
+  │                  ├─► Lapic::init_bsp()
+  │                  ├─► percpu_register()
+  │                  └─► smp_init()
+  │
+  ├─► initrd ─► fs::vfs_init()
+  │             ├─► fs::initramfs_mount()
+  │             └─► fs::vfs_mount_root()
+  │
+  ├─► graphics ─► gfx::Compositor::init()
+  │               ├─► register_software_backend()
+  │               ├─► vbe_backend_init()
+  │               └─► gfx::Device::init()
+  │
+  ├─► PS3 ─► ps3::jit::init()
+  │          └─► ps3::self_test()
+  │
+  └─► scheduler ─► sched::scheduler_init()
+                   │
+                   ▼
+               proc::load_elf()
+                   │
+                   ▼
+               sched::task_create_user()
+                   │
+                   ▼
+               sched::scheduler_add()
+                   │
+                   ▼
+               interrupts_enable()
+                   │
+                   ▼
+               sched::scheduler_start()
+                   │
+                   ▼
+                init.elf
+```
+
+This source-level section is the authoritative representation for the
+completed implementation boundary. Future phases should be added in the same
+style only after their source symbols and data paths exist.
