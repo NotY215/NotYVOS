@@ -132,7 +132,7 @@ void handle_irq(u8 irq, InterruptFrame* /*f*/) noexcept
         if (++tick_div >= 25)
         { // once per 250 ms
             tick_div = 0;
-            gfx::Compositor::update_clock(pit_ticks() / 100);
+            gfx::Compositor::update_clock();
         }
     }
     else if (irq == 1)

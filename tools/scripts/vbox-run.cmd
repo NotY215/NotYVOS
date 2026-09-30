@@ -2,28 +2,28 @@
 setlocal EnableExtensions
 
 REM ==========================================================================
-REM NOTYVOS — launch VirtualBox, attach ISO, open serial console on COM1.
-REM
-REM Idempotent: this script reasserts the UART configuration every time it
-REM runs, so it works even if the VM was created by an older version of
-REM vbox-setup.cmd or reconfigured manually.
+REM NOTYVOS - launch VirtualBox + attach serial console on COM1.
 REM
 REM Keyboard routing:
-REM   * Click inside the VM window  -> PS/2 keyboard (works out of the box).
-REM   * Type in THIS console window -> keystrokes go over COM1 as serial
-REM     bytes. The kernel reads COM1 in its shell read() loop and injects
-REM     them into the keyboard ring buffer.
+REM   * Click the VM window   -> PS/2 keyboard, PS/2 mouse.
+REM   * Type in THIS terminal -> keystrokes go over COM1 as serial bytes.
+REM
+REM Important detail: the VM's serial port is exposed via VBoxManage in
+REM tcpserver mode, which means the HOST acts as a TCP server and the VM
+REM is the client. Exactly ONE host-side client is allowed at a time.
+REM Because of that, this script does NOT probe the port for readiness -
+REM doing so would disconnect the VM from the server. We start the VM,
+REM wait a fixed 5 s, then attach the console once and stay attached.
 REM ==========================================================================
 
 set "VM_NAME=NotYVOS"
-set "VBOX=C:\Program Files\Oracle\VirtualBox\VBoxManage.exe"
-set "VBOX_EXE=C:\Program Files\Oracle\VirtualBox\VirtualBoxVM.exe"
+set "VBOX_MGR=C:\Program Files\Oracle\VirtualBox\VBoxManage.exe"
 set "ISO=F:\OwnApps\NotYVOS\build\kernel-windows-clang-kernel-release\notyvos.iso"
 set "SERIAL_PORT=2323"
 set "SERIAL_SCRIPT=%~dp0vbox-serial.ps1"
 
-if not exist "%VBOX%" (
-    echo ERROR: VBoxManage not found at "%VBOX%".
+if not exist "%VBOX_MGR%" (
+    echo ERROR: VBoxManage not found at "%VBOX_MGR%".
     exit /b 1
 )
 if not exist "%ISO%" (
@@ -32,53 +32,46 @@ if not exist "%ISO%" (
     exit /b 1
 )
 if not exist "%SERIAL_SCRIPT%" (
-    echo ERROR: Serial console script not found: "%SERIAL_SCRIPT%"
+    echo ERROR: serial console script missing: "%SERIAL_SCRIPT%"
     exit /b 1
 )
 
-echo [1/6] Powering off any running "%VM_NAME%" ...
-"%VBOX%" controlvm "%VM_NAME%" poweroff >nul 2>&1
-ping 127.0.0.1 -n 3 >nul
+echo [1/4] Powering off any running "%VM_NAME%" ...
+"%VBOX_MGR%" controlvm "%VM_NAME%" poweroff >nul 2>&1
+ping 127.0.0.1 -n 2 >nul
 
-echo [2/6] Ensuring COM1 is mapped to TCP port %SERIAL_PORT% ...
-"%VBOX%" modifyvm "%VM_NAME%" --uart1 0x3F8 4                 >nul
-"%VBOX%" modifyvm "%VM_NAME%" --uartmode1 tcpserver %SERIAL_PORT% >nul
-if errorlevel 1 (
-    echo        tcpserver mode rejected; falling back to legacy "server" form.
-    "%VBOX%" modifyvm "%VM_NAME%" --uartmode1 server %SERIAL_PORT% >nul
-)
+echo [2/4] Configuring COM1 as tcpserver on port %SERIAL_PORT% ...
+"%VBOX_MGR%" modifyvm "%VM_NAME%" --uart1 0x3F8 4                 >nul
+"%VBOX_MGR%" modifyvm "%VM_NAME%" --uartmode1 tcpserver %SERIAL_PORT% >nul
 
-echo [3/6] Reattaching ISO ...
-"%VBOX%" storageattach "%VM_NAME%" --storagectl "SATA" --port 1 --device 0 ^
+echo [3/4] Reattaching ISO ...
+"%VBOX_MGR%" storageattach "%VM_NAME%" --storagectl "SATA" --port 1 --device 0 ^
         --type dvddrive --medium "%ISO%" >nul
 if errorlevel 1 (
-    echo ERROR: Could not attach ISO. Check controller name ^("SATA"^).
+    echo ERROR: could not attach ISO. Check the storage controller name.
     exit /b 1
 )
 
-echo [4/6] Starting VM (GUI) ...
-"%VBOX%" startvm "%VM_NAME%" --type gui
+echo [4/4] Starting VM (GUI) ...
+"%VBOX_MGR%" startvm "%VM_NAME%" --type gui
 if errorlevel 1 (
     echo ERROR: startvm failed.
     exit /b 1
 )
 
-echo [5/6] Waiting for TCP %SERIAL_PORT% to accept connections ...
-pwsh -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$d=(Get-Date).AddSeconds(60); while((Get-Date) -lt $d){ try{ $c=New-Object System.Net.Sockets.TcpClient; $c.Connect('127.0.0.1',%SERIAL_PORT%); $c.Close(); exit 0 }catch{ Start-Sleep -Milliseconds 400 } }; exit 1"
-if errorlevel 1 (
-    echo WARN: serial port did not accept within 60 s. Continuing anyway...
-)
-
 echo.
 echo ============================================================
-echo  Serial console attached (COM1 -^> tcp://127.0.0.1:%SERIAL_PORT%).
-echo    * Type HERE to send keystrokes into the guest shell.
-echo    * Click the VM window for the PS/2 keyboard.
-echo    * Ctrl+C exits the console; the VM keeps running.
+echo   Waiting 5 s for the VM to reach the boot loader...
+echo   The serial console will open next.
+echo.
+echo   Type HERE to send keystrokes into the guest shell.
+echo   CLICK THE VM WINDOW for the PS/2 keyboard and mouse.
+echo   Ctrl+C exits the console (VM keeps running).
 echo ============================================================
 echo.
 
-pwsh -NoProfile -ExecutionPolicy Bypass -File "%SERIAL_SCRIPT%"
+ping 127.0.0.1 -n 6 >nul
+
+pwsh -NoProfile -ExecutionPolicy Bypass -File "%SERIAL_SCRIPT%" -HostName 127.0.0.1 -Port %SERIAL_PORT%
 
 endlocal

@@ -1,5 +1,6 @@
 #include "../fb/font8x8.hpp"
 #include <kernel/acpi/acpi.hpp>
+#include <kernel/arch/x86_64/rtc.hpp>
 #include <kernel/arch/x86_64/io.hpp>
 #include <kernel/arch/x86_64/mouse.hpp>
 #include <kernel/arch/x86_64/pit.hpp>
@@ -127,6 +128,8 @@ u32 g_term_cursor = 0;
 u32 g_term_scroll = 0;
 
 u64 g_clock_sec = 0;
+u64 g_rtc_boot_unix = 0;
+u64 g_rtc_boot_ticks = 0;
 
 i32 g_cursor_x = -1000;
 i32 g_cursor_y = -1000;
@@ -405,6 +408,30 @@ i32 taskbar_cluster_x()
     return center - cluster_w / 2;
 }
 
+namespace
+{
+// Howard Hinnant's civil_from_days, restricted to positive days.
+void civil_from_unix(u64 unix_secs, u32& year, u32& month, u32& day, u32& hour, u32& minute)
+{
+    const u64 days = unix_secs / 86400u;
+    const u64 rem = unix_secs % 86400u;
+    hour = static_cast<u32>(rem / 3600u);
+    minute = static_cast<u32>((rem / 60u) % 60u);
+
+    const i64 z = static_cast<i64>(days) + 719468;
+    const i64 era = (z >= 0 ? z : z - 146096) / 146097;
+    const u32 doe = static_cast<u32>(z - era * 146097);
+    const u32 yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    i64 y = static_cast<i64>(yoe) + era * 400;
+    const u32 doy = doe - (365u * yoe + yoe / 4u - yoe / 100u);
+    const u32 mp = (5u * doy + 2u) / 153u;
+    day = doy - (153u * mp + 2u) / 5u + 1u;
+    month = mp + (mp < 10u ? 3u : static_cast<u32>(-9));
+    y += (month <= 2) ? 1 : 0;
+    year = static_cast<u32>(y);
+}
+} // namespace
+
 void scene_draw_taskbar()
 {
     const i32 y0 = static_cast<i32>(g_h - kTaskbarH);
@@ -475,11 +502,10 @@ void scene_draw_taskbar()
     }
 
     {
+        u32 yy = 0, mo = 0, dy = 0, hh = 0, mi = 0;
+        civil_from_unix(g_clock_sec, yy, mo, dy, hh, mi);
         char buf[16];
         int n = 0;
-        const u32 total = static_cast<u32>(g_clock_sec);
-        const u32 hh = (total / 3600) % 24;
-        const u32 mm = (total / 60) % 60;
         auto push2 = [&](u32 v)
         {
             buf[n++] = static_cast<char>('0' + (v / 10) % 10);
@@ -487,25 +513,26 @@ void scene_draw_taskbar()
         };
         push2(hh);
         buf[n++] = ':';
-        push2(mm);
+        push2(mi);
         buf[n] = 0;
         s_text(tray_x + 68, y0 + 4, buf, 0x00F0F0F0, kTaskbarBg);
     }
 
     {
+        u32 yy = 0, mo = 0, dy = 0, hh = 0, mi = 0;
+        civil_from_unix(g_clock_sec, yy, mo, dy, hh, mi);
         char buf[16];
         int n = 0;
-        const u32 total_days = static_cast<u32>(g_clock_sec / 86400);
         auto push2 = [&](u32 v)
         {
             buf[n++] = static_cast<char>('0' + (v / 10) % 10);
             buf[n++] = static_cast<char>('0' + v % 10);
         };
-        push2(total_days % 100);
+        push2(dy);
         buf[n++] = '/';
-        push2(1);
+        push2(mo);
         buf[n++] = '/';
-        push2(2026 % 100);
+        push2(yy % 100u);
         buf[n] = 0;
         s_text(tray_x + 68, y0 + 16, buf, 0x00C0C0C0, kTaskbarBg);
     }
@@ -1559,6 +1586,10 @@ void Compositor::init() noexcept
     g_term_scroll = 0;
 
     g_ready = true;
+    const auto dt = arch::x86_64::rtc::read();
+    g_rtc_boot_unix = arch::x86_64::rtc::to_unix_seconds(dt);
+    g_rtc_boot_ticks = arch::x86_64::pit_ticks();
+    g_clock_sec = g_rtc_boot_unix;
     g_dirty_scene = true;
 
     scene_render();
@@ -1712,11 +1743,12 @@ void Compositor::term_put(char c) noexcept
     g_dirty_scene = true;
 }
 
-void Compositor::update_clock(u64 seconds) noexcept
+void Compositor::update_clock() noexcept
 {
-    if (g_clock_sec == seconds)
+    const u64 now = g_rtc_boot_unix + (arch::x86_64::pit_ticks() - g_rtc_boot_ticks) / 100u;
+    if (now == g_clock_sec)
         return;
-    g_clock_sec = seconds;
+    g_clock_sec = now;
     g_dirty_scene = true;
 }
 

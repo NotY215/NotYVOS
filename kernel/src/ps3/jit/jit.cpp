@@ -6,15 +6,20 @@
 namespace notyvos::ps3::jit
 {
 
-// Assembly trampoline (jit_enter.S).
-extern "C" void notyvos_jit_enter(void* ctx, void* code) noexcept;
+// Assembly trampoline (jit_enter.S). Returns the RAX value the JIT'd code
+// placed before RET. 0 = normal exit, 1 = memory fault mid-block.
+extern "C" u64 notyvos_jit_enter(void* ctx, void* code) noexcept;
 
 namespace
 {
 u64 g_blocks_translated = 0;
 u64 g_blocks_entered = 0;
 u64 g_fallback_steps = 0;
+u64 g_faults = 0;
 bool g_ready = false;
+
+constexpr u64 kJitOk = 0;
+constexpr u64 kJitFault = 1;
 } // namespace
 
 void init() noexcept
@@ -23,8 +28,9 @@ void init() noexcept
     g_blocks_translated = 0;
     g_blocks_entered = 0;
     g_fallback_steps = 0;
+    g_faults = 0;
     g_ready = true;
-    log::write(log::Level::Info, "jit", "baseline JIT ready");
+    log::write(log::Level::Info, "jit", "baseline JIT ready (5B)");
 }
 
 u64 run(ppu::Context* ctx, u64 max_steps) noexcept
@@ -42,8 +48,6 @@ u64 run(ppu::Context* ctx, u64 max_steps) noexcept
             blk = translate_block(ctx, ctx->pc);
             if (!blk)
             {
-                // Translator cannot handle the first instruction at
-                // ctx->pc. Delegate to the interpreter for one step.
                 if (!ppu::step(ctx))
                     break;
                 ++executed;
@@ -56,17 +60,8 @@ u64 run(ppu::Context* ctx, u64 max_steps) noexcept
 
         if (blk->end == BlockEnd::Syscall)
         {
-            // Let the interpreter dispatch the syscall (it also performs
-            // the pc += 4 step, matching the interpreter's own contract).
-            // We do NOT enter the JIT'd code for sc blocks; we let the
-            // interpreter execute the whole instruction to keep the
-            // callback path identical to the pre-JIT baseline.
-            //
-            // The translated block for a Syscall terminator is currently
-            // unused; re-translating the sequence via the interpreter costs
-            // one extra decode per sc, but only once per sc site since it
-            // isn't cached in that path.
-            // Simpler: execute the *whole* block via the interpreter.
+            // The whole `sc` sequence is executed via the interpreter so
+            // the callback path stays identical to the pre-JIT baseline.
             if (!ppu::step(ctx))
                 break;
             ++executed;
@@ -74,16 +69,26 @@ u64 run(ppu::Context* ctx, u64 max_steps) noexcept
             continue;
         }
 
-        notyvos_jit_enter(ctx, blk->x86_code);
+        const u64 status = notyvos_jit_enter(ctx, blk->x86_code);
         ++g_blocks_entered;
 
-        const u32 n = blk->insns;
-        executed += n;
+        if (status == kJitFault)
+        {
+            // A memory op inside the block failed. Run the failing insn
+            // via the interpreter. If the interpreter also fails, break.
+            ++g_faults;
+            if (!ppu::step(ctx))
+                break;
+            ++executed;
+            ++g_fallback_steps;
+            continue;
+        }
+
+        (void)kJitOk;
+        executed += blk->insns;
 
         if (blk->end == BlockEnd::Unsupported)
         {
-            // Last translated insn is before the unsupported one. Run it
-            // through the interpreter.
             if (!ppu::step(ctx))
                 break;
             ++executed;
@@ -105,6 +110,10 @@ u64 blocks_entered() noexcept
 u64 fallback_steps() noexcept
 {
     return g_fallback_steps;
+}
+u64 fault_count() noexcept
+{
+    return g_faults;
 }
 
 } // namespace notyvos::ps3::jit

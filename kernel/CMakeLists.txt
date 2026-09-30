@@ -61,6 +61,7 @@ set(KERNEL_SOURCES
     src/arch/x86_64/tss.cpp
     src/arch/x86_64/cpuid.cpp
     src/arch/x86_64/cpu.cpp
+    src/arch/x86_64/rtc.cpp
     src/arch/x86_64/idt.cpp
     src/arch/x86_64/isr.cpp
     src/arch/x86_64/isr_stubs.S

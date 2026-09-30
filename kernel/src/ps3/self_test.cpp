@@ -56,8 +56,6 @@ void write_be32(u8* p, u32 v) noexcept
 
 void test_decoder() noexcept
 {
-    // 0x4E800420 = bcctr (LK=0). The prior test used 0x4E800421 which has
-    // the LK bit set, so the decoder correctly reports "bcctrl".
     const DecodeCase cases[] = {
         {0x38600042u, "addi"},  {0x48000008u, "b"},     {0x4E800020u, "bclr"},
         {0x7C0802A6u, "mfspr"}, {0x7C0803A6u, "mtspr"}, {0x9421FFE0u, "stwu"},
@@ -69,15 +67,11 @@ void test_decoder() noexcept
     {
         const auto ins = powerpc::decode(c.word);
         if (ins.mnemonic && libk::strcmp(ins.mnemonic, c.expect) == 0)
-        {
             ++ok;
-        }
         else
-        {
             log::write(log::Level::Warn, "ps3-dec", "0x%llx decoded as '%s', expected '%s'",
                        static_cast<unsigned long long>(c.word),
                        ins.mnemonic ? ins.mnemonic : "(null)", c.expect);
-        }
     }
     log::write(log::Level::Info, "ps3-dec", "decoder self-test: %u/%u instructions recognised",
                static_cast<unsigned long long>(ok),
@@ -93,7 +87,6 @@ void test_elf() noexcept
         0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x40, 0x00, 0x38, 0x00, 0x02, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00,
     };
-
     if (!is_ps3_executable(fake_elf, sizeof(fake_elf)))
     {
         log::write(log::Level::Warn, "ps3", "elf self-test: rejected");
@@ -113,22 +106,19 @@ void test_elf() noexcept
 void test_ppu() noexcept
 {
     libk::memset(g_ppu_ram, 0, sizeof(g_ppu_ram));
-
-    write_be32(g_ppu_ram + 0, 0x38600001u);  // addi r3, r0, 1
-    write_be32(g_ppu_ram + 4, 0x38800002u);  // addi r4, r0, 2
-    write_be32(g_ppu_ram + 8, 0x7CA32214u);  // add  r5, r3, r4
-    write_be32(g_ppu_ram + 12, 0x48000000u); // b .
+    write_be32(g_ppu_ram + 0, 0x38600001u);
+    write_be32(g_ppu_ram + 4, 0x38800002u);
+    write_be32(g_ppu_ram + 8, 0x7CA32214u);
+    write_be32(g_ppu_ram + 12, 0x48000000u);
 
     ppu::Context ctx{};
     ppu::init(&ctx);
     ctx.read32 = ppu_read32;
     ctx.write32 = ppu_write32;
     ctx.pc = 0;
-
     (void)ppu::run(&ctx, 3);
 
     const bool ok = (ctx.gpr[3] == 1) && (ctx.gpr[4] == 2) && (ctx.gpr[5] == 3);
-
     log::write(ok ? log::Level::Info : log::Level::Warn, "ps3-ppu",
                "PPU self-test: r3=%llu r4=%llu r5=%llu (expected 1/2/3)",
                static_cast<unsigned long long>(ctx.gpr[3]),
@@ -136,41 +126,55 @@ void test_ppu() noexcept
                static_cast<unsigned long long>(ctx.gpr[5]));
 }
 
-// spu::Context is ~262 KiB (128 regs + 256 KiB local store + mailboxes).
-// Allocating it on the BSP stack overflows; it must live in .bss.
-// test_ppu, test_dma, and jit::self_test all use small contexts (< 1 KiB)
-// and can stay on the stack.
+// SPU encoding helpers, matching spu.cpp. Must match the layout defined
+// there; if spu.cpp changes, update these too.
+static constexpr u32 spu_word(u32 op, u32 rt, u32 ra, u32 rb, u32 imm) noexcept
+{
+    return ((op & 0x7Fu) << 25) | ((rt & 0x7Fu) << 12) | ((ra & 0x7Fu) << 5) | (rb & 0x1Fu) |
+           (imm & 0xFFFFu);
+}
+static constexpr u32 spu_op_halt = 0x00;
+static constexpr u32 spu_op_or = 0x13;
+static constexpr u32 spu_op_il = 0x20;
+static constexpr u32 spu_op_wrch = 0x21;
+
+// spu::Context is ~262 KiB. Must not live on the stack.
 static spu::Context g_spu_ctx;
 
 void test_spu() noexcept
 {
     spu::init(&g_spu_ctx);
 
-    write_be32(g_spu_ctx.local_store + 0, static_cast<u32>(0x105u << 21) | (1u << 7));
-    write_be32(g_spu_ctx.local_store + 4, static_cast<u32>(0x105u << 21) | (2u << 7) | 7u);
-    write_be32(g_spu_ctx.local_store + 8,
-               static_cast<u32>(0x100u << 21) | (3u << 7) | (1u << 14) | (2u << 21));
-    write_be32(g_spu_ctx.local_store + 12, static_cast<u32>(0x106u << 21) | (3u << 14));
-    write_be32(g_spu_ctx.local_store + 16, static_cast<u32>(0x001u << 21));
+    // Program:
+    //   0x00: il   r1, imm16=1       -> r1[all lanes] = 1
+    //   0x04: il   r2, imm16=2       -> r2[all lanes] = 2
+    //   0x08: or   r3, r1, r2        -> r3 = 1 | 2 = 3
+    //   0x0C: wrch r3                -> outbound <- r3[0] = 3
+    //   0x10: halt
+    write_be32(g_spu_ctx.local_store + 0x00, spu_word(spu_op_il, /*rt=*/1, 0, 0, 1));
+    write_be32(g_spu_ctx.local_store + 0x04, spu_word(spu_op_il, /*rt=*/2, 0, 0, 2));
+    write_be32(g_spu_ctx.local_store + 0x08, spu_word(spu_op_or, /*rt=*/3, /*ra=*/1, /*rb=*/2, 0));
+    write_be32(g_spu_ctx.local_store + 0x0C, spu_word(spu_op_wrch, 0, /*ra=*/3, 0, 0));
+    write_be32(g_spu_ctx.local_store + 0x10, spu_word(spu_op_halt, 0, 0, 0, 0));
 
     const u64 steps = spu::run(&g_spu_ctx, 32);
-
     u32 got = 0;
     (void)spu::mailbox_pop_outbound(&g_spu_ctx, &got);
 
-    const bool ok = (steps == 5) && (got == 12) && g_spu_ctx.halted;
-
+    const bool ok = (steps == 5) && (got == 3) && g_spu_ctx.halted;
     log::write(ok ? log::Level::Info : log::Level::Warn, "ps3-spu",
-               "SPU self-test: steps=%llu out=%llu (expected 5, 12)",
+               "SPU self-test: steps=%llu out=%llu (expected 5, 3)",
                static_cast<unsigned long long>(steps), static_cast<unsigned long long>(got));
 
+    // Mailbox FIFO test.
     spu::init(&g_spu_ctx);
-    spu::mailbox_push_inbound(&g_spu_ctx, 0xAA);
-    spu::mailbox_push_inbound(&g_spu_ctx, 0xBB);
-    spu::mailbox_push_inbound(&g_spu_ctx, 0xCC);
-    const u32 rd[] = {g_spu_ctx.inbound.items[0], g_spu_ctx.inbound.items[1],
-                      g_spu_ctx.inbound.items[2]};
-    const bool fifo_ok = (rd[0] == 0xAA) && (rd[1] == 0xBB) && (rd[2] == 0xCC);
+    (void)spu::mailbox_push_inbound(&g_spu_ctx, 0xAA);
+    (void)spu::mailbox_push_inbound(&g_spu_ctx, 0xBB);
+    (void)spu::mailbox_push_inbound(&g_spu_ctx, 0xCC);
+    const u32 rd0 = g_spu_ctx.inbound.items[0];
+    const u32 rd1 = g_spu_ctx.inbound.items[1];
+    const u32 rd2 = g_spu_ctx.inbound.items[2];
+    const bool fifo_ok = (rd0 == 0xAA) && (rd1 == 0xBB) && (rd2 == 0xCC);
     log::write(fifo_ok ? log::Level::Info : log::Level::Warn, "ps3-spu",
                "SPU mailbox FIFO test: %s", fifo_ok ? "pass" : "fail");
 }
@@ -181,7 +185,6 @@ void test_dma() noexcept
     static u8 local_mem[512];
     libk::memset(main_mem, 0, sizeof(main_mem));
     libk::memset(local_mem, 0, sizeof(local_mem));
-
     for (u32 i = 0; i < 512; ++i)
         main_mem[i] = static_cast<u8>(i & 0xFF);
 
@@ -189,10 +192,8 @@ void test_dma() noexcept
     dma::init(&eng);
     dma::set_backing(&eng, main_mem, sizeof(main_mem));
 
-    const bool queued = dma::queue(&eng, /*tag=*/1, dma::Dir::MainToLocal,
-                                   /*main_addr=*/0,
-                                   /*ls_addr=*/0,
-                                   /*size=*/256, local_mem, sizeof(local_mem));
+    const bool queued =
+        dma::queue(&eng, 1, dma::Dir::MainToLocal, 0, 0, 256, local_mem, sizeof(local_mem));
     if (!queued)
     {
         log::write(log::Level::Warn, "ps3-dma", "queue failed");
@@ -200,40 +201,30 @@ void test_dma() noexcept
     }
 
     const u32 completed = dma::drain(&eng, 8);
-    const bool copy_ok = (completed == 1);
-    bool match = copy_ok;
-    if (copy_ok)
-    {
+    bool match = (completed == 1);
+    if (match)
         for (u32 i = 0; i < 256; ++i)
-        {
             if (local_mem[i] != main_mem[i])
             {
                 match = false;
                 break;
             }
-        }
-    }
     log::write(match ? log::Level::Info : log::Level::Warn, "ps3-dma",
-               "DMA main->local: %s (%u completed)", match ? "pass" : "fail",
+               "DMA main->local: %s (%llu completed)", match ? "pass" : "fail",
                static_cast<unsigned long long>(completed));
 
     for (u32 i = 0; i < 256; ++i)
         local_mem[i] = static_cast<u8>(0xFF - (i & 0xFF));
-    (void)dma::queue(&eng, /*tag=*/2, dma::Dir::LocalToMain,
-                     /*main_addr=*/256,
-                     /*ls_addr=*/0,
-                     /*size=*/256, local_mem, sizeof(local_mem));
+    (void)dma::queue(&eng, 2, dma::Dir::LocalToMain, 256, 0, 256, local_mem, sizeof(local_mem));
     (void)dma::drain(&eng, 8);
 
     bool match2 = true;
     for (u32 i = 0; i < 256; ++i)
-    {
         if (main_mem[256 + i] != local_mem[i])
         {
             match2 = false;
             break;
         }
-    }
     log::write(match2 ? log::Level::Info : log::Level::Warn, "ps3-dma", "DMA local->main: %s",
                match2 ? "pass" : "fail");
 

@@ -47,7 +47,7 @@ public:
     static void term_scroll_by(i32 delta) noexcept;
     static void term_scroll_bottom() noexcept;
 
-    static void update_clock(u64 seconds) noexcept;
+    static void update_clock() noexcept;
 
     // Power actions. Called from the Start menu.
     static void machine_shutdown() noexcept;
