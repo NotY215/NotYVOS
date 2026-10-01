@@ -99,7 +99,7 @@ Implemented driver/domain code includes:
 - PS/2 keyboard and mouse
 - LAPIC/per-CPU/SMP infrastructure
 
-Hardware GPU acceleration, Wi-Fi, Bluetooth, USB HID and a production network
+Wi-Fi, Bluetooth, USB HID and a production network
 stack are not currently implemented.
 
 ## PS3 translation architecture
@@ -115,8 +115,10 @@ The baseline JIT:
 5. falls back to the PPU interpreter for unsupported instructions and the
    current syscall boundary
 
-The translation cache records blocks, hits/misses and memory usage. Phase 5B
-expands this into broader memory/control-flow translation and block chaining.
+The translation cache records blocks, hits/misses and memory usage. Phase 5A–5D
+provides the completed native translation path, including broader memory and
+control-flow translation, FPU/VMX translation, block chaining and cache
+invalidation/self-modifying-code handling.
 
 ## Boot architecture
 
@@ -176,11 +178,11 @@ boundary.
 
 Implemented:
 
-**1A–1G → 2A–2N → 3A–3E → 4A–4E → 5A → 6A–6D → 7A–7C → 8A–8B → 9A → 10A**
+**1A–1G → 2A–2N → 3A–3F → 4A–4E → 5A–5D → 6A–6D → 7A–7C → 8A–8B → 9A → 10A**
 
 Next:
 
-**5B, 6E, 9B, 10B**
+**6E, 9B, 10B**
 
 Not started later work includes the remaining GameRunner integration, full UI
 management, Windows executable compatibility and advanced compatibility.
