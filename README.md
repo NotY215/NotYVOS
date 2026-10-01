@@ -4,11 +4,11 @@ Lightweight x86-64 operating system with a desktop environment, persistent
 storage, native hardware drivers, and an integrated PlayStation 3 runtime
 foundation.
 
-NOTYVOS is currently a development-stage system. The native kernel, user
-process model, VFS, desktop compositor, widgets, storage stack, and PS3
-runtime foundations are implemented. Native GPU acceleration, full PS3 JIT
-coverage, RSX compatibility, GameRunner, and Windows application
-compatibility remain future work.
+NOTYVOS is currently a development-stage system. The native kernel, user process model, VFS, desktop compositor, widgets,
+storage stack, PS3 runtime foundation, RSX compatibility foundation,
+GameRunner foundation, image viewer and theme system are implemented.
+Native GPU acceleration, broader JIT coverage, extended image decoding,
+full UI management and Windows application compatibility remain future work.
 
 ## Current platform
 
@@ -83,7 +83,7 @@ exec, brk, time, sleep, kill, about, and exit handling.
 - PS/2 keyboard and mouse
 - VBE/framebuffer presentation path
 
-### PS3 runtime foundation
+### PS3 runtime and compatibility
 - PS3 ELF identification and segment parsing
 - PowerPC instruction decoder
 - PPU interpreter
@@ -92,20 +92,34 @@ exec, brk, time, sleep, kill, about, and exit handling.
 - Executable memory arena
 - Baseline x86-64 PPU JIT
 - Translation cache, x86-64 emitter and JIT trampoline
-- JIT self-tests plus decoder, ELF, PPU, SPU and DMA self-tests
+- RSX structural command/FIFO handling
+- RSX software rasterization
+- RSX vertex/index buffers, depth and scissor state
+- RSX smooth shading and texture binding
+- GameRunner format detection
+- PS3 ABI syscall table and bounded PPU guest launch
+- cellFs VFS bridge
+- Rendering validation through the current RSX path
 
-The current JIT is a baseline implementation. Unsupported instructions and
-the syscall boundary can fall back to the PPU interpreter.
+### Image and desktop UI
+- BMP decoding and Image Viewer application
+- Dark, Light and macOS Dark theme system
+- Settings application and current desktop theme infrastructure
 
 ## Current roadmap status
 
-- Phases 1 through 2N: completed
+- Phases 1A through 1G: completed
+- Phases 2A through 2N: completed
 - Phases 3A through 3E: completed
-- Phase 3F: next
 - Phases 4A through 4E: completed
-- Phase 5A: boot fixes applied; rebuild and boot verification pending
-- Phase 5B: next
-- Phases 5C, 5D and 6 through 10: not started
+- Phase 5A: completed
+- Phases 6A through 6D: completed
+- Phases 7A through 7C: completed
+- Phases 8A and 8B: completed
+- Phase 9A: completed
+- Phase 10A: completed
+- Next: 5B, 6E, 9B and 10B
+- Later: 7D, remaining Phase 10 UI management, 11 and 12
 
 See docs/roadmap.md for the complete phase table.
 
