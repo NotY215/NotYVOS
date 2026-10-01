@@ -71,37 +71,78 @@ acceleration.
 | 5C — FPU + VMX translation | Not started | PPU floating-point and VMX/vector translation |
 | 5D — Cache invalidation + self-modifying-code detection | Not started | Translation invalidation and self-modifying code handling |
 
-## Phase 6 — RSX Graphics Compatibility
+## Phase 6 — RSX Compatibility
 
-| Phase | Status | Focus |
+| Subphase | Status | Focus |
 |---|---|---|
-| 6 — RSX graphics compatibility | Not started | PS3 RSX command/state compatibility and graphics integration |
+| 6A — RSX structural | Done | RSX registers, FIFO, command processing and surface state |
+| 6B — RSX rasterizer | Done | Software RSX primitive rasterization and presentation path |
+| 6C — RSX vertex buffers + depth + scissor | Done | Guest vertex/index buffers, depth buffer and scissor state |
+| **6D — RSX smooth shading + texture bind** | **Done** | Smooth shading and texture binding support |
+| 6E — Per-vertex UVs, wrap modes, perspective | Next | UV interpolation, texture wrapping and perspective-correct attributes |
 
 ## Phase 7 — GameRunner + Compatibility Layer
 
-| Phase | Status | Focus |
+| Subphase | Status | Focus |
 |---|---|---|
-| 7 — GameRunner + compat layer | Not started | PS3 program/game loading, runtime integration and compatibility services |
+| 7A — GameRunner format detection | Done | PS3/native ELF and raw container format detection |
+| 7B — PS3 ABI syscall table + PPU guest launch | Done | Guest syscall dispatch and bounded PPU guest launch |
+| **7C — cellFs VFS bridge** | **Done** | Bridge PS3 filesystem operations into the native VFS |
+| 7D — GameRunner runtime integration | Not started | Full game-session lifecycle and broader compatibility services |
 
 ## Phase 8 — Rendering Validation
 
+| Subphase | Status | Focus |
+|---|---|---|
+| 8A — Rendering validation | Done | RSX rendering validation |
+| 8B — End-to-end rendering validation | Done | Runtime-to-framebuffer rendering validation |
+
+## Phase 9 — Image Support
+
+| Subphase | Status | Focus |
+|---|---|---|
+| **9A — BMP decoder + Image Viewer app** | **Done** | BMP decoding and native Image Viewer application |
+| 9B — PNG with inflate + JPEG decoders | Next | PNG decoding with inflate and JPEG decoding |
+
+## Phase 10 — Theme and UI Management
+
+| Subphase | Status | Focus |
+|---|---|---|
+| **10A — Theme system (Dark / Light / macOS Dark)** | **Done** | Theme definitions and runtime theme selection |
+| 10B — Settings → Appearance tab | Next | Theme selection through Settings |
+| 10 (rest) — Full UI management | Not started | Broader desktop appearance and UI management |
+
+## Phase 11 — Windows Compatibility
+
 | Phase | Status | Focus |
 |---|---|---|
-| 8 — Rendering validation | Not started | End-to-end graphics correctness and performance validation |
+| 11 — Windows .exe compatibility | Not started | Windows executable loading and compatibility runtime |
 
-## Phase 9 — Windows Compatibility
-
-| Phase | Status | Focus |
-|---|---|---|
-| 9 — Windows .exe compatibility | Not started | Windows executable loading and compatibility groundwork |
-
-## Phase 10 — Advanced Windows Compatibility
+## Phase 12 — Advanced Compatibility
 
 | Phase | Status | Focus |
 |---|---|---|
-| 10 — Advanced compatibility (Brave, VLC) | Not started | Broader Windows application compatibility and application integration |
+| 12 — Advanced compatibility (Brave, VLC) | Not started | Broader Windows application compatibility and application integration |
 
 ## Current implementation boundary
+
+The implemented roadmap now reaches through:
+
+**1A–1G → 2A–2N → 3A–3E → 4A–4E → 5A → 6A–6D → 7A–7C → 8A–8B → 9A → 10A**
+
+The immediate next items are:
+
+**5B, 6E, 9B and 10B**
+
+The later compatibility work remains:
+
+**7D, 10 (rest), 11 and 12**
+
+A phase marked **Done** is part of the current delivered implementation
+boundary. A phase marked **Next** is planned but not yet part of that
+boundary.
+
+
 
 The PS3 runtime currently has loader, decoder, interpreters, DMA,
 executable-memory, JIT and self-test infrastructure. It is not yet a full
