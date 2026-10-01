@@ -6,9 +6,8 @@ foundation.
 
 NOTYVOS is currently a development-stage system. The native kernel, user process model, VFS, desktop compositor, widgets,
 storage stack, PS3 runtime foundation, RSX compatibility foundation,
-GameRunner foundation, image viewer and theme system are implemented.
-Native GPU acceleration, broader JIT coverage, extended image decoding,
-full UI management and Windows application compatibility remain future work.
+GameRunner foundation, image viewer, theme system and native GPU backend are implemented.
+Extended image decoding, full UI management and Windows application compatibility remain future work.
 
 ## Current platform
 
@@ -110,15 +109,15 @@ exec, brk, time, sleep, kill, about, and exit handling.
 
 - Phases 1A through 1G: completed
 - Phases 2A through 2N: completed
-- Phases 3A through 3E: completed
+- Phases 3A through 3F: completed
 - Phases 4A through 4E: completed
-- Phase 5A: completed
+- Phases 5A through 5D: completed
 - Phases 6A through 6D: completed
 - Phases 7A through 7C: completed
 - Phases 8A and 8B: completed
 - Phase 9A: completed
 - Phase 10A: completed
-- Next: 5B, 6E, 9B and 10B
+- Next: 6E, 9B and 10B
 - Later: 7D, remaining Phase 10 UI management, 11 and 12
 
 See docs/roadmap.md for the complete phase table.
