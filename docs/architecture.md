@@ -6,14 +6,15 @@ NOTYVOS is a freestanding x86-64 kernel with user-mode processes, a VFS,
 persistent NYFS storage, a software-rendered desktop, native device drivers,
 and a PS3 runtime foundation.
 
-The repository currently contains implementation through Phase 10A, including
+The repository currently contains implementation through Phase 10B, including
 native kernel/userland, desktop graphics, PS3 runtime foundations, RSX
-compatibility, GameRunner, rendering validation, BMP image support and the
-initial theme system. The next implementation stages are 5B, 6E, 9B and 10B.
+compatibility through perspective-correct UVs and mipmaps, GameRunner,
+rendering validation, BMP/PNG/GIF/ICO/JPEG image support and the complete
+theme/Appearance settings path. All defined Phase 1–10 subphases are delivered.
 
 ### Windows compatibility domain
 
-Windows compatibility is reserved for Phases 9 and 10. The repository does
+Windows compatibility is reserved for later compatibility phases. The repository does
 not currently provide a Windows PE/Win32 compatibility runtime.
 
 ## Memory and processes
@@ -68,11 +69,11 @@ The graphics stack has four layers:
 3. GPU abstraction — triangle, quad, line and rectangle primitives.
 4. Compositor — desktop scene, windows, widgets, input and presentation.
 
-The native desktop rendering path remains software rasterization into a scene
-buffer followed by framebuffer/VBE presentation. The PS3 runtime additionally
-has a software RSX compatibility path with FIFO command processing,
-rasterization, vertex/index buffers, depth/scissor state, smooth shading and
-texture binding. Native GPU acceleration remains a separate future phase.
+The native desktop rendering path uses the graphics API/HAL/backend architecture,
+while the PS3 runtime additionally has a software RSX compatibility path with
+FIFO command processing, rasterization, vertex/index buffers, depth/scissor
+state, smooth shading, texture binding, UVs, perspective correction, wrapping
+and mipmap/LOD sampling.
 
 The compositor currently provides:
 - desktop background and optional wallpaper.raw
@@ -150,8 +151,7 @@ invalidation/self-modifying-code handling.
 
 ## Image and theme domains
 
-Phase 9A adds BMP decoding and the Image Viewer application. The current
-image path is:
+Phase 9A–9C provide BMP, PNG, GIF, ICO and JPEG decoding and the Image Viewer application. The current image path is:
 
 ```text
 VFS file
@@ -169,20 +169,16 @@ Compositor
 framebuffer
 ```
 
-Phase 10A adds the initial theme system with Dark, Light and macOS Dark
-variants. Theme state feeds the desktop UI styling layer. Settings-based
-Appearance controls are Phase 10B and are not part of the current delivered
-boundary.
+Phase 10A provides Dark, Light and macOS Dark themes plus shortcut integration.
+Phase 10B exposes Appearance controls through Settings and feeds the active
+theme into the desktop UI styling layer.
 
 ## Current roadmap boundary
 
 Implemented:
 
-**1A–1G → 2A–2N → 3A–3F → 4A–4E → 5A–5D → 6A–6D → 7A–7C → 8A–8B → 9A → 10A**
+**1A–1G → 2A–2N → 3A–3F → 4A–4E → 5A–5D → 6A–6F → 7A–7C → 8A–8B → 9A–9C → 10A–10B**
 
-Next:
-
-**6E, 9B, 10B**
 
 Not started later work includes the remaining GameRunner integration, full UI
 management, Windows executable compatibility and advanced compatibility.

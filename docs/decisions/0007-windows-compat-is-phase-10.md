@@ -7,9 +7,7 @@ Status: Accepted
 Windows executable compatibility is intentionally separated from the native
 kernel and PS3 runtime.
 
-Phase 9 covers the initial Windows .exe compatibility foundation. Phase 10
-covers advanced compatibility and application integration, including the
-planned Brave and VLC application path.
+Windows executable compatibility is intentionally kept after the completed Phase 1–10 native/runtime roadmap. Later compatibility work is tracked as Phase 11 and Phase 12, including Windows application integration such as the planned Brave and VLC path.
 
 The compatibility subsystem is not allowed to become an implicit dependency
 of the native Phases 1 through 8.

@@ -41,9 +41,7 @@ pre-converted raw wallpaper is present.
 
 ## Boot boundary
 
-Phases 1 through 5, including all their subphases, are delivered. Phase 3F
-native GPU backend and the complete Phase 5 translation work are part of the
-current implementation boundary.
+Phases 1 through 5, including all their subphases, are delivered. Phase 3F native GPU backend and the complete Phase 5 translation work are part of the current implementation boundary. Phases 6A–10B are also delivered through all defined subphases.
 
 ## Firmware separation
 
@@ -59,11 +57,11 @@ contains:
 
 - Native GPU backend from Phase 3F
 - Complete native translation path through Phase 5D
-- RSX structural and software rasterization support through Phase 6D
+- RSX structural, rasterization, UV, perspective and mipmap support through Phase 6F
 - GameRunner format detection and PS3 guest launch through Phase 7C
 - Rendering validation through Phase 8B
-- BMP/Image Viewer support from Phase 9A
-- Dark, Light and macOS Dark theme state from Phase 10A
+- BMP, PNG, GIF, ICO and JPEG image support from Phases 9A–9C
+- Dark, Light and macOS Dark theme state plus Settings Appearance controls from Phases 10A–10B
 
 These additions are runtime domains layered above the existing kernel, VFS and
 graphics infrastructure.

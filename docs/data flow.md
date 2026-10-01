@@ -664,16 +664,13 @@ sequenceDiagram
 
 Completed implementation currently covers:
 
-**1A–1G → 2A–2N → 3A–3E → 4A–4E**
+**1A–1G → 2A–2N → 3A–3F → 4A–4E → 5A–5D → 6A–6F → 7A–7C → 8A–8B → 9A–9C → 10A–10B**
 
-Phase **5A** contains the baseline JIT and trampoline work, but its latest
-boot-fix state still requires a clean rebuild and boot verification.
+All defined Phase 1–10 subphases are delivered. The remaining roadmap work is
+7D, the remaining Phase 10 UI management scope, Phase 11 and Phase 12.
 
-Phase **5B** is the next translation stage. Phases **5C–5D and 6–10** remain
-future work.
-
-The diagrams for future phases are architecture/data-flow plans only and
-must not be read as implemented functionality.
+The diagrams for later work are architecture/data-flow plans only and must not
+be read as implemented functionality.
 
 
 <!-- Source-level flow notation: hardware/input -> exact source symbol -> state -> consumer. -->
@@ -1847,10 +1844,10 @@ rasterization
 6D is delivered. The next RSX stage expands this path with explicit
 per-vertex UV attributes, wrap modes and perspective-correct interpolation.
 
-## 6E — Next
+## 6E — Per-vertex UVs + wrap + perspective
 
 ```text
-Vertex position + UV
+Vertex position + UV + W
         │
         ▼
 per-vertex attribute setup
@@ -1873,6 +1870,34 @@ RSX depth/scissor
         ▼
 framebuffer
 ```
+
+**Status: DONE.**
+
+## 6F — Mipmaps + LOD
+
+```text
+Texture bind
+        │
+        ▼
+mip level metadata
+        │
+        ▼
+LOD span + bias
+        │
+        ▼
+mip level selection
+        │
+        ▼
+wrapped UV lookup
+        │
+        ▼
+mipmapped texture sample
+        │
+        ▼
+fragment color
+```
+
+**Status: DONE.**
 
 # Phase 7 — GameRunner + Compatibility Layer
 
@@ -2026,17 +2051,43 @@ compositor scene
 framebuffer
 ```
 
-## 9B — Next
+## 9B — PNG + inflate
 
 ```text
-PNG/JPEG bytes
+PNG file bytes
         │
-        ├─► PNG parser ─► inflate ─► decoded pixels
-        └─► JPEG parser ─► decoded pixels
-                │
-                ▼
-          Image Viewer
+        ▼
+PNG chunk parser
+        │
+        ▼
+inflate stream
+        │
+        ▼
+decoded scanlines
+        │
+        ▼
+RGBA pixel buffer
+        │
+        ▼
+Image Viewer / Graphics API
 ```
+
+**Status: DONE.**
+
+## 9C — GIF + ICO + JPEG
+
+```text
+Image file bytes
+        │
+        ├─► GIF parser ─► LZW decode ─► indexed pixels
+        ├─► ICO parser ─► PNG/DIB decoder ─► pixels
+        └─► JPEG parser ─► DCT/YCbCr decode ─► pixels
+                                      │
+                                      ▼
+                              Image Viewer / Graphics API
+```
+
+**Status: DONE.**
 
 # Phase 10 — Theme and UI Management
 
@@ -2062,7 +2113,7 @@ widgets + Settings + Explorer + desktop
 compositor scene
 ```
 
-## 10B — Next
+## 10B — Settings → Appearance
 
 ```text
 Settings window
@@ -2079,6 +2130,8 @@ Theme state
         ▼
 live desktop/UI update
 ```
+
+**Status: DONE.**
 
 # Current completed boundary
 
@@ -2098,7 +2151,7 @@ live desktop/UI update
 5A–5D
    │
    ▼
-6A–6D
+6A–6F
    │
    ▼
 7A–7C
@@ -2107,18 +2160,16 @@ live desktop/UI update
 8A–8B
    │
    ▼
-9A
+9A–9C
    │
    ▼
-10A
+10A–10B
    │
    ▼
-NEXT: 6E / 9B / 10B
+PHASES 1–10 COMPLETE
 ```
 
-The data-flow diagrams describe the delivered implementation boundary. Future
-flows are explicitly labelled Next or Not started and are not claims of
-implemented functionality.
+The data-flow diagrams describe the delivered implementation boundary through all defined Phase 1–10 subphases. Future flows are explicitly labelled Not started and are not claims of implemented functionality.
 
 
 ## Implementation status graph
@@ -2129,15 +2180,12 @@ flowchart TD
     P2 --> P3[Phase 3: 3A–3F DONE]
     P3 --> P4[Phase 4: 4A–4E DONE]
     P4 --> P5[Phase 5: 5A–5D DONE]
-    P5 --> P6[Phase 6: 6A–6D DONE]
-    P6 --> N6E[6E NEXT]
+    P5 --> P6[Phase 6: 6A–6F DONE]
     P6 --> P7[Phase 7: 7A–7C DONE]
     P7 --> N7D[7D NOT STARTED]
     P7 --> P8[Phase 8: 8A–8B DONE]
-    P8 --> P9[Phase 9: 9A DONE]
-    P9 --> N9B[9B NEXT]
-    P9 --> P10[Phase 10: 10A DONE]
-    P10 --> N10B[10B NEXT]
+    P8 --> P9[Phase 9: 9A–9C DONE]
+    P9 --> P10[Phase 10: 10A–10B DONE]
 ```
 
 ## Native translation graph

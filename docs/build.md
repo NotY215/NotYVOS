@@ -81,7 +81,7 @@ The converter limits the generated image to a maximum width of 1920 pixels
 while preserving aspect ratio. convert-wallpaper.sh provides the matching
 host-side conversion path.
 
-The kernel does not decode PNG files.
+The kernel image subsystem now decodes BMP, PNG, GIF, ICO and JPEG data. Wallpaper conversion remains available as an optional host-side raw-wallpaper path.
 
 ## Running
 
