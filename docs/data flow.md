@@ -2004,13 +2004,13 @@ live desktop/UI update
 2A–2N
    │
    ▼
-3A–3E
+3A–3F
    │
    ▼
 4A–4E
    │
    ▼
-5A
+5A–5D
    │
    ▼
 6A–6D
@@ -2028,7 +2028,7 @@ live desktop/UI update
 10A
    │
    ▼
-NEXT: 5B / 6E / 9B / 10B
+NEXT: 6E / 9B / 10B
 ```
 
 The data-flow diagrams describe the delivered implementation boundary. Future
