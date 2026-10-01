@@ -25,6 +25,10 @@ Look for messages covering:
 - VFS/initramfs mount
 - graphics backend registration
 - PS3 runtime self-tests
+- RSX command/rasterizer validation
+- GameRunner format detection and bounded guest launch
+- BMP/Image Viewer validation
+- Theme-state rendering validation
 - scheduler start
 - user init
 
@@ -105,3 +109,13 @@ Boot fixes applied — rebuild + boot to verify.
 
 When a subsystem changes, test the boot path first, then its direct userland
 or desktop behavior, followed by the relevant runtime self-tests.
+
+
+## Current roadmap validation
+
+The delivered boundary is now:
+
+**6A–6D → 7A–7C → 8A–8B → 9A → 10A**
+
+The next validation targets are **5B, 6E, 9B and 10B** as those features are
+implemented.
