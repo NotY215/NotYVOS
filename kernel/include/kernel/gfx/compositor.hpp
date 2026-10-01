@@ -1,4 +1,5 @@
 #pragma once
+#include <kernel/gfx/theme.hpp>
 #include <kernel/types.hpp>
 
 namespace notyvos::gfx
@@ -13,6 +14,7 @@ enum class WindowKind : u8
     Explorer,
     Settings,
     Bin,
+    ImageViewer,
     Generic
 };
 
@@ -49,9 +51,10 @@ public:
 
     static void update_clock() noexcept;
 
-    // Power actions. Called from the Start menu.
     static void machine_shutdown() noexcept;
     static void machine_restart() noexcept;
+
+    static void set_theme(theme::Id id) noexcept;
 };
 
 } // namespace notyvos::gfx

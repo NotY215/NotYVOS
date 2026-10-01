@@ -19,7 +19,16 @@ set(KERNEL_SOURCES
     src/mm/pmm.cpp
     src/mm/vmm.cpp
     src/mm/heap.cpp
-    src/mm/exec_page.cpp                    # NEW
+    src/mm/exec_page.cpp
+    src/gfx/theme.cpp
+    src/img/decoder.cpp
+    src/img/bmp.cpp
+    src/img/self_test.cpp
+    src/img/inflate.cpp
+    src/img/png.cpp
+    src/img/gif.cpp
+    src/img/ico.cpp
+    src/img/jpeg.cpp
     src/fs/vnode.cpp
     src/fs/file.cpp
     src/fs/vfs.cpp

@@ -1,9 +1,9 @@
 #include "../fb/font8x8.hpp"
 #include <kernel/acpi/acpi.hpp>
-#include <kernel/arch/x86_64/rtc.hpp>
 #include <kernel/arch/x86_64/io.hpp>
 #include <kernel/arch/x86_64/mouse.hpp>
 #include <kernel/arch/x86_64/pit.hpp>
+#include <kernel/arch/x86_64/rtc.hpp>
 #include <kernel/fb/framebuffer.hpp>
 #include <kernel/fs/vfs.hpp>
 #include <kernel/gfx/api.hpp>
@@ -11,6 +11,7 @@
 #include <kernel/gfx/backend_vbe.hpp>
 #include <kernel/gfx/compositor.hpp>
 #include <kernel/gfx/hal.hpp>
+#include <kernel/gfx/theme.hpp>
 #include <kernel/gpu/gpu.hpp>
 #include <kernel/libk/mem.hpp>
 #include <kernel/libk/string.hpp>
@@ -30,43 +31,62 @@ constexpr u32 kCellH = 8 * kScale;
 constexpr u32 kTaskbarH = 30;
 constexpr u32 kTitleH = 26;
 constexpr u32 kBorder = 1;
-
 constexpr u32 kShortcutW = 120;
 constexpr u32 kShortcutH = 40;
-
 constexpr u32 kCtxW = 180;
 constexpr u32 kCtxItemH = 24;
 constexpr u32 kCtxSepH = 6;
 
-// ---- NOTYVOS UI palette (Win11-style, macOS-influenced) ----
-constexpr u32 kBgTop = 0x00101018;
-constexpr u32 kBgBottom = 0x000A0A10;
-constexpr u32 kTaskbarBg = 0x001C1C22;
-constexpr u32 kTaskbarHi = 0x004C4C56;
-constexpr u32 kTitleOn = 0x00202028;
-constexpr u32 kTitleOff = 0x001A1A20;
-constexpr u32 kTitleFg = 0x00F2F2F4;
-constexpr u32 kTitleFgOff = 0x00808088;
-constexpr u32 kBorderFg = 0x00303038;
-constexpr u32 kBorderOn = 0x005A5A64;
-constexpr u32 kClientBg = 0x00181820;
-constexpr u32 kTextFg = 0x00E4E4E8;
-constexpr u32 kTextDim = 0x00909098;
-constexpr u32 kCursorFg = 0x00FFFFFF;
-constexpr u32 kCursorSh = 0x00000000;
-constexpr u32 kBtnClose = 0x00C42B1C;
-constexpr u32 kBtnHover = 0x00404048;
-constexpr u32 kAccent = 0x0060A0E8;
-constexpr u32 kMenuBg = 0x00242430;
-constexpr u32 kMenuHi = 0x00404050;
-constexpr u32 kMenuFg = 0x00E8E8EC;
-constexpr u32 kMenuSep = 0x00383840;
+// Theme-driven palette.
+u32 kBgTop, kBgBottom;
+u32 kTaskbarBg, kTaskbarHi;
+u32 kTitleOn, kTitleOff;
+u32 kTitleFg, kTitleFgOff;
+u32 kBorderFg, kBorderOn;
+u32 kClientBg, kTextFg, kTextDim;
+u32 kCursorFg, kCursorSh;
+u32 kBtnClose, kBtnHover;
+u32 kAccent;
+u32 kMenuBg, kMenuHi, kMenuFg, kMenuSep;
+u32 kShortcutBg, kShortcutHover, kShortcutFocus;
+
+void apply_theme() noexcept
+{
+    const auto& p = theme::current();
+    kBgTop = p.desktop_top;
+    kBgBottom = p.desktop_bottom;
+    kTaskbarBg = p.taskbar_bg;
+    kTaskbarHi = p.taskbar_hi;
+    kTitleOn = p.title_focused;
+    kTitleOff = p.title_unfocused;
+    kTitleFg = p.title_fg_focused;
+    kTitleFgOff = p.title_fg_unfocused;
+    kBorderFg = p.border_unfocused;
+    kBorderOn = p.border_focused;
+    kClientBg = p.client_bg;
+    kTextFg = p.text_fg;
+    kTextDim = p.text_dim;
+    kCursorFg = p.cursor_fg;
+    kCursorSh = p.cursor_shadow;
+    kBtnClose = p.btn_close;
+    kBtnHover = p.btn_hover;
+    kAccent = p.accent;
+    kMenuBg = p.menu_bg;
+    kMenuHi = p.menu_hi;
+    kMenuFg = p.menu_fg;
+    kMenuSep = p.menu_sep;
+    kShortcutBg = p.shortcut_bg;
+    kShortcutHover = p.shortcut_hover;
+    kShortcutFocus = p.shortcut_focus;
+}
 
 enum class ShortcutKind : u8
 {
     Explorer = 0,
     Settings,
     Terminal,
+    GameLchr,
+    ImageVw,
     Bin
 };
 
@@ -78,11 +98,10 @@ struct Shortcut
     i32 y;
 };
 
-Shortcut g_shortcuts[4] = {
-    {"Explorer", ShortcutKind::Explorer, 32, 32},
-    {"Settings", ShortcutKind::Settings, 32, 90},
-    {"Terminal", ShortcutKind::Terminal, 32, 148},
-    {"Bin", ShortcutKind::Bin, 32, 206},
+Shortcut g_shortcuts[6] = {
+    {"Explorer", ShortcutKind::Explorer, 32, 32},  {"Settings", ShortcutKind::Settings, 32, 90},
+    {"Terminal", ShortcutKind::Terminal, 32, 148}, {"Game Lchr", ShortcutKind::GameLchr, 32, 206},
+    {"Images", ShortcutKind::ImageVw, 32, 264},    {"Bin", ShortcutKind::Bin, 32, 322},
 };
 
 enum class MenuItem : u8
@@ -91,6 +110,8 @@ enum class MenuItem : u8
     Explorer,
     Settings,
     Terminal,
+    GameLchr,
+    ImageVw,
     Bin,
     Shutdown,
     Restart
@@ -178,13 +199,11 @@ void s_fill(i32 x, i32 y, i32 w, i32 h, u32 c)
         y1 = to_i32(g_h);
     if (x0 >= x1 || y0 >= y1)
         return;
-    for (i32 j = y0; j < y1; j++)
+    for (i32 j = y0; j < y1; ++j)
     {
         u32* row = g_scene + static_cast<u32>(j) * g_w;
-        for (i32 i = x0; i < x1; i++)
-        {
+        for (i32 i = x0; i < x1; ++i)
             row[static_cast<u32>(i)] = c;
-        }
     }
 }
 
@@ -201,25 +220,21 @@ void s_glyph(i32 px, i32 py, char ch, u32 fg, u32 bg)
     if (ch < 0x20 || ch > 0x7E)
         ch = '?';
     const u8* rows = notyvos::fb::kFont8x8[static_cast<int>(ch) - 0x20];
-    for (u32 gy = 0; gy < 8; gy++)
+    for (u32 gy = 0; gy < 8; ++gy)
     {
         const u8 bits = rows[gy];
-        for (u32 gx = 0; gx < 8; gx++)
+        for (u32 gx = 0; gx < 8; ++gx)
         {
             const bool on = ((bits >> (7 - gx)) & 1u) != 0;
             const u32 col = on ? fg : bg;
-            for (u32 sy = 0; sy < kScale; sy++)
-            {
-                for (u32 sx = 0; sx < kScale; sx++)
+            for (u32 sy = 0; sy < kScale; ++sy)
+                for (u32 sx = 0; sx < kScale; ++sx)
                 {
-                    const i32 xx = px + static_cast<i32>(gx * kScale) + static_cast<i32>(sx);
-                    const i32 yy = py + static_cast<i32>(gy * kScale) + static_cast<i32>(sy);
+                    const i32 xx = px + static_cast<i32>(gx * kScale + sx);
+                    const i32 yy = py + static_cast<i32>(gy * kScale + sy);
                     if (xx >= 0 && yy >= 0 && xx < to_i32(g_w) && yy < to_i32(g_h))
-                    {
                         g_scene[static_cast<u32>(yy) * g_w + static_cast<u32>(xx)] = col;
-                    }
                 }
-            }
         }
     }
 }
@@ -231,7 +246,7 @@ void s_text(i32 px, i32 py, const char* s, u32 fg, u32 bg)
     {
         s_glyph(x, py, *s, fg, bg);
         x += static_cast<i32>(kCellW);
-        s++;
+        ++s;
     }
 }
 
@@ -253,19 +268,15 @@ inline void fb_put(i32 x, i32 y, u32 c)
     const u32 bpp = fb::Framebuffer::bytes_per_pixel();
     u8* p = base + static_cast<usize>(y) * pitch + static_cast<usize>(x) * bpp;
     if (bpp == 4)
-    {
         *reinterpret_cast<u32*>(p) = c;
-    }
     else if (bpp == 3)
     {
-        p[0] = static_cast<u8>(c & 0xFF);
-        p[1] = static_cast<u8>((c >> 8) & 0xFF);
-        p[2] = static_cast<u8>((c >> 16) & 0xFF);
+        p[0] = static_cast<u8>(c & 0xFFu);
+        p[1] = static_cast<u8>((c >> 8) & 0xFFu);
+        p[2] = static_cast<u8>((c >> 16) & 0xFFu);
     }
     else if (bpp == 2)
-    {
-        *reinterpret_cast<u16*>(p) = static_cast<u16>(c & 0xFFFF);
-    }
+        *reinterpret_cast<u16*>(p) = static_cast<u16>(c & 0xFFFFu);
 }
 
 void fb_blit_from_scene(i32 x, i32 y, i32 w, i32 h)
@@ -287,30 +298,28 @@ void fb_blit_from_scene(i32 x, i32 y, i32 w, i32 h)
     const u32 pitch = fb::Framebuffer::pitch();
     const u32 bpp = fb::Framebuffer::bytes_per_pixel();
 
-    for (i32 j = y0; j < y1; j++)
+    for (i32 j = y0; j < y1; ++j)
     {
         const u32* s = g_scene + static_cast<u32>(j) * g_w + static_cast<u32>(x0);
-        u8* d = base + static_cast<usize>(j) * pitch + static_cast<usize>(x0) * bpp;
         if (bpp == 4)
         {
+            u8* d = base + static_cast<usize>(j) * pitch + static_cast<usize>(x0) * 4;
             libk::memcpy(d, s, static_cast<usize>(x1 - x0) * 4);
         }
         else
         {
-            for (i32 i = x0; i < x1; i++)
+            for (i32 i = x0; i < x1; ++i)
             {
                 const u32 c = g_scene[static_cast<u32>(j) * g_w + static_cast<u32>(i)];
                 u8* p = base + static_cast<usize>(j) * pitch + static_cast<usize>(i) * bpp;
                 if (bpp == 3)
                 {
-                    p[0] = static_cast<u8>(c & 0xFF);
-                    p[1] = static_cast<u8>((c >> 8) & 0xFF);
-                    p[2] = static_cast<u8>((c >> 16) & 0xFF);
+                    p[0] = static_cast<u8>(c & 0xFFu);
+                    p[1] = static_cast<u8>((c >> 8) & 0xFFu);
+                    p[2] = static_cast<u8>((c >> 16) & 0xFFu);
                 }
                 else if (bpp == 2)
-                {
-                    *reinterpret_cast<u16*>(p) = static_cast<u16>(c & 0xFFFF);
-                }
+                    *reinterpret_cast<u16*>(p) = static_cast<u16>(c & 0xFFFFu);
             }
         }
     }
@@ -323,10 +332,8 @@ void fb_blit_full()
     vbe_blit(g_scene, g_w, g_h, g_w, 0, 0, g_w, g_h);
 }
 
-const u16 kArrow[16] = {
-    0x8000, 0xC000, 0xE000, 0xF000, 0xF800, 0xFC00, 0xFE00, 0xFF00,
-    0xFF80, 0xFFC0, 0xF800, 0xD800, 0x0C00, 0x0C00, 0x0600, 0x0600,
-};
+const u16 kArrow[16] = {0x8000, 0xC000, 0xE000, 0xF000, 0xF800, 0xFC00, 0xFE00, 0xFF00,
+                        0xFF80, 0xFFC0, 0xF800, 0xD800, 0x0C00, 0x0C00, 0x0600, 0x0600};
 
 void cursor_hide()
 {
@@ -337,10 +344,10 @@ void cursor_hide()
 
 void cursor_draw(i32 x, i32 y)
 {
-    for (u32 j = 0; j < 16; j++)
+    for (u32 j = 0; j < 16; ++j)
     {
         const u16 bits = kArrow[j];
-        for (u32 i = 0; i < 16; i++)
+        for (u32 i = 0; i < 16; ++i)
         {
             if ((bits << i) & 0x8000)
             {
@@ -360,19 +367,20 @@ void scene_draw_background()
         libk::memcpy(g_scene, g_wallpaper, static_cast<usize>(g_w) * g_h * 4);
         return;
     }
-    for (u32 y = 0; y < g_h - kTaskbarH; y++)
+    for (u32 y = 0; y < g_h - kTaskbarH; ++y)
     {
         const u32 t = (y * 32) / (g_h - kTaskbarH);
-        const u32 r = ((kBgTop >> 16) & 0xFF) * (32 - t) / 32 + ((kBgBottom >> 16) & 0xFF) * t / 32;
-        const u32 g = ((kBgTop >> 8) & 0xFF) * (32 - t) / 32 + ((kBgBottom >> 8) & 0xFF) * t / 32;
-        const u32 b = (kBgTop & 0xFF) * (32 - t) / 32 + (kBgBottom & 0xFF) * t / 32;
+        const u32 r =
+            ((kBgTop >> 16) & 0xFFu) * (32 - t) / 32 + ((kBgBottom >> 16) & 0xFFu) * t / 32;
+        const u32 g = ((kBgTop >> 8) & 0xFFu) * (32 - t) / 32 + ((kBgBottom >> 8) & 0xFFu) * t / 32;
+        const u32 b = (kBgTop & 0xFFu) * (32 - t) / 32 + (kBgBottom & 0xFFu) * t / 32;
         s_fill(0, static_cast<i32>(y), to_i32(g_w), 1, (r << 16) | (g << 8) | b);
     }
 }
 
 void scene_draw_shortcut(const Shortcut& sc, bool hover, bool focus)
 {
-    const u32 bg = focus ? 0x006090C0 : hover ? 0x00406080 : 0x00203050;
+    const u32 bg = focus ? kShortcutFocus : hover ? kShortcutHover : kShortcutBg;
     s_fill(sc.x, sc.y, static_cast<i32>(kShortcutW), static_cast<i32>(kShortcutH), bg);
     s_rect(sc.x, sc.y, static_cast<i32>(kShortcutW), static_cast<i32>(kShortcutH), kBorderFg);
 
@@ -385,7 +393,7 @@ void scene_draw_shortcut(const Shortcut& sc, bool hover, bool focus)
 
 void scene_draw_desktop_icons()
 {
-    for (u32 i = 0; i < 4; i++)
+    for (u32 i = 0; i < 6; ++i)
     {
         const bool hover = (static_cast<i32>(i) == g_hover_shortcut);
         const bool focus = (static_cast<i32>(i) == g_focus_shortcut);
@@ -393,7 +401,6 @@ void scene_draw_desktop_icons()
     }
 }
 
-// Returns the on-screen x of the taskbar window-button cluster start.
 i32 taskbar_cluster_x()
 {
     const i32 center = to_i32(g_w) / 2;
@@ -410,7 +417,6 @@ i32 taskbar_cluster_x()
 
 namespace
 {
-// Howard Hinnant's civil_from_days, restricted to positive days.
 void civil_from_unix(u64 unix_secs, u32& year, u32& month, u32& day, u32& hour, u32& minute)
 {
     const u64 days = unix_secs / 86400u;
@@ -440,38 +446,29 @@ void scene_draw_taskbar()
     const i32 start_x = taskbar_cluster_x();
     i32 x = start_x;
 
-    // ---- Start button (four squares) ----
     {
         const bool open = g_start_open;
-        const u32 bg = open ? kAccent : 0x00202028;
+        const u32 bg = open ? kAccent : kTaskbarBg;
         s_fill(x, y0 + 4, 36, static_cast<i32>(kTaskbarH) - 8, bg);
         for (i32 i = 0; i < 2; ++i)
-        {
             for (i32 j = 0; j < 2; ++j)
-            {
-                s_fill(x + 8 + i * 10, y0 + 10 + j * 10, 8, 8, 0x00E0E0E0);
-            }
-        }
+                s_fill(x + 8 + i * 10, y0 + 10 + j * 10, 8, 8, kTextFg);
         x += 44;
     }
-
-    // ---- Search box ----
     {
-        const u32 bg = 0x00202028;
-        s_fill(x, y0 + 4, 36, static_cast<i32>(kTaskbarH) - 8, bg);
+        s_fill(x, y0 + 4, 36, static_cast<i32>(kTaskbarH) - 8, kTaskbarBg);
         for (i32 i = 0; i < 10; ++i)
         {
-            s_fill(x + 10 + i, y0 + 10, 1, 1, 0x00C0C0C0);
-            s_fill(x + 10 + i, y0 + 19, 1, 1, 0x00C0C0C0);
-            s_fill(x + 10, y0 + 10 + i, 1, 1, 0x00C0C0C0);
-            s_fill(x + 19, y0 + 10 + i, 1, 1, 0x00C0C0C0);
+            s_fill(x + 10 + i, y0 + 10, 1, 1, kTextDim);
+            s_fill(x + 10 + i, y0 + 19, 1, 1, kTextDim);
+            s_fill(x + 10, y0 + 10 + i, 1, 1, kTextDim);
+            s_fill(x + 19, y0 + 10 + i, 1, 1, kTextDim);
         }
-        s_fill(x + 20, y0 + 20, 5, 2, 0x00C0C0C0);
-        s_fill(x + 24, y0 + 22, 2, 5, 0x00C0C0C0);
+        s_fill(x + 20, y0 + 20, 5, 2, kTextDim);
+        s_fill(x + 24, y0 + 22, 2, 5, kTextDim);
         x += 44;
     }
 
-    // ---- Window buttons with hover highlight ----
     const i32 mx = arch::x86_64::mouse_x();
     const i32 my = arch::x86_64::mouse_y();
 
@@ -482,24 +479,18 @@ void scene_draw_taskbar()
         const u32 tw = static_cast<u32>(libk::strlen(g_windows[i].title)) * kCellW + 20;
         const bool hover = (mx >= x && mx < x + static_cast<i32>(tw) && my >= y0 + 4 &&
                             my < y0 + static_cast<i32>(kTaskbarH) - 4);
-        const u32 color = g_windows[i].focused ? kAccent : hover ? kTaskbarHi : 0x00202028;
+        const u32 color = g_windows[i].focused ? kAccent : hover ? kTaskbarHi : kTaskbarBg;
         s_fill(x, y0 + 4, static_cast<i32>(tw), static_cast<i32>(kTaskbarH) - 8, color);
         if (g_windows[i].focused)
-        {
             s_fill(x + 8, y0 + static_cast<i32>(kTaskbarH) - 4, static_cast<i32>(tw) - 16, 2,
-                   0x00A0D0FF);
-        }
-        s_text(x + 10, y0 + 8, g_windows[i].title, 0x00FFFFFF, color);
+                   kAccent);
+        s_text(x + 10, y0 + 8, g_windows[i].title, kTitleFg, color);
         x += static_cast<i32>(tw) + 6;
     }
 
-    // ---- Tray on far right ----
     const i32 tray_x = to_i32(g_w) - 130;
-
     for (i32 k = 0; k < 3; ++k)
-    {
-        s_fill(tray_x + k * 20, y0 + 12, 6, 6, 0x00A0A0A0);
-    }
+        s_fill(tray_x + k * 20, y0 + 12, 6, 6, kTextDim);
 
     {
         u32 yy = 0, mo = 0, dy = 0, hh = 0, mi = 0;
@@ -515,9 +506,8 @@ void scene_draw_taskbar()
         buf[n++] = ':';
         push2(mi);
         buf[n] = 0;
-        s_text(tray_x + 68, y0 + 4, buf, 0x00F0F0F0, kTaskbarBg);
+        s_text(tray_x + 68, y0 + 4, buf, kTextFg, kTaskbarBg);
     }
-
     {
         u32 yy = 0, mo = 0, dy = 0, hh = 0, mi = 0;
         civil_from_unix(g_clock_sec, yy, mo, dy, hh, mi);
@@ -534,7 +524,7 @@ void scene_draw_taskbar()
         buf[n++] = '/';
         push2(yy % 100u);
         buf[n] = 0;
-        s_text(tray_x + 68, y0 + 16, buf, 0x00C0C0C0, kTaskbarBg);
+        s_text(tray_x + 68, y0 + 16, buf, kTextDim, kTaskbarBg);
     }
 }
 
@@ -546,7 +536,7 @@ void scene_draw_start_menu()
     const i32 menu_w = 380;
     const i32 item_h = 40;
     const i32 header_h = 36;
-    const i32 menu_h = header_h + item_h * 6 + 20;
+    const i32 menu_h = header_h + item_h * 7 + 20;
 
     const i32 y0 = static_cast<i32>(g_h - kTaskbarH);
     const i32 mx = to_i32(g_w) / 2 - menu_w / 2;
@@ -555,35 +545,20 @@ void scene_draw_start_menu()
     s_fill(mx, my, menu_w, menu_h, kMenuBg);
     s_rect(mx, my, menu_w, menu_h, kMenuSep);
 
-    s_fill(mx + 1, my + 1, menu_w - 2, header_h - 2, 0x001A2030);
-    for (i32 i = 0; i < 16; ++i)
-    {
-        for (i32 j = 0; j < 16; ++j)
-        {
-            const bool corner =
-                (i < 3 && j < 3) || (i < 3 && j > 12) || (i > 12 && j < 3) || (i > 12 && j > 12);
-            if (!corner)
-                s_fill(mx + 12 + i, my + 10 + j, 1, 1, kAccent);
-        }
-    }
-    s_text(mx + 40, my + 10, "NOTYVOS user", 0x00FFFFFF, 0x001A2030);
+    s_fill(mx + 1, my + 1, menu_w - 2, header_h - 2, kMenuBg);
+    s_text(mx + 40, my + 10, "NOTYVOS user", kMenuFg, kMenuBg);
 
-    const char* items[6] = {"Explorer",    "Settings",  "Terminal",
-                            "Recycle Bin", "Shut down", "Restart"};
+    const char* items[7] = {"Explorer",     "Settings",    "Terminal", "Game Launcher",
+                            "Image Viewer", "Recycle Bin", "Shut down"};
 
     i32 cy = my + header_h + 4;
-    for (u32 i = 0; i < 6; ++i)
+    for (u32 i = 0; i < 7; ++i)
     {
         const bool hover = (static_cast<i32>(i) == g_hover_menu);
         const u32 bg = hover ? kMenuHi : kMenuBg;
         if (hover)
             s_fill(mx + 4, cy, menu_w - 8, item_h - 4, bg);
         s_text(mx + 20, cy + 12, items[i], kMenuFg, bg);
-
-        s_fill(mx + menu_w - 26, cy + 16, 8, 2, 0x00A0A0A0);
-        s_fill(mx + menu_w - 22, cy + 18, 2, 4, 0x00A0A0A0);
-        s_fill(mx + menu_w - 22, cy + 12, 2, 4, 0x00A0A0A0);
-
         cy += item_h;
     }
 }
@@ -614,12 +589,10 @@ const char* ctx_label(CtxItem it)
 i32 ctx_menu_height()
 {
     i32 h = 0;
-    for (u32 i = 0; g_ctx_items[i] != CtxItem::None; i++)
-    {
+    for (u32 i = 0; g_ctx_items[i] != CtxItem::None; ++i)
         h += (g_ctx_items[i] == CtxItem::Sep1 || g_ctx_items[i] == CtxItem::Sep2)
                  ? static_cast<i32>(kCtxSepH)
                  : static_cast<i32>(kCtxItemH);
-    }
     return h;
 }
 
@@ -629,8 +602,7 @@ void scene_draw_context_menu()
         return;
     const i32 h = ctx_menu_height();
 
-    i32 x = g_ctx_x;
-    i32 y = g_ctx_y;
+    i32 x = g_ctx_x, y = g_ctx_y;
     if (x + static_cast<i32>(kCtxW) > to_i32(g_w))
         x = to_i32(g_w) - static_cast<i32>(kCtxW);
     if (y + h > to_i32(g_h) - static_cast<i32>(kTaskbarH))
@@ -646,7 +618,7 @@ void scene_draw_context_menu()
     s_rect(x, y, static_cast<i32>(kCtxW), h, kMenuSep);
 
     i32 cy = y;
-    for (u32 i = 0; g_ctx_items[i] != CtxItem::None; i++)
+    for (u32 i = 0; g_ctx_items[i] != CtxItem::None; ++i)
     {
         const CtxItem it = g_ctx_items[i];
         if (it == CtxItem::Sep1 || it == CtxItem::Sep2)
@@ -657,10 +629,8 @@ void scene_draw_context_menu()
         }
         const bool hover = (static_cast<i32>(i) == g_ctx_hover);
         if (hover)
-        {
             s_fill(x + 2, cy + 1, static_cast<i32>(kCtxW) - 4, static_cast<i32>(kCtxItemH) - 2,
                    kMenuHi);
-        }
         s_text(x + 16, cy + (static_cast<i32>(kCtxItemH) - static_cast<i32>(kCellH)) / 2,
                ctx_label(it), kMenuFg, hover ? kMenuHi : kMenuBg);
         cy += static_cast<i32>(kCtxItemH);
@@ -669,14 +639,14 @@ void scene_draw_context_menu()
 
 void scene_draw_terminal_content(i32 gx, i32 gy)
 {
-    for (u32 row = 0; row < g_term_rows; row++)
+    for (u32 row = 0; row < g_term_rows; ++row)
     {
         i32 src_row = static_cast<i32>(row) - static_cast<i32>(g_term_scroll);
         if (src_row < 0)
             src_row = 0;
         if (src_row >= static_cast<i32>(g_term_rows))
             src_row = static_cast<i32>(g_term_rows) - 1;
-        for (u32 col = 0; col < g_term_cols; col++)
+        for (u32 col = 0; col < g_term_cols; ++col)
         {
             const char ch = g_term[static_cast<u32>(src_row) * g_term_cols + col];
             if (ch == 0 || ch == ' ')
@@ -694,7 +664,7 @@ void scene_draw_terminal_content(i32 gx, i32 gy)
             s_fill(gx + static_cast<i32>(ccol) * static_cast<i32>(kCellW),
                    gy + static_cast<i32>(crow) * static_cast<i32>(kCellH) +
                        static_cast<i32>(kCellH) - 4,
-                   static_cast<i32>(kCellW), 3, 0x00FFFFFF);
+                   static_cast<i32>(kCellW), 3, kCursorFg);
         }
     }
 }
@@ -725,10 +695,14 @@ void scene_draw_window_content(const Window& win, i32 gx, i32 gy, i32 gw, i32 gh
         apps_draw_bin(gx, gy, gw, gh, mx, my, down);
         return;
     }
+    if (win.kind == WindowKind::ImageViewer)
+    {
+        apps_draw_imageviewer(gx, gy, gw, gh, mx, my, down);
+        return;
+    }
     s_text(gx + 12, gy + 12, win.title, kTextFg, kClientBg);
 }
 
-// Clear a 2x2 corner by drawing the desktop background colour over it.
 void clear_corner(i32 x, i32 y)
 {
     if (x < 0 || y < 0 || x >= to_i32(g_w) || y >= to_i32(g_h))
@@ -745,7 +719,6 @@ void scene_draw_window(const Window& win)
     const u32 titleFg = win.focused ? kTitleFg : kTitleFgOff;
     const u32 border = win.focused ? kBorderOn : kBorderFg;
 
-    // ---- Outer border (uses kBorder for thickness) ----
     s_fill(win.x - static_cast<i32>(kBorder), win.y - static_cast<i32>(kBorder),
            win.w + static_cast<i32>(kBorder) * 2, static_cast<i32>(kBorder), border);
     s_fill(win.x - static_cast<i32>(kBorder), win.y + win.h, win.w + static_cast<i32>(kBorder) * 2,
@@ -753,29 +726,21 @@ void scene_draw_window(const Window& win)
     s_fill(win.x - static_cast<i32>(kBorder), win.y, static_cast<i32>(kBorder), win.h, border);
     s_fill(win.x + win.w, win.y, static_cast<i32>(kBorder), win.h, border);
 
-    // Rounded corners: 2x2 cut on each.
     clear_corner(win.x - static_cast<i32>(kBorder), win.y - static_cast<i32>(kBorder));
     clear_corner(win.x + win.w, win.y - static_cast<i32>(kBorder));
     clear_corner(win.x - static_cast<i32>(kBorder), win.y + win.h);
     clear_corner(win.x + win.w, win.y + win.h);
 
-    // ---- Title bar ----
     s_fill(win.x, win.y, win.w, static_cast<i32>(kTitleH), title);
     if (win.focused)
-    {
         s_fill(win.x, win.y, win.w, 2, kAccent);
-    }
 
-    // Unfocused windows print their title with kTextDim for clarity that
-    // they are not active. Focused windows use full-brightness title text.
     s_text(win.x + 10, win.y + static_cast<i32>((kTitleH - kCellH) / 2), win.title, titleFg, title);
-    (void)kTextDim; // reserved for future use; kept to avoid -Wunused.
+    (void)kTextDim;
 
-    // ---- Title bar buttons (Win11-style, right-aligned) ----
     const i32 btn_y = win.y + 1;
     const i32 btn_h = static_cast<i32>(kTitleH) - 2;
     const i32 btn_w = 32;
-
     const i32 bx_close = win.x + win.w - btn_w;
     const i32 bx_max = bx_close - btn_w;
     const i32 bx_min = bx_max - btn_w;
@@ -791,8 +756,8 @@ void scene_draw_window(const Window& win)
         const i32 gy = btn_y + btn_h / 2 - 5;
         for (i32 i = 0; i < 10; ++i)
         {
-            s_fill(gx + i, gy + i, 1, 1, 0x00F0F0F0);
-            s_fill(gx + 9 - i, gy + i, 1, 1, 0x00F0F0F0);
+            s_fill(gx + i, gy + i, 1, 1, kTitleFg);
+            s_fill(gx + 9 - i, gy + i, 1, 1, kTitleFg);
         }
     }
 
@@ -802,10 +767,10 @@ void scene_draw_window(const Window& win)
     {
         const i32 gx = bx_max + btn_w / 2 - 5;
         const i32 gy = btn_y + btn_h / 2 - 5;
-        s_fill(gx, gy, 11, 1, 0x00F0F0F0);
-        s_fill(gx, gy + 10, 11, 1, 0x00F0F0F0);
-        s_fill(gx, gy, 1, 11, 0x00F0F0F0);
-        s_fill(gx + 10, gy, 1, 11, 0x00F0F0F0);
+        s_fill(gx, gy, 11, 1, kTitleFg);
+        s_fill(gx, gy + 10, 11, 1, kTitleFg);
+        s_fill(gx, gy, 1, 11, kTitleFg);
+        s_fill(gx + 10, gy, 1, 11, kTitleFg);
     }
 
     const bool min_hover =
@@ -814,10 +779,9 @@ void scene_draw_window(const Window& win)
     {
         const i32 gx = bx_min + btn_w / 2 - 5;
         const i32 gy = btn_y + btn_h / 2;
-        s_fill(gx, gy, 11, 1, 0x00F0F0F0);
+        s_fill(gx, gy, 11, 1, kTitleFg);
     }
 
-    // ---- Client area ----
     s_fill(win.x, win.y + static_cast<i32>(kTitleH), win.w, win.h - static_cast<i32>(kTitleH),
            kClientBg);
 
@@ -829,7 +793,7 @@ void scene_render()
 {
     scene_draw_background();
     scene_draw_desktop_icons();
-    for (u32 i = 0; i < g_win_count; i++)
+    for (u32 i = 0; i < g_win_count; ++i)
         scene_draw_window(g_windows[i]);
     scene_draw_taskbar();
     scene_draw_start_menu();
@@ -838,7 +802,7 @@ void scene_render()
 
 i32 hit_window(i32 mx, i32 my)
 {
-    for (i32 i = static_cast<i32>(g_win_count) - 1; i >= 0; i--)
+    for (i32 i = static_cast<i32>(g_win_count) - 1; i >= 0; --i)
     {
         const Window& w = g_windows[static_cast<u32>(i)];
         if (!w.visible || w.minimized)
@@ -851,14 +815,12 @@ i32 hit_window(i32 mx, i32 my)
 
 i32 hit_shortcut(i32 mx, i32 my)
 {
-    for (u32 i = 0; i < 4; i++)
+    for (u32 i = 0; i < 6; ++i)
     {
         const Shortcut& s = g_shortcuts[i];
         if (mx >= s.x && mx < s.x + static_cast<i32>(kShortcutW) && my >= s.y &&
             my < s.y + static_cast<i32>(kShortcutH))
-        {
             return static_cast<i32>(i);
-        }
     }
     return -1;
 }
@@ -874,12 +836,10 @@ i32 hit_title_button(const Window& w, i32 mx, i32 my)
         return 0;
     if (my >= w.y + static_cast<i32>(kTitleH) - 1)
         return 0;
-
     const i32 btn_w = 32;
     const i32 bx_close = w.x + w.w - btn_w;
     const i32 bx_max = bx_close - btn_w;
     const i32 bx_min = bx_max - btn_w;
-
     if (mx >= bx_close && mx < bx_close + btn_w)
         return 1;
     if (mx >= bx_max && mx < bx_max + btn_w)
@@ -901,25 +861,20 @@ i32 hit_menu_item(i32 mx, i32 my)
 {
     if (!g_start_open)
         return -1;
-
     const i32 menu_w = 380;
     const i32 item_h = 40;
     const i32 header_h = 36;
-    const i32 menu_h = header_h + item_h * 6 + 20;
-
+    const i32 menu_h = header_h + item_h * 7 + 20;
     const i32 y0 = static_cast<i32>(g_h - kTaskbarH);
     const i32 mx_l = to_i32(g_w) / 2 - menu_w / 2;
     const i32 my_top = y0 - menu_h;
-
     if (mx < mx_l || mx >= mx_l + menu_w || my < my_top || my >= y0)
         return -1;
-
     const i32 first = my_top + header_h + 4;
     if (my < first)
         return -1;
-
     const i32 idx = (my - first) / item_h;
-    if (idx < 0 || idx >= 6)
+    if (idx < 0 || idx >= 7)
         return -1;
     return idx;
 }
@@ -932,9 +887,8 @@ i32 hit_ctx_item(i32 mx, i32 my)
         return -1;
     if (my < g_ctx_y)
         return -1;
-
     i32 cy = g_ctx_y;
-    for (u32 i = 0; g_ctx_items[i] != CtxItem::None; i++)
+    for (u32 i = 0; g_ctx_items[i] != CtxItem::None; ++i)
     {
         const i32 ch = (g_ctx_items[i] == CtxItem::Sep1 || g_ctx_items[i] == CtxItem::Sep2)
                            ? static_cast<i32>(kCtxSepH)
@@ -951,20 +905,18 @@ void focus_window(u32 idx)
     if (idx >= g_win_count)
         return;
     const Window tmp = g_windows[idx];
-    for (u32 i = idx; i + 1 < g_win_count; i++)
+    for (u32 i = idx; i + 1 < g_win_count; ++i)
         g_windows[i] = g_windows[i + 1];
     g_windows[g_win_count - 1] = tmp;
-    for (u32 i = 0; i < g_win_count; i++)
-    {
+    for (u32 i = 0; i < g_win_count; ++i)
         g_windows[i].focused = (i == g_win_count - 1);
-    }
 }
 
 void close_window(u32 idx)
 {
     if (idx >= g_win_count)
         return;
-    for (u32 i = idx; i + 1 < g_win_count; i++)
+    for (u32 i = idx; i + 1 < g_win_count; ++i)
         g_windows[i] = g_windows[i + 1];
     --g_win_count;
     if (g_win_count > 0)
@@ -1003,7 +955,7 @@ void minimize_window(u32 idx)
     if (idx >= g_win_count)
         return;
     g_windows[idx].minimized = true;
-    for (u32 i = 0; i < g_win_count; i++)
+    for (u32 i = 0; i < g_win_count; ++i)
         g_windows[i].focused = false;
 }
 
@@ -1011,7 +963,7 @@ Window* open_window(WindowKind kind, const char* title, i32 w, i32 h)
 {
     if (g_win_count >= kMaxWindows)
         return nullptr;
-    for (u32 i = 0; i < g_win_count; i++)
+    for (u32 i = 0; i < g_win_count; ++i)
     {
         if (g_windows[i].kind == kind && kind != WindowKind::Terminal)
         {
@@ -1035,7 +987,7 @@ Window* open_window(WindowKind kind, const char* title, i32 w, i32 h)
     while (title[i] && i < kWinTitleMax - 1)
     {
         nw.title[i] = title[i];
-        i++;
+        ++i;
     }
     nw.title[i] = 0;
     ++g_win_count;
@@ -1048,7 +1000,6 @@ void create_terminal_window()
 {
     if (g_win_count >= kMaxWindows)
         return;
-
     Window& t = g_windows[g_win_count];
     t.x = 180;
     t.y = 40;
@@ -1064,7 +1015,7 @@ void create_terminal_window()
     while (s[i] && i < kWinTitleMax - 1)
     {
         t.title[i] = s[i];
-        i++;
+        ++i;
     }
     t.title[i] = 0;
 
@@ -1090,7 +1041,7 @@ void create_terminal_window()
 
 void launch_terminal()
 {
-    for (u32 i = 0; i < g_win_count; i++)
+    for (u32 i = 0; i < g_win_count; ++i)
     {
         if (g_windows[i].kind == WindowKind::Terminal)
         {
@@ -1119,6 +1070,14 @@ void launch_shortcut(ShortcutKind kind)
         log::write(log::Level::Info, "gfx", "launch: Terminal");
         launch_terminal();
         break;
+    case ShortcutKind::GameLchr:
+        log::write(log::Level::Info, "gfx", "launch: Game Launcher");
+        open_window(WindowKind::Generic, "Game Launcher", 640, 480);
+        break;
+    case ShortcutKind::ImageVw:
+        log::write(log::Level::Info, "gfx", "launch: Image Viewer");
+        open_window(WindowKind::ImageViewer, "Image Viewer", 640, 480);
+        break;
     case ShortcutKind::Bin:
         log::write(log::Level::Info, "gfx", "launch: Recycle Bin");
         open_window(WindowKind::Bin, "Recycle Bin", 620, 400);
@@ -1138,6 +1097,12 @@ void launch_menu_item(MenuItem m)
         break;
     case MenuItem::Terminal:
         launch_shortcut(ShortcutKind::Terminal);
+        break;
+    case MenuItem::GameLchr:
+        launch_shortcut(ShortcutKind::GameLchr);
+        break;
+    case MenuItem::ImageVw:
+        launch_shortcut(ShortcutKind::ImageVw);
         break;
     case MenuItem::Bin:
         launch_shortcut(ShortcutKind::Bin);
@@ -1235,9 +1200,7 @@ void on_mouse_tick()
     if (just_right_pressed)
     {
         if (g_ctx_open)
-        {
             close_context_menu();
-        }
         else
         {
             const i32 widx = hit_window(mx, my);
@@ -1245,9 +1208,7 @@ void on_mouse_tick()
             const bool over_taskbar = (my >= ty);
             const bool over_start = hit_start_button(mx, my);
             if (widx < 0 && !over_taskbar && !over_start)
-            {
                 open_context_menu(mx, my);
-            }
         }
         g_prev_right = right;
         g_prev_mx = mx;
@@ -1268,9 +1229,7 @@ void on_mouse_tick()
             }
         }
         else
-        {
             close_context_menu();
-        }
         g_prev_left = left;
         g_prev_right = right;
         g_prev_mx = mx;
@@ -1294,11 +1253,11 @@ void on_mouse_tick()
 
         if (g_start_open)
         {
-            if (h_menu >= 0 && h_menu < 6)
+            if (h_menu >= 0 && h_menu < 7)
             {
-                const MenuItem kinds[6] = {MenuItem::Explorer, MenuItem::Settings,
-                                           MenuItem::Terminal, MenuItem::Bin,
-                                           MenuItem::Shutdown, MenuItem::Restart};
+                const MenuItem kinds[7] = {
+                    MenuItem::Explorer, MenuItem::Settings, MenuItem::Terminal, MenuItem::GameLchr,
+                    MenuItem::ImageVw,  MenuItem::Bin,      MenuItem::Shutdown};
                 g_start_open = false;
                 launch_menu_item(kinds[static_cast<u32>(h_menu)]);
                 g_dirty_scene = true;
@@ -1308,11 +1267,8 @@ void on_mouse_tick()
                 g_prev_right = right;
                 return;
             }
-            else
-            {
-                g_start_open = false;
-                g_dirty_scene = true;
-            }
+            g_start_open = false;
+            g_dirty_scene = true;
         }
 
         const i32 idx = hit_window(mx, my);
@@ -1378,7 +1334,7 @@ void on_mouse_tick()
             {
                 const i32 start_x = taskbar_cluster_x();
                 i32 bx = start_x + 88;
-                for (u32 i = 0; i < g_win_count; i++)
+                for (u32 i = 0; i < g_win_count; ++i)
                 {
                     if (!g_windows[i].visible)
                         continue;
@@ -1395,10 +1351,8 @@ void on_mouse_tick()
             }
             else
             {
-                for (u32 i = 0; i < g_win_count; i++)
-                {
+                for (u32 i = 0; i < g_win_count; ++i)
                     g_windows[i].focused = false;
-                }
                 g_focus_shortcut = -1;
                 g_dirty_scene = true;
             }
@@ -1406,17 +1360,13 @@ void on_mouse_tick()
     }
 
     if (just_left_released)
-    {
         g_drag_win = -1;
-    }
 
     if (g_drag_win >= 0 && left)
     {
         Window& w = g_windows[static_cast<u32>(g_drag_win)];
         if (w.maximized)
-        {
             w.maximized = false;
-        }
         w.x = mx - g_drag_off_x;
         w.y = my - g_drag_off_y;
         if (w.x < -w.w + 60)
@@ -1468,6 +1418,7 @@ void try_load_wallpaper()
     auto* tmp = static_cast<u8*>(mm::Heap::allocate(static_cast<usize>(sz)));
     if (!tmp)
         return;
+
     isize got = 0;
     while (got < sz)
     {
@@ -1482,7 +1433,6 @@ void try_load_wallpaper()
         mm::Heap::deallocate(tmp);
         return;
     }
-
     const u32 wp_w = *reinterpret_cast<const u32*>(tmp + 0);
     const u32 wp_h = *reinterpret_cast<const u32*>(tmp + 4);
     const u64 need = 8 + static_cast<u64>(wp_w) * wp_h * 4;
@@ -1499,12 +1449,11 @@ void try_load_wallpaper()
         mm::Heap::deallocate(tmp);
         return;
     }
-
     const auto* src = reinterpret_cast<const u32*>(tmp + 8);
-    for (u32 y = 0; y < g_h; y++)
+    for (u32 y = 0; y < g_h; ++y)
     {
         const u32 sy = (y * wp_h) / g_h;
-        for (u32 x = 0; x < g_w; x++)
+        for (u32 x = 0; x < g_w; ++x)
         {
             const u32 sx = (x * wp_w) / g_w;
             g_wallpaper[y * g_w + x] = src[sy * wp_w + sx];
@@ -1530,6 +1479,7 @@ void Compositor::init() noexcept
 {
     if (!fb::Framebuffer::ready())
         return;
+    apply_theme();
 
     g_w = fb::Framebuffer::width();
     g_h = fb::Framebuffer::height();
@@ -1561,7 +1511,7 @@ void Compositor::init() noexcept
         while (s[i] && i < kWinTitleMax - 1)
         {
             t.title[i] = s[i];
-            i++;
+            ++i;
         }
         t.title[i] = 0;
     }
@@ -1580,16 +1530,17 @@ void Compositor::init() noexcept
     if (g_term_rows == 0)
         g_term_rows = 1;
 
-    for (u32 i = 0; i < g_term_cols * g_term_rows; i++)
+    for (u32 i = 0; i < g_term_cols * g_term_rows; ++i)
         g_term[i] = 0;
     g_term_cursor = 0;
     g_term_scroll = 0;
 
-    g_ready = true;
     const auto dt = arch::x86_64::rtc::read();
     g_rtc_boot_unix = arch::x86_64::rtc::to_unix_seconds(dt);
     g_rtc_boot_ticks = arch::x86_64::pit_ticks();
     g_clock_sec = g_rtc_boot_unix;
+
+    g_ready = true;
     g_dirty_scene = true;
 
     scene_render();
@@ -1659,21 +1610,14 @@ void Compositor::term_scroll_by(i32 delta) noexcept
     if (delta > 0)
     {
         if (g_term_scroll + static_cast<u32>(delta) < g_term_rows)
-        {
             g_term_scroll += static_cast<u32>(delta);
-        }
         else
-        {
             g_term_scroll = g_term_rows - 1;
-        }
     }
     else if (delta < 0)
     {
         const u32 mag = static_cast<u32>(-delta);
-        if (mag >= g_term_scroll)
-            g_term_scroll = 0;
-        else
-            g_term_scroll -= mag;
+        g_term_scroll = (mag >= g_term_scroll) ? 0 : (g_term_scroll - mag);
     }
     g_dirty_scene = true;
 }
@@ -1686,7 +1630,7 @@ void Compositor::term_scroll_bottom() noexcept
 
 void Compositor::term_clear() noexcept
 {
-    for (u32 i = 0; i < g_term_cols * g_term_rows; i++)
+    for (u32 i = 0; i < g_term_cols * g_term_rows; ++i)
         g_term[i] = 0;
     g_term_cursor = 0;
     g_term_scroll = 0;
@@ -1714,7 +1658,7 @@ void Compositor::term_put(char c) noexcept
     }
     else if (c == '\t')
     {
-        for (u32 i = 0; i < 4; i++)
+        for (u32 i = 0; i < 4; ++i)
             term_put(' ');
         return;
     }
@@ -1727,16 +1671,13 @@ void Compositor::term_put(char c) noexcept
         }
     }
     else
-    {
         g_term[g_term_cursor++] = c;
-    }
+
     if (g_term_cursor >= g_term_cols * g_term_rows)
     {
         libk::memmove(g_term, g_term + g_term_cols, (g_term_rows - 1) * g_term_cols);
-        for (u32 i = 0; i < g_term_cols; i++)
-        {
+        for (u32 i = 0; i < g_term_cols; ++i)
             g_term[(g_term_rows - 1) * g_term_cols + i] = 0;
-        }
         g_term_cursor = (g_term_rows - 1) * g_term_cols;
     }
     g_term_scroll = 0;
@@ -1749,6 +1690,13 @@ void Compositor::update_clock() noexcept
     if (now == g_clock_sec)
         return;
     g_clock_sec = now;
+    g_dirty_scene = true;
+}
+
+void Compositor::set_theme(theme::Id id) noexcept
+{
+    theme::set(id);
+    apply_theme();
     g_dirty_scene = true;
 }
 

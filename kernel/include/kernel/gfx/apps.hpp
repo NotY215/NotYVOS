@@ -13,6 +13,10 @@ void apps_bind_impl(AppRectFn rect_fn, AppTextFn text_fn) noexcept;
 // gw/gh = client-area dimensions
 // mx/my = absolute mouse position
 // mouse_down = left button currently held
+// after apps_click_bin:
+bool apps_draw_imageviewer(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my,
+                           bool mouse_down) noexcept;
+void apps_load_image(const char* path) noexcept;
 bool apps_draw_explorer(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my, bool mouse_down) noexcept;
 bool apps_draw_settings(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my, bool mouse_down) noexcept;
 bool apps_draw_bin(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my, bool mouse_down) noexcept;

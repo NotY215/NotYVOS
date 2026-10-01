@@ -2,8 +2,13 @@
 #include <kernel/fs/vfs.hpp>
 #include <kernel/gfx/apps.hpp>
 #include <kernel/gfx/widget.hpp>
+#include <kernel/img/decoder.hpp>
 #include <kernel/libk/string.hpp>
 #include <kernel/log.hpp>
+#include <kernel/mm/heap.hpp>
+#include <kernel/img/decoder.hpp>
+#include <kernel/gfx/compositor.hpp>
+#include <kernel/gfx/theme.hpp>
 
 namespace notyvos::gfx
 {
@@ -84,13 +89,16 @@ void arrow_refresh(i32 x, i32 y)
 {
     for (i32 i = 0; i < 12; ++i)
     {
-        const i32 px = x + 2 + i;
-        r(px, y + 1, 1, 2, 0x00305090);
-        r(px, y + 11, 1, 2, 0x00305090);
+        r(x + 2 + i, y + 1, 1, 2, 0x00305090);
+        r(x + 2 + i, y + 11, 1, 2, 0x00305090);
         r(x + 1, y + 2 + i, 2, 1, 0x00305090);
         r(x + 11, y + 2 + i, 2, 1, 0x00305090);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Explorer
+// ---------------------------------------------------------------------------
 
 constexpr u32 kMaxEntries = 32;
 
@@ -134,7 +142,6 @@ void explorer_collect()
         e.size = 0;
         ++g_exp.entry_count;
     }
-
     for (fs::VNode* c = root->children; c && g_exp.entry_count < kMaxEntries; c = c->next)
     {
         if (libk::strcmp(c->name, "disk") == 0)
@@ -178,6 +185,10 @@ void explorer_init()
     g_exp.initialized = true;
 }
 
+// ---------------------------------------------------------------------------
+// Settings
+// ---------------------------------------------------------------------------
+
 enum class SettingsTab : u8
 {
     System,
@@ -185,6 +196,7 @@ enum class SettingsTab : u8
     Storage,
     Input,
     Network,
+    Appearance,
     About
 };
 
@@ -193,6 +205,7 @@ struct SettingsState
     bool initialized;
     SettingsTab current;
     i32 hover_tab;
+    i32 theme_hover; // -1 = none, else index into theme::count()
 };
 SettingsState g_set{};
 
@@ -210,17 +223,37 @@ const char* tab_label(SettingsTab t)
         return "Input";
     case SettingsTab::Network:
         return "Network";
+    case SettingsTab::Appearance:
+        return "Appearance";
     case SettingsTab::About:
         return "About";
     }
     return "";
 }
 
+// ---------------------------------------------------------------------------
+// Bin
+// ---------------------------------------------------------------------------
+
 struct BinState
 {
     bool initialized;
 };
 BinState g_bin{};
+
+// ---------------------------------------------------------------------------
+// Image Viewer
+// ---------------------------------------------------------------------------
+
+struct ImgViewerState
+{
+    bool initialized;
+    img::Image image;
+    char name[64];
+    i32 pan_x;
+    i32 pan_y;
+};
+ImgViewerState g_img{};
 
 void draw_menu_bar(i32 gx, i32 gy, i32 gw)
 {
@@ -267,7 +300,7 @@ void draw_toolbar(i32 gx, i32 gy, i32 gw)
     t(ax + 6, gy + 7, g_exp.address, kMenuFg, kAddressBg);
 }
 
-void draw_navigation_pane(i32 gx, i32 gy, i32 /*gw*/, i32 gh)
+void draw_navigation_pane(i32 gx, i32 gy, i32, i32 gh)
 {
     const i32 w = 160;
     r(gx, gy, w, gh, kNavBg);
@@ -315,7 +348,7 @@ void draw_explorer_status(i32 gx, i32 gy, i32 gw)
     t(gx + 8, gy + 3, buf, kStatusFg, kStatusBg);
 }
 
-void draw_explorer(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my, bool /*down*/)
+void draw_explorer(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my, bool)
 {
     explorer_init();
     draw_menu_bar(gx, gy, gw);
@@ -388,16 +421,38 @@ void draw_explorer(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my, bool /*down*/
         }
         ry += row_h;
     }
-
     draw_explorer_status(gx, gy + gh - 22, gw);
 }
 
-void draw_settings(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my, bool /*down*/)
+void draw_theme_swatch(const theme::Palette& p, i32 x, i32 y, i32 w, i32 h)
+{
+    const i32 grad_h = (h * 7) / 10;
+    for (i32 i = 0; i < grad_h; ++i)
+    {
+        const u32 t = (static_cast<u32>(i) * 32u) / static_cast<u32>(grad_h ? grad_h : 1);
+        const u32 rr = ((p.desktop_top >> 16) & 0xFFu) * (32u - t) / 32u +
+                       ((p.desktop_bottom >> 16) & 0xFFu) * t / 32u;
+        const u32 gg = ((p.desktop_top >> 8) & 0xFFu) * (32u - t) / 32u +
+                       ((p.desktop_bottom >> 8) & 0xFFu) * t / 32u;
+        const u32 bb =
+            (p.desktop_top & 0xFFu) * (32u - t) / 32u + (p.desktop_bottom & 0xFFu) * t / 32u;
+        r(x, y + i, w, 1, (rr << 16) | (gg << 8) | bb);
+    }
+    r(x, y + grad_h, w, h - grad_h, p.taskbar_bg);
+    r(x, y + grad_h, w / 3, h - grad_h, p.accent);
+    r(x, y, w, 1, p.border_unfocused);
+    r(x, y + h - 1, w, 1, p.border_unfocused);
+    r(x, y, 1, h, p.border_unfocused);
+    r(x + w - 1, y, 1, h, p.border_unfocused);
+}
+
+void draw_settings(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my, bool)
 {
     if (!g_set.initialized)
     {
         g_set.current = SettingsTab::System;
         g_set.hover_tab = -1;
+        g_set.theme_hover = -1;
         g_set.initialized = true;
     }
 
@@ -407,16 +462,16 @@ void draw_settings(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my, bool /*down*/
     r(gx, gy, side_w, 40, 0x00E4E4E4);
     t(gx + 16, gy + 14, "Settings", 0x00202020, 0x00E4E4E4);
 
-    const SettingsTab tabs[6] = {SettingsTab::System, SettingsTab::Display, SettingsTab::Storage,
-                                 SettingsTab::Input,  SettingsTab::Network, SettingsTab::About};
+    const SettingsTab tabs[7] = {SettingsTab::System, SettingsTab::Display, SettingsTab::Storage,
+                                 SettingsTab::Input,  SettingsTab::Network, SettingsTab::Appearance,
+                                 SettingsTab::About};
     i32 ty = gy + 52;
     g_set.hover_tab = -1;
-    for (u32 i = 0; i < 6; ++i)
+    for (u32 i = 0; i < 7; ++i)
     {
         const bool hover = (mx >= gx && mx < gx + side_w - 1 && my >= ty && my < ty + 34);
         if (hover)
             g_set.hover_tab = static_cast<i32>(i);
-
         const u32 bg = (tabs[i] == g_set.current) ? kNavHi : hover ? 0x00DCE4EC : 0x00F0F0F0;
         if (bg != 0x00F0F0F0)
             r(gx + 4, ty, side_w - 8, 32, bg);
@@ -442,7 +497,7 @@ void draw_settings(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my, bool /*down*/
     {
     case SettingsTab::System:
         label_row("Operating System", "NOTYVOS 0.1.0");
-        label_row("Build", "phase 4A");
+        label_row("Build", "phase 6E");
         label_row("Kernel", "x86-64, C++20");
         label_row("Heap", "64 MiB");
         label_row("Scheduler", "round-robin");
@@ -469,6 +524,57 @@ void draw_settings(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my, bool /*down*/
         label_row("Wi-Fi", "not yet implemented");
         label_row("Firewall", "not yet implemented");
         break;
+    case SettingsTab::Appearance:
+    {
+        t(rx + 16, cy, "Theme", 0x00404040, kContentBg);
+        cy += 26;
+
+        const theme::Id active = theme::current_id();
+        g_set.theme_hover = -1;
+
+        const u32 theme_count = theme::count();
+        for (u32 i = 0; i < theme_count; ++i)
+        {
+            const theme::Id id = static_cast<theme::Id>(i);
+            const theme::Palette& p = theme::get(id);
+
+            const i32 row_x = rx + 16;
+            const i32 row_w = rw - 32;
+            const i32 row_h = 68;
+            const bool hover = (mx >= row_x && mx < row_x + row_w && my >= cy && my < cy + row_h);
+            if (hover)
+                g_set.theme_hover = static_cast<i32>(i);
+
+            const bool current = (id == active);
+            const u32 row_bg = hover ? 0x00E8F0F8 : 0x00F4F6F8;
+            r(row_x, cy, row_w, row_h, row_bg);
+            r(row_x, cy, row_w, 1, kHeaderEdge);
+            r(row_x, cy + row_h - 1, row_w, 1, kHeaderEdge);
+            r(row_x, cy, 1, row_h, kHeaderEdge);
+            r(row_x + row_w - 1, cy, 1, row_h, kHeaderEdge);
+            if (current)
+                r(row_x, cy, 3, row_h, 0x0060A0E8);
+
+            // Theme name and swatch.
+            t(row_x + 16, cy + 12, p.name, 0x00202020, row_bg);
+            t(row_x + 16, cy + 34,
+              (id == theme::Id::Dark)    ? "Deep greys, high contrast."
+              : (id == theme::Id::Light) ? "Bright surfaces, low blue."
+                                         : "macOS-inspired accent.",
+              0x00606070, row_bg);
+
+            draw_theme_swatch(p, row_x + row_w - 130, cy + 10, 110, 48);
+
+            if (current)
+                t(row_x + row_w - 190, cy + 26, "Active", 0x003070C0, row_bg);
+
+            cy += row_h + 8;
+        }
+
+        cy += 8;
+        t(rx + 16, cy, "Changes apply immediately.", 0x00606070, kContentBg);
+        break;
+    }
     case SettingsTab::About:
     {
         t(rx + 16, cy, "NOTYVOS", 0x00202020, kContentBg);
@@ -490,7 +596,7 @@ void draw_settings(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my, bool /*down*/
     }
 }
 
-void draw_bin(i32 gx, i32 gy, i32 gw, i32 gh, i32 /*mx*/, i32 /*my*/, bool /*down*/)
+void draw_bin(i32 gx, i32 gy, i32 gw, i32 gh, i32, i32, bool)
 {
     if (!g_bin.initialized)
         g_bin.initialized = true;
@@ -505,6 +611,113 @@ void draw_bin(i32 gx, i32 gy, i32 gw, i32 gh, i32 /*mx*/, i32 /*my*/, bool /*dow
     r(gx, gy + gh - 22, gw, 22, kStatusBg);
     r(gx, gy + gh - 22, gw, 1, kHeaderEdge);
     t(gx + 8, gy + gh - 19, "0 items", kStatusFg, kStatusBg);
+}
+
+// --- Image Viewer ---------------------------------------------------------
+
+void imgviewer_load_path(const char* path) noexcept
+{
+    img::free(g_img.image);
+    g_img.pan_x = 0;
+    g_img.pan_y = 0;
+    g_img.name[0] = 0;
+    if (!path)
+        return;
+
+    auto* vn = fs::vfs_lookup(path, "/");
+    if (!vn || !vn->ops || !vn->ops->size || !vn->ops->read)
+        return;
+
+    const isize sz = vn->ops->size(vn);
+    if (sz <= 0 || sz > 32 * 1024 * 1024)
+        return;
+
+    auto* buf = static_cast<u8*>(mm::Heap::allocate(static_cast<usize>(sz)));
+    if (!buf)
+        return;
+
+    isize got = 0;
+    while (got < sz)
+    {
+        const isize n =
+            vn->ops->read(vn, buf + got, static_cast<usize>(got), static_cast<usize>(sz - got));
+        if (n <= 0)
+            break;
+        got += n;
+    }
+    if (got == sz)
+    {
+        (void)img::decode(buf, static_cast<usize>(sz), g_img.image);
+        u32 i = 0;
+        while (path[i] && i < 63)
+        {
+            g_img.name[i] = path[i];
+            ++i;
+        }
+        g_img.name[i] = 0;
+    }
+    mm::Heap::deallocate(buf);
+}
+
+void draw_imageviewer(i32 gx, i32 gy, i32 gw, i32 gh, i32, i32, bool)
+{
+    if (!g_img.initialized)
+    {
+        g_img.initialized = true;
+        g_img.pan_x = 0;
+        g_img.pan_y = 0;
+        g_img.name[0] = 0;
+        // Auto-load a demo file if present.
+        imgviewer_load_path("/wallpaper.bmp");
+    }
+
+    const i32 bar_h = 22;
+    r(gx, gy, gw, bar_h, kHeaderBg);
+    r(gx, gy + bar_h - 1, gw, 1, kHeaderEdge);
+    if (g_img.name[0] != 0)
+        t(gx + 8, gy + 4, g_img.name, kHeaderFg, kHeaderBg);
+    else
+        t(gx + 8, gy + 4, "No image loaded", kHeaderFg, kHeaderBg);
+
+    r(gx, gy + bar_h, gw, gh - bar_h, 0x00202028);
+
+    if (g_img.image.pixels && g_img.image.width > 0 && g_img.image.height > 0)
+    {
+        const i32 avail_w = gw - 20;
+        const i32 avail_h = gh - bar_h - 20;
+        i32 scale = 1;
+        if (static_cast<i32>(g_img.image.width) > avail_w ||
+            static_cast<i32>(g_img.image.height) > avail_h)
+        {
+            const i32 sx = avail_w / static_cast<i32>(g_img.image.width);
+            const i32 sy = avail_h / static_cast<i32>(g_img.image.height);
+            scale = (sx < sy) ? sx : sy;
+            if (scale < 1)
+                scale = 1;
+        }
+        const i32 dw = static_cast<i32>(g_img.image.width) * scale;
+        const i32 dh = static_cast<i32>(g_img.image.height) * scale;
+        const i32 ox = gx + (gw - dw) / 2 + g_img.pan_x;
+        const i32 oy = gy + bar_h + (gh - bar_h - dh) / 2 + g_img.pan_y;
+
+        for (i32 y = 0; y < dh; ++y)
+        {
+            const u32 sy = static_cast<u32>(y) / static_cast<u32>(scale);
+            for (i32 x = 0; x < dw; ++x)
+            {
+                const u32 sx = static_cast<u32>(x) / static_cast<u32>(scale);
+                const u32 c = g_img.image.pixels[sy * g_img.image.width + sx];
+                r(ox + x, oy + y, 1, 1, c);
+            }
+        }
+    }
+    else
+    {
+        t(gx + 20, gy + bar_h + 20, "(no image)", 0x00808080, 0x00202028);
+        t(gx + 20, gy + bar_h + 44, "The Image Viewer loads BMP files.", 0x00808080, 0x00202028);
+        t(gx + 20, gy + bar_h + 66, "PNG, JPEG, GIF, ICO recognisers are stubs.", 0x00808080,
+          0x00202028);
+    }
 }
 
 } // namespace
@@ -534,6 +747,17 @@ bool apps_draw_bin(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my, bool mouse_do
     return true;
 }
 
+bool apps_draw_imageviewer(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my, bool mouse_down) noexcept
+{
+    draw_imageviewer(gx, gy, gw, gh, mx, my, mouse_down);
+    return true;
+}
+
+void apps_load_image(const char* path) noexcept
+{
+    imgviewer_load_path(path);
+}
+
 bool apps_click_explorer(i32 mx, i32 my, bool pressed_edge) noexcept
 {
     if (!pressed_edge)
@@ -549,15 +773,20 @@ bool apps_click_explorer(i32 mx, i32 my, bool pressed_edge) noexcept
     return false;
 }
 
-bool apps_click_settings(i32 /*mx*/, i32 /*my*/, bool pressed_edge) noexcept
+bool apps_click_settings(i32, i32, bool pressed_edge) noexcept
 {
     if (!pressed_edge)
         return false;
-    const SettingsTab tabs[6] = {SettingsTab::System, SettingsTab::Display, SettingsTab::Storage,
-                                 SettingsTab::Input,  SettingsTab::Network, SettingsTab::About};
-    if (g_set.hover_tab >= 0 && g_set.hover_tab < 6)
-    {
+    const SettingsTab tabs[7] = {SettingsTab::System, SettingsTab::Display, SettingsTab::Storage,
+                                 SettingsTab::Input,  SettingsTab::Network, SettingsTab::Appearance,
+                                 SettingsTab::About};
+    if (g_set.hover_tab >= 0 && g_set.hover_tab < 7)
         g_set.current = tabs[static_cast<u32>(g_set.hover_tab)];
+
+    if (g_set.current == SettingsTab::Appearance && g_set.theme_hover >= 0 &&
+        g_set.theme_hover < static_cast<i32>(theme::count()))
+    {
+        Compositor::set_theme(static_cast<theme::Id>(g_set.theme_hover));
     }
     return true;
 }

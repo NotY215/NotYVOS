@@ -97,6 +97,7 @@ extern "C"
 #include <kernel/gfx/compositor.hpp>
 #include <kernel/gfx/hal.hpp>
 #include <kernel/log.hpp>
+#include <kernel/img/self_test.hpp>
 #include <kernel/mm/exec_page.hpp>
 #include <kernel/mm/heap.hpp>
 #include <kernel/mm/pmm.hpp>
@@ -272,6 +273,7 @@ extern "C" [[noreturn]] void kernel_main()
     ps3::jit::init();
     ps3::rsx::Rsx::init();
     ps3::self_test();
+    img::self_test();
 
     // ---- Scheduler + init ----
     sched::scheduler_init();

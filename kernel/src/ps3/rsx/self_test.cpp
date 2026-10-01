@@ -22,7 +22,7 @@ void put_cmd(u32 byte_offset, u32 count, const u32* data) noexcept
 }
 
 // ---------------------------------------------------------------------------
-// 6A tests
+// 6A: structural
 // ---------------------------------------------------------------------------
 
 void test_surface_pipeline() noexcept
@@ -82,17 +82,25 @@ void test_fifo_jump() noexcept
 
 void test_fifo_call_return() noexcept
 {
+    // JUMP skips the sub so it isn't the entry point.
+    //   [0..1] JUMP to word 6
+    //   [2..3] DRAW          (sub body)
+    //   [4..5] RETURN
+    //   [6..7] CALL sub=2
+    //   [8..9] PRESENT
     Rsx::init();
     const u32 zero = 0;
-    const u32 sub = 4; // CALL(2w) PRESENT(2w) DRAW at word 4
+    const u32 skip = 6;
+    const u32 sub = 2;
 
-    put_cmd(method::kFifoCall, 1, &sub);
-    put_cmd(method::kPresent, 1, &zero);
+    put_cmd(method::kFifoJump, 1, &skip);
     put_cmd(method::kDraw, 1, &zero);
     put_cmd(method::kFifoReturn, 1, &zero);
+    put_cmd(method::kFifoCall, 1, &sub);
+    put_cmd(method::kPresent, 1, &zero);
 
     const u32 r = Rsx::process(16);
-    const bool ok = (Rsx::draws() == 1) && (Rsx::presents() == 1) && (r >= 4);
+    const bool ok = (Rsx::draws() == 1) && (Rsx::presents() == 1) && (r >= 5);
     log::write(ok ? log::Level::Info : log::Level::Warn, "rsx",
                "RSX FIFO call/return test: %s draws=%llu presents=%llu processed=%llu",
                ok ? "PASS" : "FAIL", static_cast<unsigned long long>(Rsx::draws()),
@@ -116,12 +124,38 @@ void test_unknown_tolerance() noexcept
 }
 
 // ---------------------------------------------------------------------------
-// 6B / 8B raster tests
+// Shared raster target + guest memory
 // ---------------------------------------------------------------------------
 
 constexpr u32 kFbW = 128;
 constexpr u32 kFbH = 128;
 alignas(64) u32 g_fb[kFbW * kFbH];
+
+alignas(64) u8 g_guest[65536];
+
+bool guest_read32(void* user, u64 addr, u32* out) noexcept
+{
+    (void)user;
+    if (addr + 4 > sizeof(g_guest))
+        return false;
+    const u8* p = g_guest + addr;
+    *out = static_cast<u32>(p[0]) | (static_cast<u32>(p[1]) << 8) | (static_cast<u32>(p[2]) << 16) |
+           (static_cast<u32>(p[3]) << 24);
+    return true;
+}
+
+void write_guest_u32(u64 addr, u32 v) noexcept
+{
+    u8* p = g_guest + addr;
+    p[0] = static_cast<u8>(v & 0xFFu);
+    p[1] = static_cast<u8>((v >> 8) & 0xFFu);
+    p[2] = static_cast<u8>((v >> 16) & 0xFFu);
+    p[3] = static_cast<u8>((v >> 24) & 0xFFu);
+}
+
+// ---------------------------------------------------------------------------
+// 6B / 8A / 8B: raster
+// ---------------------------------------------------------------------------
 
 void test_render_clear() noexcept
 {
@@ -131,6 +165,7 @@ void test_render_clear() noexcept
     put_cmd(method::kClearColor, 1, &color);
     put_cmd(method::kClear, 1, &dummy);
     (void)Rsx::process(4);
+
     bool ok = true;
     for (u32 i = 0; i < kFbW * kFbH; ++i)
         if (g_fb[i] != color)
@@ -219,17 +254,13 @@ void test_render_line() noexcept
     put_cmd(method::kVertexFlush, 1, &dummy);
 
     (void)Rsx::process(16);
-
-    // Pixels on the diagonal (i, i) should be yellow for i in 10..100.
     bool ok = true;
     for (i32 i = 20; i <= 90; ++i)
-    {
-        if (g_fb[i * static_cast<i32>(kFbW) + i] != 0x00FFFF00u)
+        if (g_fb[static_cast<u32>(i) * kFbW + static_cast<u32>(i)] != 0x00FFFF00u)
         {
             ok = false;
             break;
         }
-    }
     log::write(ok ? log::Level::Info : log::Level::Warn, "rsx", "RSX render line test: %s",
                ok ? "PASS" : "FAIL");
 }
@@ -254,8 +285,9 @@ void test_render_points() noexcept
     put_cmd(method::kVertexFlush, 1, &dummy);
 
     (void)Rsx::process(16);
-    const bool ok = (g_fb[5 * kFbW + 5] == 0x0000FFFFu) && (g_fb[50 * kFbW + 50] == 0x00FF00FFu) &&
-                    (g_fb[100 * kFbW + 100] == 0x00FFFF00u);
+    const bool ok = (g_fb[5u * kFbW + 5u] == 0x0000FFFFu) &&
+                    (g_fb[50u * kFbW + 50u] == 0x00FF00FFu) &&
+                    (g_fb[100u * kFbW + 100u] == 0x00FFFF00u);
     log::write(ok ? log::Level::Info : log::Level::Warn, "rsx", "RSX render points test: %s",
                ok ? "PASS" : "FAIL");
 }
@@ -271,7 +303,6 @@ void test_render_fan() noexcept
     const u32 prim = static_cast<u32>(Primitive::TriFan);
     put_cmd(method::kPrimType, 1, &prim);
 
-    // Fan around (60,60), three petals.
     const u32 c[4] = {60u, 60u, 0u, 0x0000FF00u};
     const u32 p1[4] = {20u, 60u, 0u, 0x0000FF00u};
     const u32 p2[4] = {60u, 20u, 0u, 0x0000FF00u};
@@ -285,7 +316,6 @@ void test_render_fan() noexcept
     put_cmd(method::kVertexFlush, 1, &dummy);
 
     (void)Rsx::process(16);
-
     const bool ok = (g_fb[40 * kFbW + 50] == 0x0000FF00u) &&
                     (g_fb[50 * kFbW + 40] == 0x0000FF00u) &&
                     (g_fb[50 * kFbW + 70] == 0x0000FF00u) && (Rsx::primitives_drawn() >= 3);
@@ -294,29 +324,9 @@ void test_render_fan() noexcept
                static_cast<unsigned long long>(Rsx::primitives_drawn()));
 }
 
-// ---- 6C tests: guest memory vertex fetch --------------------------------
-
-alignas(64) u8 g_guest[65536];
-
-bool guest_read32(void* user, u64 addr, u32* out) noexcept
-{
-    (void)user;
-    if (addr + 4 > sizeof(g_guest))
-        return false;
-    const u8* p = g_guest + addr;
-    *out = (static_cast<u32>(p[0])) | (static_cast<u32>(p[1]) << 8) |
-           (static_cast<u32>(p[2]) << 16) | (static_cast<u32>(p[3]) << 24);
-    return true;
-}
-
-void write_guest_u32(u64 addr, u32 v) noexcept
-{
-    u8* p = g_guest + addr;
-    p[0] = static_cast<u8>(v & 0xFFu);
-    p[1] = static_cast<u8>((v >> 8) & 0xFFu);
-    p[2] = static_cast<u8>((v >> 16) & 0xFFu);
-    p[3] = static_cast<u8>((v >> 24) & 0xFFu);
-}
+// ---------------------------------------------------------------------------
+// 6C: guest-memory vertex fetch
+// ---------------------------------------------------------------------------
 
 void test_draw_arrays() noexcept
 {
@@ -328,7 +338,6 @@ void test_draw_arrays() noexcept
     put_cmd(method::kClearColor, 1, &black);
     put_cmd(method::kClear, 1, &dummy);
 
-    // Vertex buffer at guest address 0x1000: 3 vertices, 16 bytes each.
     write_guest_u32(0x1000 + 0u, 10u);
     write_guest_u32(0x1000 + 4u, 10u);
     write_guest_u32(0x1000 + 8u, 0u);
@@ -371,7 +380,6 @@ void test_draw_elements() noexcept
     put_cmd(method::kClearColor, 1, &black);
     put_cmd(method::kClear, 1, &dummy);
 
-    // 4 vertices in the buffer.
     write_guest_u32(0x2000 + 0u, 10u);
     write_guest_u32(0x2000 + 4u, 10u);
     write_guest_u32(0x2000 + 8u, 0u);
@@ -387,12 +395,6 @@ void test_draw_elements() noexcept
     write_guest_u32(0x2020 + 8u, 0u);
     write_guest_u32(0x2020 + 12u, 0x00808080u);
 
-    write_guest_u32(0x2030 + 0u, 100u);
-    write_guest_u32(0x2030 + 4u, 100u);
-    write_guest_u32(0x2030 + 8u, 0u);
-    write_guest_u32(0x2030 + 12u, 0x00808080u);
-
-    // Index buffer at 0x3000: triangle 0-1-2
     write_guest_u32(0x3000 + 0u, 0u);
     write_guest_u32(0x3000 + 4u, 1u);
     write_guest_u32(0x3000 + 8u, 2u);
@@ -433,7 +435,6 @@ void test_depth_test() noexcept
     const u32 prim = static_cast<u32>(Primitive::Triangles);
     put_cmd(method::kPrimType, 1, &prim);
 
-    // Far triangle (z = 100), drawn first: red.
     const u32 far_v0[4] = {10u, 10u, 100u, 0x00FF0000u};
     const u32 far_v1[4] = {110u, 10u, 100u, 0x00FF0000u};
     const u32 far_v2[4] = {10u, 110u, 100u, 0x00FF0000u};
@@ -442,7 +443,6 @@ void test_depth_test() noexcept
     put_cmd(method::kVertexPush, 4, far_v2);
     put_cmd(method::kVertexFlush, 1, &dummy);
 
-    // Near triangle (z = 50), overlapping: blue. Should win.
     const u32 near_v0[4] = {10u, 10u, 50u, 0x000000FFu};
     const u32 near_v1[4] = {110u, 10u, 50u, 0x000000FFu};
     const u32 near_v2[4] = {10u, 110u, 50u, 0x000000FFu};
@@ -457,6 +457,275 @@ void test_depth_test() noexcept
     log::write(ok ? log::Level::Info : log::Level::Warn, "rsx",
                "RSX depth test: %s pixel=0x%llx (expected 0xff)", ok ? "PASS" : "FAIL",
                static_cast<unsigned long long>(px));
+}
+
+// ---------------------------------------------------------------------------
+// 6D: smooth shading (with corrected barycentric weights)
+//
+// Triangle (10,10) red, (110,10) green, (10,110) blue.
+// Point (30,30) has barycentric weights (0.6, 0.2, 0.2) -> (153, 51, 51).
+// ---------------------------------------------------------------------------
+
+void test_smooth_shading() noexcept
+{
+    Rsx::init();
+    Rsx::bind_surface_memory(g_fb, kFbW, kFbH, kFbW);
+
+    const u32 black = 0, dummy = 0;
+    put_cmd(method::kClearColor, 1, &black);
+    put_cmd(method::kClear, 1, &dummy);
+
+    const u32 smooth = 1;
+    put_cmd(method::kInterpMode, 1, &smooth);
+
+    const u32 prim = static_cast<u32>(Primitive::Triangles);
+    put_cmd(method::kPrimType, 1, &prim);
+
+    const u32 v0[4] = {10u, 10u, 0u, 0x00FF0000u};
+    const u32 v1[4] = {110u, 10u, 0u, 0x0000FF00u};
+    const u32 v2[4] = {10u, 110u, 0u, 0x000000FFu};
+    put_cmd(method::kVertexPush, 4, v0);
+    put_cmd(method::kVertexPush, 4, v1);
+    put_cmd(method::kVertexPush, 4, v2);
+    put_cmd(method::kVertexFlush, 1, &dummy);
+
+    (void)Rsx::process(16);
+
+    const u32 px = g_fb[30 * kFbW + 30];
+    // Integer division: 255 * 6000 / 10000 = 153 (0x99)
+    //                   255 * 2000 / 10000 =  51 (0x33)
+    const bool ok = (px == 0x00993333u);
+    log::write(ok ? log::Level::Info : log::Level::Warn, "rsx",
+               "RSX smooth-shading test: %s px=0x%llx (expected 0x993333)", ok ? "PASS" : "FAIL",
+               static_cast<unsigned long long>(px));
+}
+
+// ---------------------------------------------------------------------------
+// 6D/6E: texture bind with per-vertex UVs (strict)
+//
+// 2x2 texture: (0,0)=red (1,0)=green (0,1)=blue (1,1)=white.
+// Triangle corners receive UV (0,0), (32,0), (0,32) — the full texture.
+// Sample near corner a => red; near corner b => green.
+// ---------------------------------------------------------------------------
+
+void setup_tex_2x2() noexcept
+{
+    write_guest_u32(0x6000u + 0u, 0x00FF0000u);
+    write_guest_u32(0x6000u + 4u, 0x0000FF00u);
+    write_guest_u32(0x6000u + 8u, 0x000000FFu);
+    write_guest_u32(0x6000u + 12u, 0x00FFFFFFu);
+}
+
+void bind_tex_2x2() noexcept
+{
+    const u32 bind[4] = {0x6000u, 0u, 2u, 2u};
+    put_cmd(method::kTextureBind, 4, bind);
+    const u32 enable = 1;
+    put_cmd(method::kTextureEnable, 1, &enable);
+    const u32 repeat = 0;
+    put_cmd(method::kTextureWrap, 1, &repeat);
+}
+
+void test_texture_uv_corners() noexcept
+{
+    Rsx::init();
+    Rsx::bind_surface_memory(g_fb, kFbW, kFbH, kFbW);
+    Rsx::set_guest_read32(&guest_read32, nullptr);
+
+    const u32 black = 0, dummy = 0;
+    put_cmd(method::kClearColor, 1, &black);
+    put_cmd(method::kClear, 1, &dummy);
+
+    setup_tex_2x2();
+    bind_tex_2x2();
+
+    const u32 prim = static_cast<u32>(Primitive::Triangles);
+    put_cmd(method::kPrimType, 1, &prim);
+
+    // Large triangle so the UV spread is clearly visible.
+    const u32 v0[4] = {10u, 10u, 0u, 0x00FFFFFFu};
+    const u32 v1[4] = {110u, 10u, 0u, 0x00FFFFFFu};
+    const u32 v2[4] = {10u, 110u, 0u, 0x00FFFFFFu};
+
+    const u32 uv0[2] = {0u, 0u};  // top-left of texture
+    const u32 uv1[2] = {32u, 0u}; // top-right
+    const u32 uv2[2] = {0u, 32u}; // bottom-left
+
+    put_cmd(method::kVertexUV, 2, uv0);
+    put_cmd(method::kVertexPush, 4, v0);
+    put_cmd(method::kVertexUV, 2, uv1);
+    put_cmd(method::kVertexPush, 4, v1);
+    put_cmd(method::kVertexUV, 2, uv2);
+    put_cmd(method::kVertexPush, 4, v2);
+    put_cmd(method::kVertexFlush, 1, &dummy);
+
+    (void)Rsx::process(32);
+
+    // Near a (UV ~ 0,0) -> red texel.
+    // Near b (UV ~ 32,0) -> green texel.
+    const u32 near_a = g_fb[15 * kFbW + 15];
+    const u32 near_b = g_fb[15 * kFbW + 100];
+    const bool ok = (near_a == 0x00FF0000u) && (near_b == 0x0000FF00u);
+    log::write(ok ? log::Level::Info : log::Level::Warn, "rsx",
+               "RSX UV test: %s near_a=0x%llx near_b=0x%llx", ok ? "PASS" : "FAIL",
+               static_cast<unsigned long long>(near_a), static_cast<unsigned long long>(near_b));
+}
+
+// ---------------------------------------------------------------------------
+// 6E: clamp wrap mode.
+//
+// With UV clamped, a UV outside the texture sample range maps to the
+// boundary texel. Repeat vs clamp must produce different results.
+// ---------------------------------------------------------------------------
+
+void test_texture_wrap_clamp() noexcept
+{
+    Rsx::init();
+    Rsx::bind_surface_memory(g_fb, kFbW, kFbH, kFbW);
+    Rsx::set_guest_read32(&guest_read32, nullptr);
+
+    const u32 black = 0, dummy = 0;
+    put_cmd(method::kClearColor, 1, &black);
+    put_cmd(method::kClear, 1, &dummy);
+
+    setup_tex_2x2();
+
+    const u32 bind[4] = {0x6000u, 0u, 2u, 2u};
+    put_cmd(method::kTextureBind, 4, bind);
+    const u32 enable = 1;
+    put_cmd(method::kTextureEnable, 1, &enable);
+    const u32 clamp = 1;
+    put_cmd(method::kTextureWrap, 1, &clamp);
+
+    const u32 prim = static_cast<u32>(Primitive::Triangles);
+    put_cmd(method::kPrimType, 1, &prim);
+
+    // UV goes to 4x the texture size. Clamp should cap at the top-right
+    // texel; without clamping it would wrap. Sample at vertex v1 => the
+    // boundary texel (1, 0) = green.
+    const u32 v0[4] = {10u, 10u, 0u, 0x00FFFFFFu};
+    const u32 v1[4] = {110u, 10u, 0u, 0x00FFFFFFu};
+    const u32 v2[4] = {10u, 110u, 0u, 0x00FFFFFFu};
+
+    const u32 uv0[2] = {0u, 0u};
+    const u32 uv1[2] = {128u, 0u}; // 8 pixels -> way past 2x2 with clamp
+    const u32 uv2[2] = {0u, 128u};
+
+    put_cmd(method::kVertexUV, 2, uv0);
+    put_cmd(method::kVertexPush, 4, v0);
+    put_cmd(method::kVertexUV, 2, uv1);
+    put_cmd(method::kVertexPush, 4, v1);
+    put_cmd(method::kVertexUV, 2, uv2);
+    put_cmd(method::kVertexPush, 4, v2);
+    put_cmd(method::kVertexFlush, 1, &dummy);
+
+    (void)Rsx::process(32);
+
+    // Sample near v1 (which has UV (128,0)). Under clamp, UV clamps to
+    // texel (1, 0) = green everywhere along the right edge.
+    const u32 near_b = g_fb[15 * kFbW + 100];
+    const bool ok = (near_b == 0x0000FF00u);
+    log::write(ok ? log::Level::Info : log::Level::Warn, "rsx",
+               "RSX clamp-wrap test: %s near_b=0x%llx", ok ? "PASS" : "FAIL",
+               static_cast<unsigned long long>(near_b));
+}
+
+// 6F: perspective-correct UVs. Two vertices at the same UV but different
+// W produce different sampled texels because UV/W is interpolated in
+// perspective-correct space and then divided by 1/W.
+void test_perspective_uv() noexcept
+{
+    Rsx::init();
+    Rsx::bind_surface_memory(g_fb, kFbW, kFbH, kFbW);
+    Rsx::set_guest_read32(&guest_read32, nullptr);
+
+    const u32 black = 0, dummy = 0;
+    put_cmd(method::kClearColor, 1, &black);
+    put_cmd(method::kClear, 1, &dummy);
+
+    // 8x8 texture with a red left half and green right half, so texel
+    // sampling at the midpoint is decisive.
+    for (u32 y = 0; y < 8; ++y)
+        for (u32 x = 0; x < 8; ++x)
+        {
+            const u32 c = (x < 4u) ? 0x00FF0000u : 0x0000FF00u;
+            write_guest_u32(0x7000u + (y * 8u + x) * 4u, c);
+        }
+    const u32 bind[4] = {0x7000u, 0u, 8u, 8u};
+    put_cmd(method::kTextureBind, 4, bind);
+    const u32 enable = 1;
+    put_cmd(method::kTextureEnable, 1, &enable);
+    const u32 repeat = 0;
+    put_cmd(method::kTextureWrap, 1, &repeat);
+
+    const u32 prim = static_cast<u32>(Primitive::Triangles);
+    put_cmd(method::kPrimType, 1, &prim);
+
+    const u32 v0[4] = {10u, 10u, 0u, 0x00FFFFFFu};
+    const u32 v1[4] = {110u, 10u, 0u, 0x00FFFFFFu};
+    const u32 v2[4] = {10u, 110u, 0u, 0x00FFFFFFu};
+
+    // UV: v0 at left edge (0), v1 at right edge (128 => 8 pixels), v2 at
+    // bottom-left. W: v0=1.0, v1=4.0, v2=1.0 (16.16).
+    const u32 uv0[2] = {0u, 0u};
+    const u32 uv1[2] = {128u, 0u};
+    const u32 uv2[2] = {0u, 128u};
+    const u32 w0[1] = {0x10000u};
+    const u32 w1[1] = {0x40000u};
+    const u32 w2[1] = {0x10000u};
+
+    put_cmd(method::kVertexUV, 2, uv0);
+    put_cmd(method::kVertexW, 1, w0);
+    put_cmd(method::kVertexPush, 4, v0);
+    put_cmd(method::kVertexUV, 2, uv1);
+    put_cmd(method::kVertexW, 1, w1);
+    put_cmd(method::kVertexPush, 4, v1);
+    put_cmd(method::kVertexUV, 2, uv2);
+    put_cmd(method::kVertexW, 1, w2);
+    put_cmd(method::kVertexPush, 4, v2);
+    put_cmd(method::kVertexFlush, 1, &dummy);
+
+    (void)Rsx::process(32);
+
+    // Sample near v1. Without perspective correction the UV at that
+    // point would land exactly on the red/green boundary. With W = 4,
+    // the effective U shrinks toward the origin, staying red.
+    const u32 near_v1 = g_fb[15 * kFbW + 100];
+    const bool ok = (near_v1 == 0x00FF0000u);
+    log::write(ok ? log::Level::Info : log::Level::Warn, "rsx",
+               "RSX perspective-UV test: %s near_v1=0x%llx", ok ? "PASS" : "FAIL",
+               static_cast<unsigned long long>(near_v1));
+}
+
+// 6F: mip chain generation.
+void test_mip_chain() noexcept
+{
+    Rsx::init();
+    Rsx::bind_surface_memory(g_fb, kFbW, kFbH, kFbW);
+    Rsx::set_guest_read32(&guest_read32, nullptr);
+
+    // 8x8 texture.
+    for (u32 y = 0; y < 8; ++y)
+        for (u32 x = 0; x < 8; ++x)
+            write_guest_u32(0x8000u + (y * 8u + x) * 4u, 0x00AABBCCu);
+
+    const u32 bind[4] = {0x8000u, 0u, 8u, 8u};
+    put_cmd(method::kTextureBind, 4, bind);
+
+    (void)Rsx::process(4);
+
+    const bool ok = (Rsx::mip_levels() >= 4u) // 8 -> 4 -> 2 -> 1
+                    && (Rsx::mip_width(0) == 8u) && (Rsx::mip_height(0) == 8u) &&
+                    (Rsx::mip_width(1) == 4u) && (Rsx::mip_height(1) == 4u) &&
+                    (Rsx::mip_width(2) == 2u) && (Rsx::mip_height(2) == 2u);
+
+    log::write(ok ? log::Level::Info : log::Level::Warn, "rsx",
+               "RSX mip-chain test: %s levels=%llu 8x8->%llux%llu->%llux%llu", ok ? "PASS" : "FAIL",
+               static_cast<unsigned long long>(Rsx::mip_levels()),
+               static_cast<unsigned long long>(Rsx::mip_width(1)),
+               static_cast<unsigned long long>(Rsx::mip_height(1)),
+               static_cast<unsigned long long>(Rsx::mip_width(2)),
+               static_cast<unsigned long long>(Rsx::mip_height(2)));
 }
 
 } // namespace
@@ -484,6 +753,12 @@ void self_test() noexcept
     test_draw_arrays();
     test_draw_elements();
     test_depth_test();
+
+    test_smooth_shading();
+    test_texture_uv_corners();
+    test_texture_wrap_clamp();
+    test_perspective_uv();
+    test_mip_chain();
 
     log::write(log::Level::Info, "rsx",
                "RSX stats: cmds=%llu draws=%llu presents=%llu clears=%llu unknowns=%llu prims=%llu "

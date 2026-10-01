@@ -18,7 +18,7 @@ u32 g_pix_w = 0;
 u32 g_pix_h = 0;
 u32 g_pix_pitch = 0;
 
-u32* g_depth = nullptr; // one u32 per pixel; smaller = closer
+u32* g_depth = nullptr;
 u32 g_depth_clear = 0xFFFFFFFFu;
 bool g_depth_on = false;
 
@@ -29,12 +29,32 @@ u32 g_vert_count = 0;
 
 u64 g_vb_addr = 0;
 u64 g_ib_addr = 0;
-u32 g_vb_stride = 16; // 4 u32 per vertex
+u32 g_vb_stride = 16;
 
 i32 g_scissor_x = 0;
 i32 g_scissor_y = 0;
 i32 g_scissor_w = 0;
 i32 g_scissor_h = 0;
+
+constexpr u32 kMaxMipLevels = 6;   // 64 -> 32 -> 16 -> 8 -> 4 -> 2
+constexpr i32 kFixedOne = 0x10000; // 16.16 fixed-point 1.0
+
+u64 g_tex_addr = 0;
+u32 g_tex_w = 0;
+u32 g_tex_h = 0;
+bool g_tex_on = false;
+Wrap g_tex_wrap = Wrap::Repeat;
+i32 g_tex_lod_bias = 0; // 16.16
+u32 g_mip_count = 0;
+u32 g_mip_w[kMaxMipLevels] = {};
+u32 g_mip_h[kMaxMipLevels] = {};
+u32 g_tex_mip[kMaxMipLevels][64 * 64] = {}; // level 0 = original
+
+// UV / W staging: kVertexUV and kVertexW set these, the next kVertexPush
+// consumes them.
+i32 g_pending_u = 0;
+i32 g_pending_v = 0;
+i32 g_pending_w = kFixedOne;
 
 GuestRead32Fn g_guest_read32 = nullptr;
 void* g_guest_user = nullptr;
@@ -113,7 +133,79 @@ inline bool depth_test(i32 x, i32 y, u32 z) noexcept
     return false;
 }
 
-inline void plot(i32 x, i32 y, u32 z, u32 color) noexcept
+// --- Texture sampler -------------------------------------------------------
+
+// LOD selection uses the fraction of texture space covered by the whole
+// primitive. The rasterizer passes the box size in 1/16-pixel units; we
+// derive a level via log2(span / texture dimension). `extra` is the
+// current LOD bias (16.16).
+inline u32 sample_tex(i32 u16, i32 v16, i32 lod_bias, u32 span16) noexcept
+{
+    if (!g_tex_on || g_tex_w == 0 || g_tex_h == 0)
+        return 0x00FFFFFFu;
+
+    // Choose a mip level.
+    u32 level = 0;
+    if (g_mip_count > 1u && span16 > 0)
+    {
+        const u32 span = static_cast<u32>(span16 >> 4);
+        const u32 dim = (g_tex_w > g_tex_h) ? g_tex_w : g_tex_h;
+        u32 d = dim;
+        u32 l = 0;
+        while (d > 1u && span < d && l + 1u < g_mip_count)
+        {
+            d >>= 1;
+            ++l;
+        }
+        level = l;
+        if (lod_bias != 0)
+        {
+            const i32 bump = lod_bias / kFixedOne;
+            if (bump > 0 && level + static_cast<u32>(bump) < g_mip_count)
+                level += static_cast<u32>(bump);
+            else if (bump < 0)
+            {
+                const u32 mag = static_cast<u32>(-bump);
+                level = (mag >= level) ? 0u : (level - mag);
+            }
+        }
+    }
+    if (level >= g_mip_count)
+        level = g_mip_count ? g_mip_count - 1u : 0u;
+
+    const u32 tw = g_mip_w[level];
+    const u32 th = g_mip_h[level];
+    if (tw == 0 || th == 0)
+        return 0x00FFFFFFu;
+
+    i32 tx = u16 >> 4;
+    i32 ty = v16 >> 4;
+
+    if (g_tex_wrap == Wrap::Repeat)
+    {
+        tx %= static_cast<i32>(tw);
+        if (tx < 0)
+            tx += static_cast<i32>(tw);
+        ty %= static_cast<i32>(th);
+        if (ty < 0)
+            ty += static_cast<i32>(th);
+    }
+    else
+    {
+        if (tx < 0)
+            tx = 0;
+        if (tx >= static_cast<i32>(tw))
+            tx = static_cast<i32>(tw) - 1;
+        if (ty < 0)
+            ty = 0;
+        if (ty >= static_cast<i32>(th))
+            ty = static_cast<i32>(th) - 1;
+    }
+
+    return g_tex_mip[level][static_cast<u32>(ty) * 64u + static_cast<u32>(tx)];
+}
+
+inline void plot(i32 x, i32 y, u32 z, u32 color, i32 u16, i32 v16, u32 span16) noexcept
 {
     if (!g_pixels)
         return;
@@ -134,7 +226,12 @@ inline void plot(i32 x, i32 y, u32 z, u32 color) noexcept
     }
     if (!depth_test(x, y, z))
         return;
-    g_pixels[static_cast<usize>(y) * g_pix_pitch + static_cast<usize>(x)] = color & 0x00FFFFFFu;
+
+    u32 out = color & 0x00FFFFFFu;
+    if (g_tex_on)
+        out = sample_tex(u16, v16, g_tex_lod_bias, span16);
+
+    g_pixels[static_cast<usize>(y) * g_pix_pitch + static_cast<usize>(x)] = out;
     ++g_pixels_written;
 }
 
@@ -145,8 +242,10 @@ void raster_line(const Vertex& a, const Vertex& b) noexcept
     i32 x0 = a.x, y0 = a.y, x1 = b.x, y1 = b.y;
     const u32 z = a.z;
     const u32 c = a.color;
-    i32 dx = x1 - x0;
-    i32 dy = y1 - y0;
+    const i32 u = a.u;
+    const i32 v = a.v;
+
+    i32 dx = x1 - x0, dy = y1 - y0;
     const i32 sx = dx < 0 ? -1 : 1;
     const i32 sy = dy < 0 ? -1 : 1;
     if (dx < 0)
@@ -154,9 +253,15 @@ void raster_line(const Vertex& a, const Vertex& b) noexcept
     if (dy < 0)
         dy = -dy;
     i32 err = (dx > dy ? dx : -dy) / 2;
+
+    // Span in 1/16-pixel units used as the LOD input. Cheap approximation:
+    // Chebyshev length of the segment.
+    const i32 adx = (dx > dy) ? dx : dy;
+    const u32 span16 = static_cast<u32>(adx > 0 ? adx : 1);
+
     for (;;)
     {
-        plot(x0, y0, z, c);
+        plot(x0, y0, z, c, u, v, span16);
         if (x0 == x1 && y0 == y1)
             break;
         const i32 e2 = err;
@@ -173,6 +278,20 @@ void raster_line(const Vertex& a, const Vertex& b) noexcept
     }
 }
 
+// Barycentric triangle rasterizer.
+//
+//   w0 = 2 * signed_area(a, b, p)
+//   w1 = 2 * signed_area(b, c, p)
+//   w2 = 2 * signed_area(c, a, p)
+//
+//   lambda_a = w1 / area
+//   lambda_b = w2 / area
+//   lambda_c = w0 / area
+//
+// Interpolated attribute = (w1 * a.attr + w2 * b.attr + w0 * c.attr) / area.
+//
+// The 6D code used (w0, w1, w2) as the multipliers for (a, b, c), which
+// rotates the color correspondence on non-uniform triangles. Fixed here.
 void raster_triangle(const Vertex& a, const Vertex& b, const Vertex& c) noexcept
 {
     if (!g_pixels)
@@ -206,10 +325,11 @@ void raster_triangle(const Vertex& a, const Vertex& b, const Vertex& c) noexcept
         return;
 
     const bool ccw = area > 0;
+    const bool smooth = (g_interp == Interp::Smooth);
 
-    // Flat shading: use the first vertex color for the whole triangle.
-    // Smooth shading is accepted but not yet interpolated.
-    const u32 col = a.color;
+    const u32 r0 = (a.color >> 16) & 0xFFu, g0 = (a.color >> 8) & 0xFFu, b0 = a.color & 0xFFu;
+    const u32 r1 = (b.color >> 16) & 0xFFu, g1 = (b.color >> 8) & 0xFFu, b1 = b.color & 0xFFu;
+    const u32 r2 = (c.color >> 16) & 0xFFu, g2 = (c.color >> 8) & 0xFFu, b2 = c.color & 0xFFu;
 
     for (i32 y = min_y; y <= max_y; ++y)
     {
@@ -223,8 +343,65 @@ void raster_triangle(const Vertex& a, const Vertex& b, const Vertex& c) noexcept
                            static_cast<i64>(a.y - c.y) * static_cast<i64>(x - c.x);
             const bool inside =
                 ccw ? (w0 >= 0 && w1 >= 0 && w2 >= 0) : (w0 <= 0 && w1 <= 0 && w2 <= 0);
-            if (inside)
-                plot(x, y, a.z, col);
+            if (!inside)
+                continue;
+
+            u32 col;
+            if (smooth)
+            {
+                // (w1, w2, w0) map to (a, b, c).
+                const i64 r_acc = static_cast<i64>(r0) * w1 + static_cast<i64>(r1) * w2 +
+                                  static_cast<i64>(r2) * w0;
+                const i64 g_acc = static_cast<i64>(g0) * w1 + static_cast<i64>(g1) * w2 +
+                                  static_cast<i64>(g2) * w0;
+                const i64 b_acc = static_cast<i64>(b0) * w1 + static_cast<i64>(b1) * w2 +
+                                  static_cast<i64>(b2) * w0;
+                const u32 rr = static_cast<u32>(r_acc / area);
+                const u32 gg = static_cast<u32>(g_acc / area);
+                const u32 bb = static_cast<u32>(b_acc / area);
+                col = (rr << 16) | (gg << 8) | bb;
+            }
+            else
+            {
+                col = a.color;
+            }
+
+            // Perspective-correct UV interpolation.
+            //
+            //   s/w  = sum(lam_i * u_i / w_i)
+            //   t/w  = sum(lam_i * v_i / w_i)
+            //   1/w  = sum(lam_i / w_i)
+            //   u    = (s/w) / (1/w)
+            //
+            // w_i is 16.16 fixed point. To keep everything in integer
+            // arithmetic we scale the products up by kFixedOne.
+            const i64 wa = (a.w > 0) ? a.w : kFixedOne;
+            const i64 wb = (b.w > 0) ? b.w : kFixedOne;
+            const i64 wc = (c.w > 0) ? c.w : kFixedOne;
+
+            const i64 sw_acc = static_cast<i64>(a.u) * kFixedOne * w1 / wa +
+                               static_cast<i64>(b.u) * kFixedOne * w2 / wb +
+                               static_cast<i64>(c.u) * kFixedOne * w0 / wc;
+            const i64 tw_acc = static_cast<i64>(a.v) * kFixedOne * w1 / wa +
+                               static_cast<i64>(b.v) * kFixedOne * w2 / wb +
+                               static_cast<i64>(c.v) * kFixedOne * w0 / wc;
+            const i64 iw_acc = static_cast<i64>(kFixedOne) * kFixedOne * w1 / wa +
+                               static_cast<i64>(kFixedOne) * kFixedOne * w2 / wb +
+                               static_cast<i64>(kFixedOne) * kFixedOne * w0 / wc;
+
+            i32 uu = 0, vv = 0;
+            if (iw_acc != 0)
+            {
+                uu = static_cast<i32>((sw_acc / area) / (iw_acc / area));
+                vv = static_cast<i32>((tw_acc / area) / (iw_acc / area));
+            }
+
+            // Span estimate for LOD: triangle bbox diagonal in 1/16-pixel
+            // units. The texture bind uses UV spread x dim in Phase 6G; for
+            // 6F we use the pixel span.
+            const u32 span16 = static_cast<u32>((max_x - min_x) + (max_y - min_y));
+
+            plot(x, y, a.z, col, uu, vv, span16);
         }
     }
     ++g_primitives;
@@ -241,7 +418,10 @@ void assemble_and_raster() noexcept
     {
     case Primitive::Points:
         for (u32 i = 0; i < g_vert_count; ++i)
-            plot(g_verts[i].x, g_verts[i].y, g_verts[i].z, g_verts[i].color);
+        {
+            const Vertex& v = g_verts[i];
+            plot(v.x, v.y, v.z, v.color, v.u, v.v, 16u);
+        }
         break;
     case Primitive::Lines:
         for (u32 i = 0; i + 1 < g_vert_count; i += 2)
@@ -274,16 +454,41 @@ bool guest_read_vertex(u64 addr, Vertex& out) noexcept
 {
     if (!g_guest_read32)
         return false;
-    u32 w[4] = {0, 0, 0, 0};
+    u32 w[7] = {0, 0, 0, 0, 0, 0, 0};
     for (u32 i = 0; i < 4; ++i)
-    {
         if (!g_guest_read32(g_guest_user, addr + i * 4u, &w[i]))
             return false;
-    }
     out.x = static_cast<i32>(w[0]);
     out.y = static_cast<i32>(w[1]);
     out.z = w[2];
     out.color = w[3] & 0x00FFFFFFu;
+
+    // Optional UV extension at bytes 16..23 (stride >= 24).
+    if (g_vb_stride >= 24)
+    {
+        for (u32 i = 4; i < 6; ++i)
+            if (!g_guest_read32(g_guest_user, addr + i * 4u, &w[i]))
+                return false;
+        out.u = static_cast<i32>(w[4]);
+        out.v = static_cast<i32>(w[5]);
+    }
+    else
+    {
+        out.u = 0;
+        out.v = 0;
+    }
+
+    // Optional W at byte 24 (stride >= 28). Default 1.0 when absent.
+    if (g_vb_stride >= 28)
+    {
+        if (!g_guest_read32(g_guest_user, addr + 6u * 4u, &w[6]))
+            return false;
+        const i32 ww = static_cast<i32>(w[6]);
+        out.w = (ww > 0) ? ww : kFixedOne;
+    }
+    else
+        out.w = kFixedOne;
+
     return true;
 }
 
@@ -359,15 +564,17 @@ void handle_background(u32 count, const u32* data) noexcept
         g_regs[method::kBackground / 4] = data[0];
 }
 
-void clear_surface_and_depth(u32 color) noexcept
+void handle_clear(u32, const u32*) noexcept
 {
+    ++g_clears;
     if (!g_pixels)
         return;
+    const u32 color = g_regs[method::kClearColor / 4] & 0x00FFFFFFu;
     for (u32 y = 0; y < g_pix_h; ++y)
     {
         u32* row = g_pixels + static_cast<usize>(y) * g_pix_pitch;
         for (u32 x = 0; x < g_pix_w; ++x)
-            row[x] = color & 0x00FFFFFFu;
+            row[x] = color;
     }
     if (g_depth)
     {
@@ -376,12 +583,6 @@ void clear_surface_and_depth(u32 color) noexcept
             g_depth[i] = g_depth_clear;
     }
     g_pixels_written += static_cast<u64>(g_pix_w) * static_cast<u64>(g_pix_h);
-}
-
-void handle_clear(u32, const u32*) noexcept
-{
-    ++g_clears;
-    clear_surface_and_depth(g_regs[method::kClearColor / 4]);
 }
 
 void handle_prim_type(u32 count, const u32* data) noexcept
@@ -400,7 +601,33 @@ void handle_vertex_push(u32 count, const u32* data) noexcept
     v.y = static_cast<i32>(data[1]);
     v.z = data[2];
     v.color = data[3] & 0x00FFFFFFu;
+    v.u = g_pending_u;
+    v.v = g_pending_v;
+    v.w = g_pending_w;
     emit_vertex(v);
+}
+
+void handle_vertex_uv(u32 count, const u32* data) noexcept
+{
+    if (count < 2)
+        return;
+    g_pending_u = static_cast<i32>(data[0]);
+    g_pending_v = static_cast<i32>(data[1]);
+}
+
+void handle_vertex_w(u32 count, const u32* data) noexcept
+{
+    if (count < 1)
+        return;
+    const i32 w = static_cast<i32>(data[0]);
+    g_pending_w = (w <= 0) ? kFixedOne : w;
+}
+
+void handle_texture_lod_bias(u32 count, const u32* data) noexcept
+{
+    if (count < 1)
+        return;
+    g_tex_lod_bias = static_cast<i32>(data[0]);
 }
 
 void handle_vertex_flush(u32, const u32*) noexcept
@@ -444,8 +671,6 @@ void handle_return(u32, const u32*) noexcept
     g_fifo.jump_target = g_fifo.call_stack[--g_fifo.call_sp];
     g_fifo.jump_pending = true;
 }
-
-// --- 6C handlers ----------------------------------------------------------
 
 void handle_vertex_buffer(u32 count, const u32* data) noexcept
 {
@@ -551,6 +776,78 @@ void handle_scissor_h(u32 c, const u32* d) noexcept
         g_scissor_h = static_cast<i32>(d[0]);
 }
 
+void handle_texture_bind(u32 count, const u32* data) noexcept
+{
+    if (count < 4)
+        return;
+    g_tex_addr = (static_cast<u64>(data[1]) << 32) | static_cast<u64>(data[0]);
+    g_tex_w = data[2] & 0x3Fu;
+    g_tex_h = data[3] & 0x3Fu;
+    if (g_tex_w == 0 || g_tex_h == 0)
+    {
+        g_tex_on = false;
+        return;
+    }
+
+    // Level 0: fetch original from guest memory.
+    for (u32 y = 0; y < g_tex_h; ++y)
+        for (u32 x = 0; x < g_tex_w; ++x)
+        {
+            u32 px = 0;
+            if (g_guest_read32)
+                (void)g_guest_read32(g_guest_user,
+                                     g_tex_addr + (static_cast<u64>(y) * g_tex_w + x) * 4u, &px);
+            g_tex_mip[0][y * 64u + x] = px & 0x00FFFFFFu;
+        }
+
+    // Build the mip chain with a 2x2 box filter until we hit 1x1 or the
+    // level cap. Every level is stored in the same 64x64 slot layout.
+    g_mip_w[0] = g_tex_w;
+    g_mip_h[0] = g_tex_h;
+    u32 levels = 1;
+    while (levels < kMaxMipLevels && g_mip_w[levels - 1] > 1u && g_mip_h[levels - 1] > 1u)
+    {
+        const u32 pw = g_mip_w[levels - 1];
+        const u32 ph = g_mip_h[levels - 1];
+        const u32 nw = pw / 2u;
+        const u32 nh = ph / 2u;
+        for (u32 y = 0; y < nh; ++y)
+            for (u32 x = 0; x < nw; ++x)
+            {
+                const u32 c00 = g_tex_mip[levels - 1][(y * 2u) * 64u + (x * 2u)];
+                const u32 c10 = g_tex_mip[levels - 1][(y * 2u) * 64u + (x * 2u + 1u)];
+                const u32 c01 = g_tex_mip[levels - 1][(y * 2u + 1u) * 64u + (x * 2u)];
+                const u32 c11 = g_tex_mip[levels - 1][(y * 2u + 1u) * 64u + (x * 2u + 1u)];
+                const u32 r = (((c00 >> 16) & 0xFFu) + ((c10 >> 16) & 0xFFu) +
+                               ((c01 >> 16) & 0xFFu) + ((c11 >> 16) & 0xFFu)) /
+                              4u;
+                const u32 g = (((c00 >> 8) & 0xFFu) + ((c10 >> 8) & 0xFFu) + ((c01 >> 8) & 0xFFu) +
+                               ((c11 >> 8) & 0xFFu)) /
+                              4u;
+                const u32 b = ((c00 & 0xFFu) + (c10 & 0xFFu) + (c01 & 0xFFu) + (c11 & 0xFFu)) / 4u;
+                g_tex_mip[levels][y * 64u + x] = (r << 16) | (g << 8) | b;
+            }
+        g_mip_w[levels] = nw;
+        g_mip_h[levels] = nh;
+        ++levels;
+    }
+    g_mip_count = levels;
+}
+
+void handle_texture_enable(u32 count, const u32* data) noexcept
+{
+    if (count < 1)
+        return;
+    g_tex_on = (data[0] != 0);
+}
+
+void handle_texture_wrap(u32 count, const u32* data) noexcept
+{
+    if (count < 1)
+        return;
+    g_tex_wrap = static_cast<Wrap>(data[0] & 1u);
+}
+
 void handle_unknown(u32 byte_offset) noexcept
 {
     ++g_unknowns;
@@ -600,6 +897,10 @@ Handler handler_for(u32 byte_offset) noexcept
         return &handle_prim_type;
     case method::kVertexPush:
         return &handle_vertex_push;
+    case method::kVertexUV:
+        return &handle_vertex_uv;
+    case method::kVertexW:
+        return &handle_vertex_w;
     case method::kVertexFlush:
         return &handle_vertex_flush;
     case method::kBackground:
@@ -628,6 +929,14 @@ Handler handler_for(u32 byte_offset) noexcept
         return &handle_scissor_w;
     case method::kScissorH:
         return &handle_scissor_h;
+    case method::kTextureBind:
+        return &handle_texture_bind;
+    case method::kTextureEnable:
+        return &handle_texture_enable;
+    case method::kTextureWrap:
+        return &handle_texture_wrap;
+    case method::kTextureLodBias:
+        return &handle_texture_lod_bias;
     default:
         return nullptr;
     }
@@ -641,6 +950,8 @@ void Rsx::init() noexcept
     libk::memset(&g_fifo, 0, sizeof(g_fifo));
     libk::memset(&g_target, 0, sizeof(g_target));
     libk::memset(g_verts, 0, sizeof(g_verts));
+    libk::memset(g_tex_mip, 0, sizeof(g_tex_mip));
+
     g_target.format = SurfaceFormat::Unknown;
     g_commands = 0;
     g_draws = 0;
@@ -660,10 +971,26 @@ void Rsx::init() noexcept
     g_depth_clear = 0xFFFFFFFFu;
     g_scissor_x = g_scissor_y = 0;
     g_scissor_w = g_scissor_h = 0;
+    g_tex_addr = 0;
+    g_tex_w = 0;
+    g_tex_h = 0;
+    g_tex_on = false;
+    g_tex_wrap = Wrap::Repeat;
+    g_tex_lod_bias = 0;
+    g_mip_count = 0;
+    for (u32 i = 0; i < kMaxMipLevels; ++i)
+    {
+        g_mip_w[i] = 0;
+        g_mip_h[i] = 0;
+    }
+    g_pending_u = 0;
+    g_pending_v = 0;
+    g_pending_w = kFixedOne;
     g_guest_read32 = nullptr;
     g_guest_user = nullptr;
     g_ready = true;
-    log::write(log::Level::Info, "rsx", "Phase 6A/6B/6C init: %llu regs, FIFO %llu words",
+
+    log::write(log::Level::Info, "rsx", "Phase 6A/6B/6C/6D/6E init: %llu regs, FIFO %llu words",
                static_cast<unsigned long long>(kRegisterCount),
                static_cast<unsigned long long>(kFifoWords));
 }
@@ -690,10 +1017,8 @@ void Rsx::bind_surface_memory(u32* pixels, u32 width, u32 height, u32 pitch) noe
     {
         g_depth = static_cast<u32*>(mm::Heap::allocate(n * sizeof(u32)));
         if (g_depth)
-        {
             for (usize i = 0; i < n; ++i)
                 g_depth[i] = g_depth_clear;
-        }
     }
 }
 
@@ -701,6 +1026,26 @@ void Rsx::set_guest_read32(GuestRead32Fn fn, void* user) noexcept
 {
     g_guest_read32 = fn;
     g_guest_user = user;
+}
+
+bool Rsx::texture_bound() noexcept
+{
+    return g_tex_on;
+}
+
+u32 Rsx::mip_levels() noexcept
+{
+    return g_mip_count;
+}
+
+u32 Rsx::mip_width(u32 level) noexcept
+{
+    return (level < g_mip_count) ? g_mip_w[level] : 0u;
+}
+
+u32 Rsx::mip_height(u32 level) noexcept
+{
+    return (level < g_mip_count) ? g_mip_h[level] : 0u;
 }
 
 bool Rsx::push(u32 word) noexcept

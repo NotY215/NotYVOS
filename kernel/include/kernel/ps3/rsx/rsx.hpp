@@ -9,7 +9,9 @@ namespace notyvos::ps3::rsx
 //
 //   6A  structural: FIFO, method dispatch, control flow, surface state
 //   6B  rasterizer: points / lines / triangles / strips / fans
-//   6C  vertex buffers, indexed draws, depth test, guest memory, interp mode
+//   6C  vertex buffers, indexed draws, depth test, scissor
+//   6D  smooth shading, texture bind
+//   6E  per-vertex UVs, wrap modes, corrected barycentric interpolation
 // ===========================================================================
 
 constexpr u32 kRegisterSpace = 0x4000;
@@ -24,7 +26,7 @@ constexpr u32 kFifoCall = 0x0134;
 constexpr u32 kFifoReturn = 0x0138;
 
 constexpr u32 kSurfaceFmt = 0x0200;
-constexpr u32 kSurfaceCol = 0x0204; // 2 words: 64-bit physical address (lo, hi)
+constexpr u32 kSurfaceCol = 0x0204;
 constexpr u32 kSurfacePit = 0x0208;
 constexpr u32 kSurfaceW = 0x020C;
 constexpr u32 kSurfaceH = 0x0210;
@@ -38,19 +40,26 @@ constexpr u32 kVertexPush = 0x0304; // 4 words: x, y, z, color
 constexpr u32 kVertexFlush = 0x0308;
 constexpr u32 kBackground = 0x030C;
 
-// 6C additions.
-constexpr u32 kVertexBuffer = 0x0320; // 2 words: 64-bit guest address
-constexpr u32 kIndexBuffer = 0x0328;  // 2 words: 64-bit guest address
-constexpr u32 kVertexStride = 0x032C; // 1 word: bytes per vertex (min 16)
-constexpr u32 kDrawArrays = 0x0330;   // 1 word: vertex count
-constexpr u32 kDrawElements = 0x0334; // 1 word: index count
-constexpr u32 kDepthEnable = 0x0340;  // 1 word: 0 = off, 1 = on
-constexpr u32 kDepthClear = 0x0344;   // 1 word: z clear value
-constexpr u32 kInterpMode = 0x0348;   // 1 word: 0 = flat, 1 = smooth
-constexpr u32 kScissorX = 0x034C;     // 1 word
-constexpr u32 kScissorY = 0x0350;     // 1 word
-constexpr u32 kScissorW = 0x0354;     // 1 word
-constexpr u32 kScissorH = 0x0358;     // 1 word
+constexpr u32 kVertexBuffer = 0x0320;
+constexpr u32 kIndexBuffer = 0x0328;
+constexpr u32 kVertexStride = 0x032C;
+constexpr u32 kDrawArrays = 0x0330;
+constexpr u32 kDrawElements = 0x0334;
+constexpr u32 kDepthEnable = 0x0340;
+constexpr u32 kDepthClear = 0x0344;
+constexpr u32 kInterpMode = 0x0348;
+constexpr u32 kScissorX = 0x034C;
+constexpr u32 kScissorY = 0x0350;
+constexpr u32 kScissorW = 0x0354;
+constexpr u32 kScissorH = 0x0358;
+
+constexpr u32 kTextureBind = 0x0360; // 4 words: addr_lo addr_hi w h
+constexpr u32 kTextureEnable = 0x0364;
+constexpr u32 kTextureWrap = 0x0368; // 1 word: 0 = repeat, 1 = clamp
+constexpr u32 kVertexUV = 0x036C;    // 2 words: u, v (i32, 1/16 px units)
+constexpr u32 kVertexW = 0x0370;     // 1 word: i32, 16.16 fixed point
+constexpr u32 kTextureLodBias = 0x0374; // 1 word: i32, 16.16 (0 = auto)
+constexpr u32 kTextureMips = 0x0378;    // 1 word: read-only, current levels
 } // namespace method
 
 enum class SurfaceFormat : u32
@@ -76,6 +85,12 @@ enum class Interp : u32
     Smooth = 1,
 };
 
+enum class Wrap : u32
+{
+    Repeat = 0,
+    Clamp = 1,
+};
+
 struct Surface
 {
     u64 address;
@@ -86,12 +101,15 @@ struct Surface
     bool valid;
 };
 
+// Vertex. UVs are in 1/16 pixel units (fixed-point). Signed so negative
+// UVs work correctly under repeat wrap.
 struct Vertex
 {
-    i32 x;
-    i32 y;
-    u32 z; // smaller = closer
+    i32 x, y;
+    u32 z;
     u32 color;
+    i32 u, v;
+    i32 w; // 16.16 fixed point. 0x10000 == 1.0 (perspective-correct).
 };
 
 using GuestRead32Fn = bool (*)(void* user, u64 addr, u32* out);
@@ -122,13 +140,14 @@ public:
     static u32 process(u32 max_commands) noexcept;
     static u32 read_reg(u32 byte_offset) noexcept;
 
-    // Raster target in kernel memory.
     static void bind_surface_memory(u32* pixels, u32 width, u32 height, u32 pitch) noexcept;
 
-    // Guest memory read callback (for vertex/index buffers).
     static void set_guest_read32(GuestRead32Fn fn, void* user) noexcept;
 
-    // Stats.
+    static bool texture_bound() noexcept;
+    static u32 mip_levels() noexcept;
+    static u32 mip_width(u32 level) noexcept;
+    static u32 mip_height(u32 level) noexcept;
     static u64 commands() noexcept;
     static u64 draws() noexcept;
     static u64 presents() noexcept;
@@ -138,7 +157,6 @@ public:
     static u64 primitives_drawn() noexcept;
     static u64 pixels_written() noexcept;
 
-    // Debug: copy pixels into `out`.
     static u32 snapshot(u32* out, u32 max_pixels) noexcept;
 
     static const Surface& target() noexcept;
