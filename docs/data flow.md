@@ -1630,56 +1630,407 @@ Limine
 boot::query()
   │
   ├─► framebuffer ─► fb::Framebuffer::init() ─► fb::Console::init()
-  │
-  ├─► memmap/HHDM ─► PhysicalMemory::init()
-  │                  ├─► VirtualMemory::init()
+  ├─► memmap/HHDM ─► PhysicalMemory::init() ─► VirtualMemory::init()
   │                  ├─► Heap::init()
   │                  └─► ExecArena::init()
-  │
   ├─► RSDP ─► acpi::init()
-  │
-  ├─► block devices ─► block::block_init()
-  │                    ├─► block::ahci_init()
-  │                    └─► fs::nyfs_mount()
-  │
-  ├─► MP response ─► percpu_init_bsp()
-  │                  ├─► Lapic::init_bsp()
-  │                  ├─► percpu_register()
-  │                  └─► smp_init()
-  │
-  ├─► initrd ─► fs::vfs_init()
-  │             ├─► fs::initramfs_mount()
-  │             └─► fs::vfs_mount_root()
-  │
-  ├─► graphics ─► gfx::Compositor::init()
-  │               ├─► register_software_backend()
-  │               ├─► vbe_backend_init()
-  │               └─► gfx::Device::init()
-  │
-  ├─► PS3 ─► ps3::jit::init()
-  │          └─► ps3::self_test()
-  │
-  └─► scheduler ─► sched::scheduler_init()
-                   │
-                   ▼
-               proc::load_elf()
-                   │
-                   ▼
-               sched::task_create_user()
-                   │
-                   ▼
-               sched::scheduler_add()
-                   │
-                   ▼
-               interrupts_enable()
-                   │
-                   ▼
-               sched::scheduler_start()
-                   │
-                   ▼
-                init.elf
+  ├─► block::block_init() ─► block::ahci_init() ─► fs::nyfs_mount()
+  ├─► initrd ─► fs::vfs_init() ─► fs::initramfs_mount() ─► VFS root
+  ├─► gfx::Compositor::init() ─► graphics backends ─► gfx::Device::init()
+  ├─► ps3::jit::init() ─► ps3::rsx::Rsx::init() ─► ps3::self_test()
+  └─► sched::scheduler_init() ─► proc::load_elf() ─► init task
 ```
 
-This source-level section is the authoritative representation for the
-completed implementation boundary. Future phases should be added in the same
-style only after their source symbols and data paths exist.
+# Phase 6 — RSX Compatibility
+
+## 6A — RSX structural
+
+```text
+RSX command FIFO word
+        │
+        ▼
+Rsx::push(word)
+        │
+        ▼
+g_fifo.buffer / put / get
+        │
+        ▼
+Rsx::process(max_commands)
+        │
+        ▼
+method index + count + payload
+        │
+        ▼
+handler_for(byte_offset)
+        │
+        ├─► surface state
+        ├─► primitive state
+        ├─► clear/present state
+        └─► FIFO jump/call/return
+```
+
+## 6B — RSX rasterizer
+
+```text
+RSX draw command
+        │
+        ▼
+handle_vertex_push() / handle_draw()
+        │
+        ▼
+g_verts[] + g_vert_count
+        │
+        ▼
+assemble_and_raster()
+        │
+        ├─► raster_line()
+        └─► raster_triangle()
+                │
+                ▼
+            plot(x, y, z, color)
+                │
+                ▼
+            g_pixels framebuffer surface
+```
+
+## 6C — Vertex buffers + depth + scissor
+
+```text
+Guest PPU memory
+        │
+        ▼
+handle_vertex_buffer() ─► g_vb_addr
+handle_index_buffer()  ─► g_ib_addr
+handle_vertex_stride()  ─► g_vb_stride
+        │
+        ▼
+handle_draw_arrays() / handle_draw_elements()
+        │
+        ▼
+guest_read_vertex()
+        │
+        ▼
+Vertex{x, y, z, color}
+        │
+        ▼
+assemble_and_raster()
+        │
+        ├─► scissor bounds
+        │       │
+        │       ▼
+        │   plot() clipping
+        │
+        └─► depth_test(x, y, z)
+                │
+                ▼
+            g_depth[]
+                │
+                ▼
+            g_pixels[]
+```
+
+## 6D — Smooth shading + texture bind
+
+```text
+RSX shading / texture state command
+        │
+        ▼
+RSX method decoder
+        │
+        ▼
+current interpolation / texture binding state
+        │
+        ▼
+vertex / primitive assembly
+        │
+        ▼
+rasterization
+        │
+        ├─► per-vertex color interpolation
+        └─► bound texture sampling
+                │
+                ▼
+            final fragment color
+                │
+                ▼
+            depth + scissor tests
+                │
+                ▼
+            g_pixels[]
+```
+
+6D is delivered. The next RSX stage expands this path with explicit
+per-vertex UV attributes, wrap modes and perspective-correct interpolation.
+
+## 6E — Next
+
+```text
+Vertex position + UV
+        │
+        ▼
+per-vertex attribute setup
+        │
+        ▼
+perspective-correct interpolation
+        │
+        ▼
+texture coordinate wrap
+        │
+        ▼
+texture sample
+        │
+        ▼
+fragment color
+        │
+        ▼
+RSX depth/scissor
+        │
+        ▼
+framebuffer
+```
+
+# Phase 7 — GameRunner + Compatibility Layer
+
+## 7A — Format detection
+
+```text
+file bytes
+        │
+        ▼
+gamerunner::detect()
+        │
+        ├─► ELF magic + machine
+        │       ├─► PS3 ELF
+        │       └─► native x86-64 ELF
+        │
+        └─► detect_bin()
+                ├─► SELF/RPKG signatures
+                └─► Unknown
+```
+
+## 7B — PS3 ABI syscall table + PPU guest launch
+
+```text
+VFS path
+        │
+        ▼
+gamerunner::launch_from_path()
+        │
+        ▼
+VNode size/read
+        │
+        ▼
+launch_from_memory()
+        │
+        ▼
+parse_ps3_executable()
+        │
+        ▼
+load_segments_into_guest()
+        │
+        ▼
+ppu::Context + guest memory callbacks
+        │
+        ▼
+abi::install()
+        │
+        ▼
+ppu::run(ctx, 100000)
+        │
+        ▼
+abi::dispatch()
+        │
+        ├─► process exit
+        ├─► process fork
+        ├─► read/write/open/close
+        ├─► getpid
+        └─► CellFs calls
+```
+
+## 7C — cellFs VFS bridge
+
+```text
+PS3 guest cellFs operation
+        │
+        ▼
+PS3 ABI syscall number + guest arguments
+        │
+        ▼
+abi::dispatch()
+        │
+        ▼
+cellFs operation bridge
+        │
+        ▼
+native VFS path / VNode / File
+        │
+        ├─► initramfs
+        └─► NYFS /disk
+                │
+                ▼
+        native file bytes / status
+                │
+                ▼
+        PS3 guest return value / buffer
+```
+
+## 7D — Not started
+
+```text
+GameRunner launch
+        │
+        ▼
+full game-session lifecycle
+        │
+        ▼
+PPU + SPU + RSX + ABI + VFS
+        │
+        ▼
+continuous guest execution
+```
+
+# Phase 8 — Rendering Validation
+
+## 8A / 8B — Completed rendering validation
+
+```text
+PS3 guest command stream
+        │
+        ▼
+RSX FIFO
+        │
+        ▼
+RSX state + rasterizer
+        │
+        ▼
+g_depth[] / scissor / g_pixels[]
+        │
+        ▼
+Rsx::snapshot()
+        │
+        ▼
+validation/self-test output
+        │
+        ▼
+framebuffer rendering path
+```
+
+# Phase 9 — Image Support
+
+## 9A — BMP decoder + Image Viewer
+
+```text
+BMP file bytes
+        │
+        ▼
+BMP header / DIB parsing
+        │
+        ▼
+decoded width + height + pixel data
+        │
+        ▼
+Image Viewer application state
+        │
+        ▼
+Graphics API drawing
+        │
+        ▼
+compositor scene
+        │
+        ▼
+framebuffer
+```
+
+## 9B — Next
+
+```text
+PNG/JPEG bytes
+        │
+        ├─► PNG parser ─► inflate ─► decoded pixels
+        └─► JPEG parser ─► decoded pixels
+                │
+                ▼
+          Image Viewer
+```
+
+# Phase 10 — Theme and UI Management
+
+## 10A — Theme system
+
+```text
+Theme selection
+        │
+        ▼
+Theme state
+        │
+        ├─► Dark
+        ├─► Light
+        └─► macOS Dark
+                │
+                ▼
+UI color/style values
+                │
+                ▼
+widgets + Settings + Explorer + desktop
+                │
+                ▼
+compositor scene
+```
+
+## 10B — Next
+
+```text
+Settings window
+        │
+        ▼
+Appearance tab
+        │
+        ▼
+theme selection control
+        │
+        ▼
+Theme state
+        │
+        ▼
+live desktop/UI update
+```
+
+# Current completed boundary
+
+```text
+1A–1G
+   │
+   ▼
+2A–2N
+   │
+   ▼
+3A–3E
+   │
+   ▼
+4A–4E
+   │
+   ▼
+5A
+   │
+   ▼
+6A–6D
+   │
+   ▼
+7A–7C
+   │
+   ▼
+8A–8B
+   │
+   ▼
+9A
+   │
+   ▼
+10A
+   │
+   ▼
+NEXT: 5B / 6E / 9B / 10B
+```
+
+The data-flow diagrams describe the delivered implementation boundary. Future
+flows are explicitly labelled Next or Not started and are not claims of
+implemented functionality.
