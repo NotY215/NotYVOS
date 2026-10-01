@@ -10,8 +10,8 @@
 5. kernel_main initializes serial output, framebuffer console and logging.
 6. CPU and memory subsystems initialize: CPU features, physical memory,
    virtual memory, kernel heap and executable memory arena.
-7. ACPI, AHCI block storage, e1000 networking, HDA audio, per-CPU/LAPIC and
-   SMP support are initialized.
+7. CPU/RTC, ACPI, AHCI block storage, e1000 networking, HDA audio, per-CPU/LAPIC
+   and SMP support are initialized.
 8. NYFS is mounted on the first available block device. If its superblock is
    absent, the development filesystem is formatted.
 9. The Limine initramfs module is parsed as a ustar archive and mounted at /.
@@ -20,8 +20,8 @@
     buffered desktop rendering.
 11. Software and VBE graphics backends are registered and the graphics
     device is initialized.
-12. The PS3 runtime initializes its translation cache and runs decoder, ELF,
-    PPU, SPU, DMA and JIT self-tests.
+12. The PS3 runtime initializes its translation cache and RSX state, then runs
+    decoder, ELF, PPU, SPU, DMA, JIT and RSX self-tests.
 13. The scheduler initializes.
 14. init.elf is loaded as an x86-64 user process with its own address space
     and user stack.
@@ -49,3 +49,18 @@ boot verification after the latest JIT boot fixes.
 The native PC boot path does not depend on Sony PS3 firmware. PS3 firmware,
 when required by later runtime stages, belongs exclusively to the PS3 runtime
 domain.
+
+
+## Current runtime additions
+
+After the original kernel/userland foundation, the current repository also
+contains:
+
+- RSX structural and software rasterization support through Phase 6D
+- GameRunner format detection and PS3 guest launch through Phase 7C
+- Rendering validation through Phase 8B
+- BMP/Image Viewer support from Phase 9A
+- Dark, Light and macOS Dark theme state from Phase 10A
+
+These additions are runtime domains layered above the existing kernel, VFS and
+graphics infrastructure.
