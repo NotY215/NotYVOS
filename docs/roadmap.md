@@ -67,9 +67,9 @@ acceleration.
 | Subphase | Status | Focus |
 |---|---|---|
 | **5A — Baseline JIT + trampoline + self-test** | **Done** | Baseline PPU block translation, x86-64 emitter, executable entry, translation cache and self-tests |
-| **5B — Memory opcodes + conditional branch + block chaining** | **Next** | Broader memory operations, conditional control flow and chained translated blocks |
-| 5C — FPU + VMX translation | Not started | PPU floating-point and VMX/vector translation |
-| 5D — Cache invalidation + self-modifying-code detection | Not started | Translation invalidation and self-modifying code handling |
+| **5B — Memory opcodes + conditional branch + block chaining** | **Done** | Broader memory operations, conditional control flow and chained translated blocks |
+| **5C — FPU + VMX translation** | **Done** | PPU floating-point and VMX/vector translation |
+| **5D — Cache invalidation + self-modifying-code detection** | **Done** | Translation invalidation and self-modifying code handling |
 
 ## Phase 6 — RSX Compatibility
 
@@ -128,11 +128,11 @@ acceleration.
 
 The implemented roadmap now reaches through:
 
-**1A–1G → 2A–2N → 3A–3E → 4A–4E → 5A → 6A–6D → 7A–7C → 8A–8B → 9A → 10A**
+**1A–1G → 2A–2N → 3A–3E → 4A–4E → 5A–5D → 6A–6D → 7A–7C → 8A–8B → 9A → 10A**
 
 The immediate next items are:
 
-**5B, 6E, 9B and 10B**
+**6E, 9B and 10B**
 
 The later compatibility work remains:
 
