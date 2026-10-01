@@ -7,7 +7,7 @@ foundation.
 NOTYVOS is currently a development-stage system. The native kernel, user process model, VFS, desktop compositor, widgets,
 storage stack, PS3 runtime foundation, RSX compatibility foundation,
 GameRunner foundation, image viewer, theme system and native GPU backend are implemented.
-Extended image decoding, full UI management and Windows application compatibility remain future work.
+Extended UI management and Windows application compatibility remain future work.
 
 ## Current platform
 
@@ -95,15 +95,18 @@ exec, brk, time, sleep, kill, about, and exit handling.
 - RSX software rasterization
 - RSX vertex/index buffers, depth and scissor state
 - RSX smooth shading and texture binding
+- RSX per-vertex UVs, wrap modes, perspective-correct interpolation and mipmaps
 - GameRunner format detection
 - PS3 ABI syscall table and bounded PPU guest launch
 - cellFs VFS bridge
 - Rendering validation through the current RSX path
 
 ### Image and desktop UI
-- BMP decoding and Image Viewer application
+- BMP, PNG, GIF, ICO and JPEG decoding
+- BMP/Image Viewer application
 - Dark, Light and macOS Dark theme system
-- Settings application and current desktop theme infrastructure
+- Desktop shortcuts and theme integration
+- Settings Appearance controls and current desktop theme infrastructure
 
 ## Current roadmap status
 
@@ -112,12 +115,12 @@ exec, brk, time, sleep, kill, about, and exit handling.
 - Phases 3A through 3F: completed
 - Phases 4A through 4E: completed
 - Phases 5A through 5D: completed
-- Phases 6A through 6D: completed
+- Phases 6A through 6F: completed
 - Phases 7A through 7C: completed
 - Phases 8A and 8B: completed
-- Phase 9A: completed
-- Phase 10A: completed
-- Next: 6E, 9B and 10B
+- Phases 9A through 9C: completed
+- Phases 10A and 10B: completed
+- Phases 1 through 10: completed through all defined subphases
 - Later: 7D, remaining Phase 10 UI management, 11 and 12
 
 See docs/roadmap.md for the complete phase table.
