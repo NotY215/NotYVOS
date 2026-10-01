@@ -107,6 +107,7 @@ extern "C"
 #include <kernel/ps3/jit/jit.hpp>
 #include <kernel/ps3/self_test.hpp>
 #include <kernel/ps3/rsx/rsx.hpp>
+#include <kernel/ps3/gamerunner.hpp>
 #include <kernel/sched/scheduler.hpp>
 #include <kernel/types.hpp>
 

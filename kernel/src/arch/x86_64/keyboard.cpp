@@ -69,6 +69,7 @@ void write_cmd(u8 cmd) noexcept
     if (wait_input_clear())
         outb(kCmdPort, cmd);
 }
+
 void write_data(u8 data) noexcept
 {
     if (wait_input_clear())
@@ -85,21 +86,11 @@ void flush_output() noexcept
     }
 }
 
-void mouse_write(u8 byte) noexcept
-{
-    write_cmd(0xD4);
-    write_data(byte);
-    if (wait_output_full(500000))
-        (void)inb(kDataPort);
-}
-
 void process_scancode(u8 sc)
 {
-    // Discard ACKs, extended prefixes are handled below.
     if (sc == 0xFA)
         return;
 
-    // Extended prefix (E0) — the next byte is a special key.
     if (sc == 0xE0)
     {
         g_extended = true;
@@ -109,7 +100,6 @@ void process_scancode(u8 sc)
     if (g_extended)
     {
         g_extended = false;
-        // Make/break both go through here; break has bit 7 set.
         const bool release = (sc & 0x80) != 0;
         if (release)
             return;
@@ -196,50 +186,62 @@ bool keyboard_init() noexcept
 {
     log::write(log::Level::Info, "kbd", "init start");
 
+    // Full i8042 reset so that a warm ACPI restart does not leave the
+    // controller in a stale state.
+    write_cmd(0xAD); // disable kbd
+    write_cmd(0xA7); // disable aux
     flush_output();
 
-    write_cmd(0x20);
+    write_cmd(0xAA); // self-test -> 0x55
+    u8 selftest = 0;
+    if (wait_output_full(500000))
+        selftest = inb(kDataPort);
+    log::write(log::Level::Info, "kbd", "i8042 self-test -> 0x%llx",
+               static_cast<unsigned long long>(selftest));
+
+    write_cmd(0x20); // read config
     u8 cfg = 0;
     if (wait_output_full(500000))
         cfg = inb(kDataPort);
     log::write(log::Level::Info, "kbd", "firmware cfg = 0x%llx",
                static_cast<unsigned long long>(cfg));
 
+    // Force the config to a known-good state. Always write, even if it
+    // matches, so the mouse clock and both interrupts are guaranteed on
+    // after a warm reset.
     u8 target = cfg;
-    target |= 0x01;
-    target |= 0x02;
-    target |= 0x40;
-    target &= ~static_cast<u8>(0x10);
+    target |= 0x01;                   // kbd IRQ on IRQ1
+    target |= 0x02;                   // mouse IRQ on IRQ12
+    target |= 0x40;                   // translate scancode set 2 to set 1
+    target &= ~static_cast<u8>(0x10); // enable kbd clock
+    target &= ~static_cast<u8>(0x20); // enable mouse clock
 
-    if (target != cfg)
-    {
-        write_cmd(0x60);
-        write_data(target);
-        write_cmd(0x20);
-        u8 rb = 0;
-        if (wait_output_full(500000))
-            rb = inb(kDataPort);
-        log::write(log::Level::Info, "kbd", "wrote cfg 0x%llx, readback 0x%llx",
-                   static_cast<unsigned long long>(target), static_cast<unsigned long long>(rb));
-    }
-    else
-    {
-        log::write(log::Level::Info, "kbd", "cfg unchanged");
-    }
+    write_cmd(0x60);
+    write_data(target);
+    write_cmd(0x20);
+    u8 readback = 0;
+    if (wait_output_full(500000))
+        readback = inb(kDataPort);
+    log::write(log::Level::Info, "kbd", "wrote cfg 0x%llx, readback 0x%llx",
+               static_cast<unsigned long long>(target), static_cast<unsigned long long>(readback));
 
-    write_data(0xF4);
+    write_cmd(0xAE); // enable kbd port
+    write_cmd(0xA8); // enable aux port
+
+    flush_output();
+    write_data(0xF6); // set defaults
     u8 ack = 0;
+    if (wait_output_full(500000))
+        ack = inb(kDataPort);
+    (void)ack;
+
+    write_data(0xF4); // enable scanning
+    ack = 0;
     if (wait_output_full(500000))
         ack = inb(kDataPort);
     log::write(log::Level::Info, "kbd", "0xF4 -> 0x%llx", static_cast<unsigned long long>(ack));
 
-    write_cmd(0xA8);
-    log::write(log::Level::Info, "kbd", "aux port enabled");
-
-    mouse_write(0xF6);
-    mouse_write(0xF4);
-    log::write(log::Level::Info, "kbd", "mouse init sent");
-
+    log::write(log::Level::Info, "kbd", "i8042 ready");
     return true;
 }
 

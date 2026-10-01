@@ -365,11 +365,12 @@ void test_rlwnm() noexcept
     (void)notyvos::ps3::jit::run(&ctx, 4);
 
     // low32(r3) = 0x12345678
-    // rotl32 by 5 = 0x2468ACF0
-    // & 0xFF = 0xF0
-    const bool ok = (ctx.gpr[5] == 0x00000000000000F0ULL);
+    // rotl32(0x12345678, 5) = (x << 5) | (x >> 27)
+    //                       = 0x468ACF00 | 0x00000002 = 0x468ACF02
+    // & 0xFF = 0x02
+    const bool ok = (ctx.gpr[5] == 0x0000000000000002ULL);
     log::write(ok ? log::Level::Info : log::Level::Warn, "jit",
-               "JIT rlwnm  test: %s r5=0x%llx (expected 0xf0)", ok ? "PASS" : "FAIL",
+               "JIT rlwnm  test: %s r5=0x%llx (expected 0x2)", ok ? "PASS" : "FAIL",
                static_cast<unsigned long long>(ctx.gpr[5]));
 }
 

@@ -39,6 +39,8 @@ set(KERNEL_SOURCES
     src/ps3/jit/translate.cpp
     src/ps3/rsx/rsx.cpp
     src/ps3/rsx/self_test.cpp
+    src/ps3/gamerunner.cpp
+    src/ps3/abi/syscalls.cpp
     src/gpu/gpu.cpp
     src/gfx/hal.cpp
     src/gfx/api.cpp
