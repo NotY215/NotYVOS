@@ -9,7 +9,7 @@ tools/scripts/convert-wallpaper.sh provides the matching conversion path.
 The converter limits the output to a maximum width of 1920 pixels while
 preserving the original aspect ratio.
 
-The kernel does not decode PNG files. It loads the converted raw buffer and
+The kernel image subsystem can decode PNG files, but the wallpaper build path still uses the converted raw buffer and
 uses it as the desktop background. If no wallpaper is packaged, the
 compositor renders its built-in background gradient.
 
