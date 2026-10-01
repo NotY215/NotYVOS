@@ -664,16 +664,13 @@ sequenceDiagram
 
 Completed implementation currently covers:
 
-**1A–1G → 2A–2N → 3A–3E → 4A–4E**
+**1A–1G → 2A–2N → 3A–3F → 4A–4E → 5A–5D → 6A–6F → 7A–7C → 8A–8B → 9A–9C → 10A–10B**
 
-Phase **5A** contains the baseline JIT and trampoline work, but its latest
-boot-fix state still requires a clean rebuild and boot verification.
+All defined Phase 1–10 subphases are delivered. The remaining roadmap work is
+7D, the remaining Phase 10 UI management scope, Phase 11 and Phase 12.
 
-Phase **5B** is the next translation stage. Phases **5C–5D and 6–10** remain
-future work.
-
-The diagrams for future phases are architecture/data-flow plans only and
-must not be read as implemented functionality.
+The diagrams for later work are architecture/data-flow plans only and must not
+be read as implemented functionality.
 
 
 <!-- Source-level flow notation: hardware/input -> exact source symbol -> state -> consumer. -->
