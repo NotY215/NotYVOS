@@ -460,10 +460,11 @@ flowchart LR
 
 ## Phase 5 — Native Translation
 
+All Phase 5 subphases are delivered: **5A, 5B, 5C and 5D**.
+
 ### 5A — Baseline JIT + trampoline + self-test
 
-**Current state: boot fixes applied. A fresh rebuild and boot verification is
-still required before this subphase is treated as runtime-verified.**
+**Status: DONE.**
 
 ```mermaid
 sequenceDiagram
@@ -493,9 +494,9 @@ sequenceDiagram
 
 ### 5B — Memory opcodes + conditional branch + block chaining
 
-**Status: Next.**
+**Status: DONE.**
 
-Planned data flow:
+Implemented data flow:
 
 ```mermaid
 flowchart LR
@@ -509,8 +510,7 @@ flowchart LR
     CHAIN --> CACHE
 ```
 
-This diagram describes the next implementation boundary and is not marked
-as completed functionality.
+The translated memory and control-flow path feeds the completed translation cache and native execution path.
 
 ### 5C — FPU + VMX translation
 
@@ -525,7 +525,7 @@ flowchart LR
     X86V --> CTX
 ```
 
-**Status: Not started.**
+**Status: DONE.**
 
 ### 5D — Cache invalidation + self-modifying-code detection
 
@@ -538,7 +538,7 @@ flowchart LR
     RETRANS --> EXEC[Executable arena]
 ```
 
-**Status: Not started.**
+**Status: DONE.**
 
 ## Phase 6 — RSX Graphics Compatibility
 
@@ -647,8 +647,8 @@ sequenceDiagram
     V-->>U: Data / status
     U->>G: Desktop interaction
     G-->>HW: Framebuffer output
-    U->>R: Future runtime requests
-    R-->>U: PS3 execution results
+    U->>R: PS3 runtime launch/services
+    R-->>U: Guest execution state / results
 ```
 
 ## Status legend
@@ -1390,6 +1390,25 @@ Graphics API
 compositor scene
 ```
 
+## 3F
+```text
+Graphics API request
+        │
+        ▼
+GPU abstraction / HAL
+        │
+        ▼
+native GPU backend
+        │
+        ▼
+hardware-backed render path
+        │
+        ▼
+framebuffer presentation
+```
+
+**Status: DONE.**
+
 ## 3E
 ```text
 desktop/widget draw request
@@ -1570,6 +1589,72 @@ native x86-64 execution
         ▼
 updated guest/PPU context
 ```
+
+## 5B
+```text
+PPU instruction stream
+        │
+        ▼
+instruction decoder
+        │
+        ├─► memory operation lowering
+        └─► conditional branch lowering
+                │
+                ▼
+        translated target block
+                │
+                ▼
+        block chaining
+                │
+                ▼
+        translation cache
+                │
+                ▼
+        executable arena
+```
+
+**Status: DONE.**
+
+## 5C
+```text
+PPU FPU / VMX instruction
+        │
+        ▼
+PowerPC decoder
+        │
+        ├─► FPU translation ─► x86-64 floating-point state
+        └─► VMX translation ─► x86-64 vector state
+                │
+                ▼
+        translated block
+                │
+                ▼
+        JIT execution
+```
+
+**Status: DONE.**
+
+## 5D
+```text
+Guest code write
+        │
+        ▼
+code modification detection
+        │
+        ▼
+affected translation invalidation
+        │
+        ▼
+translation cache update
+        │
+        ▼
+re-translation
+        │
+        ▼
+executable arena
+```
+
+**Status: DONE.**
 
 ## 5A
 ```text
@@ -2034,3 +2119,39 @@ NEXT: 6E / 9B / 10B
 The data-flow diagrams describe the delivered implementation boundary. Future
 flows are explicitly labelled Next or Not started and are not claims of
 implemented functionality.
+
+
+## Implementation status graph
+
+```mermaid
+flowchart TD
+    P1[Phase 1: 1A–1G DONE] --> P2[Phase 2: 2A–2N DONE]
+    P2 --> P3[Phase 3: 3A–3F DONE]
+    P3 --> P4[Phase 4: 4A–4E DONE]
+    P4 --> P5[Phase 5: 5A–5D DONE]
+    P5 --> P6[Phase 6: 6A–6D DONE]
+    P6 --> N6E[6E NEXT]
+    P6 --> P7[Phase 7: 7A–7C DONE]
+    P7 --> N7D[7D NOT STARTED]
+    P7 --> P8[Phase 8: 8A–8B DONE]
+    P8 --> P9[Phase 9: 9A DONE]
+    P9 --> N9B[9B NEXT]
+    P9 --> P10[Phase 10: 10A DONE]
+    P10 --> N10B[10B NEXT]
+```
+
+## Native translation graph
+
+```mermaid
+flowchart LR
+    PPC[PPU instruction] --> DEC[PowerPC decoder]
+    DEC --> CACHE[Translation cache]
+    CACHE --> JIT[Native JIT]
+    JIT --> ARENA[Executable arena]
+    ARENA --> CHAIN[Block chaining]
+    CHAIN --> FPU[FPU / VMX translation]
+    FPU --> INVALID[Cache invalidation]
+    INVALID --> CACHE
+    JIT --> TRAMP[JIT trampoline]
+    TRAMP --> CPU[x86-64 CPU]
+```
