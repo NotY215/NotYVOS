@@ -15,7 +15,16 @@ enum class WindowKind : u8
     Settings,
     Bin,
     ImageViewer,
+    GameLauncher,
     Generic
+};
+
+// Window open/close animation states.
+enum class AnimState : u8
+{
+    Settled = 0,
+    Opening = 1,
+    Closing = 2,
 };
 
 struct Window
@@ -31,6 +40,9 @@ struct Window
     i32 saved_x, saved_y, saved_w, saved_h;
     WindowKind kind;
     char title[kWinTitleMax];
+
+    AnimState anim_state;
+    u64 anim_start_tick;
 };
 
 class Compositor

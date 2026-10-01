@@ -3,6 +3,7 @@
 #include <kernel/arch/x86_64/serial.hpp>
 #include <kernel/fb/console.hpp>
 #include <kernel/log.hpp>
+#include <kernel/libk/mem.hpp>
 
 namespace notyvos::log
 {
@@ -10,6 +11,31 @@ namespace notyvos::log
 namespace
 {
 Level g_level = Level::Info;
+
+// ---------------------------------------------------------------------------
+// Log ring buffer. Every completed line is stored here, independent of the
+// console target, so the terminal can be primed with the boot log after
+// the compositor comes up.
+// ---------------------------------------------------------------------------
+constexpr u32 kRingLines = 256;
+constexpr u32 kRingCols = 160;
+char g_ring[kRingLines][kRingCols];
+u32 g_ring_head = 0;  // index of the oldest valid line
+u32 g_ring_count = 0; // number of valid lines (<= kRingLines)
+
+void push_ring(const char* line, u32 len) noexcept
+{
+    const u32 slot = (g_ring_head + g_ring_count) % kRingLines;
+    const u32 copy_len = (len < kRingCols - 1) ? len : (kRingCols - 1);
+    for (u32 i = 0; i < copy_len; ++i)
+        g_ring[slot][i] = line[i];
+    g_ring[slot][copy_len] = 0;
+
+    if (g_ring_count < kRingLines)
+        ++g_ring_count;
+    else
+        g_ring_head = (g_ring_head + 1) % kRingLines;
+}
 
 const char* level_str(Level l) noexcept
 {
@@ -342,51 +368,85 @@ void write(Level lvl, const char* tag, const char* fmt, ...) noexcept
     if (static_cast<int>(lvl) < static_cast<int>(g_level))
         return;
 
-    // Serial prefix
-    arch::x86_64::SerialPort::write("[");
-    arch::x86_64::SerialPort::write(level_str(lvl));
-    arch::x86_64::SerialPort::write("] ");
-    if (tag)
-    {
-        arch::x86_64::SerialPort::write(tag);
-        arch::x86_64::SerialPort::write(": ");
-    }
+    char line_buf[kRingCols];
+    u32 line_len = 0;
 
-    // Console prefix
     const bool console = fb::Console::ready();
-    if (console)
-    {
-        fb::Console::set_colors(0x00A0A0A0, 0x00101018);
-        fb::Console::put('[');
-        fb::Console::set_colors(level_color(lvl), 0x00101018);
-        fb::Console::puts(level_str(lvl));
-        fb::Console::set_colors(0x00A0A0A0, 0x00101018);
-        fb::Console::puts("] ");
-        if (tag)
-        {
-            fb::Console::set_colors(0x0080C0FF, 0x00101018);
-            fb::Console::puts(tag);
-            fb::Console::set_colors(0x00A0A0A0, 0x00101018);
-            fb::Console::puts(": ");
-        }
-        fb::Console::set_colors(0x00E0E0E0, 0x00101018);
-    }
 
-    auto emit = [console](char c)
+    // Single emit path: serial + console + ring capture.
+    auto emit = [&](char c)
     {
         arch::x86_64::SerialPort::write_char(c);
         if (console)
             fb::Console::put(c);
+        if (line_len < kRingCols - 1)
+            line_buf[line_len++] = c;
     };
+
+    if (console)
+        fb::Console::set_colors(0x00A0A0A0, 0x00101018);
+    emit('[');
+    if (console)
+        fb::Console::set_colors(level_color(lvl), 0x00101018);
+    for (const char* p = level_str(lvl); *p; ++p)
+        emit(*p);
+    if (console)
+        fb::Console::set_colors(0x00A0A0A0, 0x00101018);
+    emit(']');
+    emit(' ');
+    if (tag)
+    {
+        if (console)
+            fb::Console::set_colors(0x0080C0FF, 0x00101018);
+        for (const char* p = tag; *p; ++p)
+            emit(*p);
+        if (console)
+            fb::Console::set_colors(0x00A0A0A0, 0x00101018);
+        emit(':');
+        emit(' ');
+    }
+    if (console)
+        fb::Console::set_colors(0x00E0E0E0, 0x00101018);
 
     va_list ap;
     va_start(ap, fmt);
     format(emit, fmt, ap);
     va_end(ap);
 
-    arch::x86_64::SerialPort::write_char('\n');
-    if (console)
-        fb::Console::put('\n');
+    emit('\n');
+    line_buf[line_len] = 0;
+
+    push_ring(line_buf, line_len);
+}
+// Ring-buffer replay of log lines. `sink` is called once per stored line,
+// oldest first. Used by the compositor to prime the terminal with the
+// boot log that occurred before the terminal existed.
+using LineSink = void (*)(const char* line, void* user);
+void replay(LineSink sink, void* user) noexcept;
+
+// Reset the ring. Only called by tests.
+void ring_clear() noexcept;
+} // namespace notyvos::log
+namespace notyvos::log
+{
+
+void replay(LineSink sink, void* user) noexcept
+{
+    if (!sink)
+        return;
+    for (u32 i = 0; i < g_ring_count; ++i)
+    {
+        const u32 slot = (g_ring_head + i) % kRingLines;
+        sink(g_ring[slot], user);
+    }
+}
+
+void ring_clear() noexcept
+{
+    g_ring_head = 0;
+    g_ring_count = 0;
+    for (u32 i = 0; i < kRingLines; ++i)
+        g_ring[i][0] = 0;
 }
 
 } // namespace notyvos::log

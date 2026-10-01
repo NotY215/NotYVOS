@@ -21,6 +21,7 @@ set(KERNEL_SOURCES
     src/mm/heap.cpp
     src/mm/exec_page.cpp
     src/gfx/theme.cpp
+    src/gfx/icons.cpp
     src/img/decoder.cpp
     src/img/bmp.cpp
     src/img/self_test.cpp
@@ -29,6 +30,9 @@ set(KERNEL_SOURCES
     src/img/gif.cpp
     src/img/ico.cpp
     src/img/jpeg.cpp
+    src/img/svg.cpp
+    src/img/svg.cpp
+    src/gfx/icons.cpp
     src/fs/vnode.cpp
     src/fs/file.cpp
     src/fs/vfs.cpp

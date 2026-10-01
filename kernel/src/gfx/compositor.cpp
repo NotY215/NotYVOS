@@ -2,6 +2,7 @@
 #include <kernel/acpi/acpi.hpp>
 #include <kernel/arch/x86_64/io.hpp>
 #include <kernel/arch/x86_64/mouse.hpp>
+#include <kernel/arch/x86_64/keyboard.hpp>
 #include <kernel/arch/x86_64/pit.hpp>
 #include <kernel/arch/x86_64/rtc.hpp>
 #include <kernel/fb/framebuffer.hpp>
@@ -12,11 +13,15 @@
 #include <kernel/gfx/compositor.hpp>
 #include <kernel/gfx/hal.hpp>
 #include <kernel/gfx/theme.hpp>
+#include <kernel/gfx/icons.hpp>
 #include <kernel/gpu/gpu.hpp>
 #include <kernel/libk/mem.hpp>
 #include <kernel/libk/string.hpp>
 #include <kernel/log.hpp>
 #include <kernel/mm/heap.hpp>
+#include <kernel/block/block.hpp>
+#include <kernel/mm/pmm.hpp>
+#include <kernel/fs/nyfs.hpp>
 
 namespace notyvos::gfx
 {
@@ -33,9 +38,22 @@ constexpr u32 kTitleH = 26;
 constexpr u32 kBorder = 1;
 constexpr u32 kShortcutW = 120;
 constexpr u32 kShortcutH = 40;
-constexpr u32 kCtxW = 180;
-constexpr u32 kCtxItemH = 24;
-constexpr u32 kCtxSepH = 6;
+constexpr u32 kCtxW      = 180;
+constexpr u32 kCtxItemH  = 24;
+constexpr u32 kCtxSepH   = 6;
+
+// Terminal geometry. Buffer is a scrollback of up to kTermMaxLines lines,
+// each up to kTermMaxCols chars wide. The visible viewport is
+// (g_term_cols x g_term_rows) inside that buffer.
+constexpr u32 kTermMaxCols  = 200;
+constexpr u32 kTermMaxLines = 500;
+
+// Set to true if your hardware reports wheel-down as positive (uncommon).
+// Most hardware follows the IntelliMouse convention: wheel-up is +1.
+constexpr bool kTermScrollInvert = false;
+
+// Window open/close animation duration, in PIT ticks. 100 Hz -> 15 = 150 ms.
+constexpr u64 kAnimTicks = 15;
 
 // Theme-driven palette.
 u32 kBgTop, kBgBottom;
@@ -142,11 +160,14 @@ u32* g_wallpaper = nullptr;
 Window g_windows[kMaxWindows] = {};
 u32 g_win_count = 0;
 
-u32 g_term_cols = 0;
-u32 g_term_rows = 0;
-char g_term[120 * 60];
-u32 g_term_cursor = 0;
-u32 g_term_scroll = 0;
+u32 g_term_cols = 0;         // visible width in chars
+u32 g_term_rows = 0;         // visible height in lines
+u32 g_term_cursor = 0;       // byte offset into g_term (stride = g_term_cols)
+u32 g_term_stored_lines = 0; // how many lines of content are currently stored
+u32 g_term_scroll = 0;       // how many lines back from bottom the view is
+
+// Flat scrollback: kTermMaxCols stride x kTermMaxLines lines = 100 KB.
+char g_term[kTermMaxCols * kTermMaxLines];
 
 u64 g_clock_sec = 0;
 u64 g_rtc_boot_unix = 0;
@@ -179,6 +200,10 @@ u64 g_last_click_tick = 0;
 i32 g_last_click_shortcut = -1;
 
 bool g_dirty_scene = true;
+
+// Alt-Tab window switcher.
+bool g_switcher_open = false;
+i32 g_switcher_idx = 0;
 
 inline i32 to_i32(u32 v) noexcept
 {
@@ -247,6 +272,81 @@ void s_text(i32 px, i32 py, const char* s, u32 fg, u32 bg)
         s_glyph(x, py, *s, fg, bg);
         x += static_cast<i32>(kCellW);
         ++s;
+    }
+}
+
+// Blit a loaded SVG icon into the scene buffer. Uses nearest-neighbour
+// scaling. Transparent black (0x000000) is skipped so icons composite
+// over whatever is behind them.
+void s_icon(icons::Id id, i32 x, i32 y, u32 size)
+{
+    const u32* src = icons::bitmap(id);
+    if (!src || size == 0)
+        return;
+    const u32 src_size = icons::bitmap_size(id);
+    if (src_size == 0)
+        return;
+
+    for (u32 j = 0; j < size; ++j)
+    {
+        const u32 sy = (j * src_size) / size;
+        for (u32 i = 0; i < size; ++i)
+        {
+            const u32 sx = (i * src_size) / size;
+            const u32 c = src[sy * src_size + sx];
+            if ((c & 0x00FFFFFFu) == 0)
+                continue;
+            const i32 px = x + static_cast<i32>(i);
+            const i32 py = y + static_cast<i32>(j);
+            if (px < 0 || py < 0)
+                continue;
+            if (px >= to_i32(g_w) || py >= to_i32(g_h))
+                continue;
+            g_scene[static_cast<u32>(py) * g_w + static_cast<u32>(px)] = c;
+        }
+    }
+}
+
+// Map a shortcut kind to its icon.
+icons::Id icon_for_shortcut(u8 kind)
+{
+    switch (kind)
+    {
+    case 0:
+        return icons::Id::Explorer; // Explorer
+    case 1:
+        return icons::Id::Settings; // Settings
+    case 2:
+        return icons::Id::Terminal; // Terminal
+    case 3:
+        return icons::Id::GameLauncher; // Game Lchr
+    case 4:
+        return icons::Id::Explorer; // Images (reuse explorer for now)
+    case 5:
+        return icons::Id::Bin; // Bin
+    default:
+        return icons::Id::Explorer;
+    }
+}
+
+icons::Id icon_for_window(WindowKind kind)
+{
+    switch (kind)
+    {
+    case WindowKind::Terminal:
+        return icons::Id::Terminal;
+    case WindowKind::Explorer:
+        return icons::Id::Explorer;
+    case WindowKind::Settings:
+        return icons::Id::Settings;
+    case WindowKind::Bin:
+        return icons::Id::Bin;
+    case WindowKind::ImageViewer:
+        return icons::Id::Explorer;
+    case WindowKind::GameLauncher:
+        return icons::Id::GameLauncher;
+    default:
+        return icons::Id::StartButton;
     }
 }
 
@@ -384,9 +484,14 @@ void scene_draw_shortcut(const Shortcut& sc, bool hover, bool focus)
     s_fill(sc.x, sc.y, static_cast<i32>(kShortcutW), static_cast<i32>(kShortcutH), bg);
     s_rect(sc.x, sc.y, static_cast<i32>(kShortcutW), static_cast<i32>(kShortcutH), kBorderFg);
 
-    const u32 len = static_cast<u32>(libk::strlen(sc.label));
-    const i32 text_w = static_cast<i32>(len) * static_cast<i32>(kCellW);
-    const i32 text_x = sc.x + (static_cast<i32>(kShortcutW) - text_w) / 2;
+    // Icon on the left, label on the right.
+    const i32 icon_size = 28;
+    const i32 icon_x = sc.x + 8;
+    const i32 icon_y = sc.y + (static_cast<i32>(kShortcutH) - icon_size) / 2;
+    s_icon(icon_for_shortcut(static_cast<u8>(sc.kind)), icon_x, icon_y,
+           static_cast<u32>(icon_size));
+
+    const i32 text_x = icon_x + icon_size + 8;
     const i32 text_y = sc.y + (static_cast<i32>(kShortcutH) - static_cast<i32>(kCellH)) / 2;
     s_text(text_x, text_y, sc.label, kTextFg, bg);
 }
@@ -438,6 +543,96 @@ void civil_from_unix(u64 unix_secs, u32& year, u32& month, u32& day, u32& hour, 
 }
 } // namespace
 
+// Right-of-desktop disk panel. Reads block device + filesystem state and
+// renders a small "This PC" widget showing mounted volumes.
+void scene_draw_disk_panel()
+{
+    if (g_win_count > 3)
+        return; // hide when desktop is busy
+
+    const i32 panel_w = 260;
+    const i32 panel_h = 190;
+    const i32 px = to_i32(g_w) - panel_w - 20;
+    const i32 py = 20;
+
+    // Translucent panel using a dark tint.
+    s_fill(px, py, panel_w, panel_h, 0x00101018);
+    s_rect(px, py, panel_w, panel_h, kBorderFg);
+
+    s_text(px + 12, py + 10, "This PC", kTextFg, 0x00101018);
+
+    i32 cy = py + 40;
+
+    // Initramfs row.
+    {
+        s_icon(icons::Id::Explorer, px + 12, cy, 20);
+        s_text(px + 42, cy + 2, "notyvos-root", kTextFg, 0x00101018);
+        s_text(px + 42, cy + 18, "initramfs", kTextDim, 0x00101018);
+        cy += 44;
+    }
+
+    // Disk row.
+    auto* dev = fs::nyfs_device();
+    if (dev)
+    {
+        s_icon(icons::Id::Explorer, px + 12, cy, 20);
+        s_text(px + 42, cy + 2, dev->name, kTextFg, 0x00101018);
+
+        char szbuf[40];
+        int n = 0;
+        u64 mb = (dev->sector_count * 512ull) / (1024ull * 1024ull);
+        if (mb == 0)
+            szbuf[n++] = '0';
+        while (mb)
+        {
+            szbuf[n++] = static_cast<char>('0' + mb % 10);
+            mb /= 10;
+        }
+        for (int k = 0; k < n / 2; ++k)
+        {
+            char t = szbuf[k];
+            szbuf[k] = szbuf[n - 1 - k];
+            szbuf[n - 1 - k] = t;
+        }
+        szbuf[n++] = ' ';
+        szbuf[n++] = 'M';
+        szbuf[n++] = 'B';
+        szbuf[n] = 0;
+        s_text(px + 42, cy + 18, "NYFS, size", kTextDim, 0x00101018);
+        s_text(px + 130, cy + 18, szbuf, kTextDim, 0x00101018);
+        cy += 44;
+    }
+
+    // Free-space summary (host RAM through PMM).
+    {
+        char buf[40];
+        u64 free_mb = mm::PhysicalMemory::free_bytes() / (1024ull * 1024ull);
+        int n = 0;
+        if (free_mb == 0)
+            buf[n++] = '0';
+        while (free_mb)
+        {
+            buf[n++] = static_cast<char>('0' + free_mb % 10);
+            free_mb /= 10;
+        }
+        for (int k = 0; k < n / 2; ++k)
+        {
+            char t = buf[k];
+            buf[k] = buf[n - 1 - k];
+            buf[n - 1 - k] = t;
+        }
+        buf[n++] = ' ';
+        buf[n++] = 'M';
+        buf[n++] = 'B';
+        buf[n++] = ' ';
+        buf[n++] = 'f';
+        buf[n++] = 'r';
+        buf[n++] = 'e';
+        buf[n] = 0;
+        s_text(px + 12, cy, buf, kTextDim, 0x00101018);
+    }
+}
+
 void scene_draw_taskbar()
 {
     const i32 y0 = static_cast<i32>(g_h - kTaskbarH);
@@ -484,7 +679,11 @@ void scene_draw_taskbar()
         if (g_windows[i].focused)
             s_fill(x + 8, y0 + static_cast<i32>(kTaskbarH) - 4, static_cast<i32>(tw) - 16, 2,
                    kAccent);
-        s_text(x + 10, y0 + 8, g_windows[i].title, kTitleFg, color);
+
+        const i32 tb_icon = 18;
+        s_icon(icon_for_window(g_windows[i].kind), x + 6,
+               y0 + (static_cast<i32>(kTaskbarH) - tb_icon) / 2, static_cast<u32>(tb_icon));
+        s_text(x + 28, y0 + 8, g_windows[i].title, kTitleFg, color);
         x += static_cast<i32>(tw) + 6;
     }
 
@@ -551,6 +750,10 @@ void scene_draw_start_menu()
     const char* items[7] = {"Explorer",     "Settings",    "Terminal", "Game Launcher",
                             "Image Viewer", "Recycle Bin", "Shut down"};
 
+    static const icons::Id menu_icons[7] = {
+        icons::Id::Explorer, icons::Id::Settings, icons::Id::Terminal,   icons::Id::GameLauncher,
+        icons::Id::Explorer, icons::Id::Bin,      icons::Id::StartButton};
+
     i32 cy = my + header_h + 4;
     for (u32 i = 0; i < 7; ++i)
     {
@@ -558,7 +761,8 @@ void scene_draw_start_menu()
         const u32 bg = hover ? kMenuHi : kMenuBg;
         if (hover)
             s_fill(mx + 4, cy, menu_w - 8, item_h - 4, bg);
-        s_text(mx + 20, cy + 12, items[i], kMenuFg, bg);
+        s_icon(menu_icons[i], mx + 20, cy + 8, 24);
+        s_text(mx + 52, cy + 12, items[i], kMenuFg, bg);
         cy += item_h;
     }
 }
@@ -639,33 +843,78 @@ void scene_draw_context_menu()
 
 void scene_draw_terminal_content(i32 gx, i32 gy)
 {
+    if (g_term_cols == 0 || g_term_rows == 0)
+        return;
+
+    // Clamp scroll in case the buffer shrank.
+    const u32 max_scroll =
+        (g_term_stored_lines > g_term_rows) ? (g_term_stored_lines - g_term_rows) : 0u;
+    if (g_term_scroll > max_scroll)
+        g_term_scroll = max_scroll;
+
+    // Bottom-most visible line index (exclusive of nothing; this is the
+    // last line we display).
+    const u32 bottom = g_term_stored_lines - g_term_scroll;
+    // Top-most visible line index.
+    const u32 top = (bottom > g_term_rows) ? (bottom - g_term_rows) : 0u;
+
     for (u32 row = 0; row < g_term_rows; ++row)
     {
-        i32 src_row = static_cast<i32>(row) - static_cast<i32>(g_term_scroll);
-        if (src_row < 0)
-            src_row = 0;
-        if (src_row >= static_cast<i32>(g_term_rows))
-            src_row = static_cast<i32>(g_term_rows) - 1;
+        const u32 line = top + row;
+        if (line >= g_term_stored_lines)
+            break;
         for (u32 col = 0; col < g_term_cols; ++col)
         {
-            const char ch = g_term[static_cast<u32>(src_row) * g_term_cols + col];
+            const char ch = g_term[line * g_term_cols + col];
             if (ch == 0 || ch == ' ')
                 continue;
             s_glyph(gx + static_cast<i32>(col) * static_cast<i32>(kCellW),
                     gy + static_cast<i32>(row) * static_cast<i32>(kCellH), ch, kTextFg, kClientBg);
         }
     }
-    if (g_term_scroll == 0)
+
+    // Cursor: only draw when the user is at the bottom.
+    if (g_term_scroll == 0 && g_term_cols > 0)
     {
         const u32 ccol = g_term_cursor % g_term_cols;
         const u32 crow = g_term_cursor / g_term_cols;
-        if (crow < g_term_rows)
+        if (crow >= top && crow < top + g_term_rows)
         {
+            const u32 disp_row = crow - top;
             s_fill(gx + static_cast<i32>(ccol) * static_cast<i32>(kCellW),
-                   gy + static_cast<i32>(crow) * static_cast<i32>(kCellH) +
+                   gy + static_cast<i32>(disp_row) * static_cast<i32>(kCellH) +
                        static_cast<i32>(kCellH) - 4,
                    static_cast<i32>(kCellW), 3, kCursorFg);
         }
+    }
+
+    // Small "history" indicator when scrolled back.
+    if (g_term_scroll > 0)
+    {
+        const i32 by = gy + 2;
+        const i32 bx = gx + 4;
+        s_fill(bx, by, 90, 16, 0x00202030);
+        char hb[16];
+        int n = 0;
+        u32 v = g_term_scroll;
+        if (v == 0)
+            hb[n++] = '0';
+        while (v)
+        {
+            hb[n++] = static_cast<char>('0' + v % 10);
+            v /= 10;
+        }
+        for (int k = 0; k < n / 2; ++k)
+        {
+            char t = hb[k];
+            hb[k] = hb[n - 1 - k];
+            hb[n - 1 - k] = t;
+        }
+        hb[n++] = ' ';
+        hb[n++] = 'u';
+        hb[n++] = 'p';
+        hb[n] = 0;
+        s_text(bx + 4, by + 1, hb, 0x00C0C0C0, 0x00202030);
     }
 }
 
@@ -700,6 +949,11 @@ void scene_draw_window_content(const Window& win, i32 gx, i32 gy, i32 gw, i32 gh
         apps_draw_imageviewer(gx, gy, gw, gh, mx, my, down);
         return;
     }
+    if (win.kind == WindowKind::GameLauncher)
+    {
+        apps_draw_gamelauncher(gx, gy, gw, gh, mx, my, down);
+        return;
+    }
     s_text(gx + 12, gy + 12, win.title, kTextFg, kClientBg);
 }
 
@@ -710,10 +964,33 @@ void clear_corner(i32 x, i32 y)
     s_fill(x, y, 1, 1, kBgBottom);
 }
 
-void scene_draw_window(const Window& win)
+void scene_draw_window(const Window& win_in)
 {
-    if (!win.visible || win.minimized)
+    if (!win_in.visible || win_in.minimized)
         return;
+
+    Window win = win_in;
+
+    // Animation: slide down + fade during open, slide up during close.
+    if (win.anim_state != AnimState::Settled)
+    {
+        const u64 now = arch::x86_64::pit_ticks();
+        const u64 el = (now >= win.anim_start_tick) ? (now - win.anim_start_tick) : 0;
+        const u32 pct = (el >= kAnimTicks) ? 100u : static_cast<u32>((el * 100u) / kAnimTicks);
+
+        if (win.anim_state == AnimState::Opening)
+        {
+            // 30 -> 0
+            const i32 off = static_cast<i32>((100u - pct) * 30u / 100u);
+            win.y -= off;
+        }
+        else // Closing
+        {
+            // 0 -> 30
+            const i32 off = static_cast<i32>(pct * 30u / 100u);
+            win.y += off;
+        }
+    }
 
     const u32 title = win.focused ? kTitleOn : kTitleOff;
     const u32 titleFg = win.focused ? kTitleFg : kTitleFgOff;
@@ -735,7 +1012,12 @@ void scene_draw_window(const Window& win)
     if (win.focused)
         s_fill(win.x, win.y, win.w, 2, kAccent);
 
-    s_text(win.x + 10, win.y + static_cast<i32>((kTitleH - kCellH) / 2), win.title, titleFg, title);
+    // Small icon on the left of the title bar.
+    const i32 tb_icon = 16;
+    s_icon(icon_for_window(win.kind), win.x + 6, win.y + (static_cast<i32>(kTitleH) - tb_icon) / 2,
+           static_cast<u32>(tb_icon));
+
+    s_text(win.x + 28, win.y + static_cast<i32>((kTitleH - kCellH) / 2), win.title, titleFg, title);
     (void)kTextDim;
 
     const i32 btn_y = win.y + 1;
@@ -789,15 +1071,53 @@ void scene_draw_window(const Window& win)
                               win.h - static_cast<i32>(kTitleH));
 }
 
+void scene_draw_switcher()
+{
+    if (!g_switcher_open || g_win_count == 0)
+        return;
+
+    const i32 panel_w = 420;
+    const i32 row_h = 40;
+    const i32 pad = 10;
+    const i32 panel_h = pad * 2 + static_cast<i32>(g_win_count) * row_h;
+    const i32 px = (to_i32(g_w) - panel_w) / 2;
+    const i32 py = (to_i32(g_h) - panel_h) / 2;
+
+    // Dim the backdrop.
+    for (i32 y = 0; y < to_i32(g_h); y += 2)
+        for (i32 x = 0; x < to_i32(g_w); x += 2)
+            s_fill(x, y, 1, 1, 0x00000000);
+
+    s_fill(px, py, panel_w, panel_h, kMenuBg);
+    s_rect(px, py, panel_w, panel_h, kAccent);
+
+    for (u32 i = 0; i < g_win_count; ++i)
+    {
+        const i32 ry = py + pad + static_cast<i32>(i) * row_h;
+        const bool sel = (static_cast<i32>(i) == g_switcher_idx);
+        const u32 bg = sel ? kAccent : kMenuBg;
+        if (sel)
+            s_fill(px + 4, ry, panel_w - 8, row_h - 4, bg);
+
+        // Window icon (a small bar representing the title bar colour).
+        s_fill(px + 16, ry + 8, 24, 20, g_windows[i].focused ? kTitleOn : kTitleOff);
+        s_fill(px + 16, ry + 8, 24, 2, kAccent);
+
+        s_text(px + 52, ry + 12, g_windows[i].title, kMenuFg, bg);
+    }
+}
+
 void scene_render()
 {
     scene_draw_background();
     scene_draw_desktop_icons();
+    scene_draw_disk_panel();
     for (u32 i = 0; i < g_win_count; ++i)
         scene_draw_window(g_windows[i]);
     scene_draw_taskbar();
     scene_draw_start_menu();
     scene_draw_context_menu();
+    scene_draw_switcher();
 }
 
 i32 hit_window(i32 mx, i32 my)
@@ -916,6 +1236,19 @@ void close_window(u32 idx)
 {
     if (idx >= g_win_count)
         return;
+    Window& w = g_windows[idx];
+    // Enter the closing animation. The actual removal happens in
+    // `scene_tick_animations` once the timer expires.
+    if (w.anim_state != AnimState::Closing)
+    {
+        w.anim_state = AnimState::Closing;
+        w.anim_start_tick = arch::x86_64::pit_ticks();
+        w.visible = true; // still draw during the animation
+        w.focused = false;
+        g_dirty_scene = true;
+        return;
+    }
+    // Immediate removal (called twice).
     for (u32 i = idx; i + 1 < g_win_count; ++i)
         g_windows[i] = g_windows[i + 1];
     --g_win_count;
@@ -959,6 +1292,44 @@ void minimize_window(u32 idx)
         g_windows[i].focused = false;
 }
 
+// ---------------------------------------------------------------------------
+// 10D: window animation tick.
+//
+// Called from Compositor::tick() before scene_render. Advances opening
+// windows to Settled and removes closing windows when their timer expires.
+// ---------------------------------------------------------------------------
+void scene_tick_animations()
+{
+    const u64 now = arch::x86_64::pit_ticks();
+
+    for (u32 i = 0; i < g_win_count;)
+    {
+        Window& w = g_windows[i];
+
+        if (w.anim_state == AnimState::Opening)
+        {
+            if ((now - w.anim_start_tick) >= kAnimTicks)
+                w.anim_state = AnimState::Settled;
+            g_dirty_scene = true;
+        }
+        else if (w.anim_state == AnimState::Closing)
+        {
+            if ((now - w.anim_start_tick) >= kAnimTicks)
+            {
+                for (u32 k = i; k + 1 < g_win_count; ++k)
+                    g_windows[k] = g_windows[k + 1];
+                --g_win_count;
+                if (g_win_count > 0)
+                    g_windows[g_win_count - 1].focused = true;
+                g_dirty_scene = true;
+                continue; // do not advance i; slot i is a different window now
+            }
+            g_dirty_scene = true;
+        }
+        ++i;
+    }
+}
+
 Window* open_window(WindowKind kind, const char* title, i32 w, i32 h)
 {
     if (g_win_count >= kMaxWindows)
@@ -990,6 +1361,8 @@ Window* open_window(WindowKind kind, const char* title, i32 w, i32 h)
         ++i;
     }
     nw.title[i] = 0;
+    nw.anim_state = AnimState::Opening;
+    nw.anim_start_tick = arch::x86_64::pit_ticks();
     ++g_win_count;
     focus_window(g_win_count - 1);
     g_dirty_scene = true;
@@ -1018,21 +1391,23 @@ void create_terminal_window()
         ++i;
     }
     t.title[i] = 0;
+    t.anim_state = AnimState::Opening;
+    t.anim_start_tick = arch::x86_64::pit_ticks();
 
     const i32 cw = t.w;
     const i32 ch = t.h - static_cast<i32>(kTitleH);
     g_term_cols = static_cast<u32>(cw) / kCellW;
     g_term_rows = static_cast<u32>(ch) / kCellH;
-    if (g_term_cols > 120)
-        g_term_cols = 120;
-    if (g_term_rows > 60)
-        g_term_rows = 60;
+    if (g_term_cols > kTermMaxCols)
+        g_term_cols = kTermMaxCols;
+    if (g_term_rows > kTermMaxLines)
+        g_term_rows = kTermMaxLines;
     if (g_term_cols == 0)
         g_term_cols = 1;
     if (g_term_rows == 0)
         g_term_rows = 1;
-    if (g_term_cursor >= g_term_cols * g_term_rows)
-        g_term_cursor = 0;
+    // NOTE: do not touch g_term_cursor, g_term_stored_lines or
+    // g_term_scroll. Terminal content and history survive close/reopen.
 
     ++g_win_count;
     focus_window(g_win_count - 1);
@@ -1072,7 +1447,7 @@ void launch_shortcut(ShortcutKind kind)
         break;
     case ShortcutKind::GameLchr:
         log::write(log::Level::Info, "gfx", "launch: Game Launcher");
-        open_window(WindowKind::Generic, "Game Launcher", 640, 480);
+        open_window(WindowKind::GameLauncher, "Game Launcher", 720, 480);
         break;
     case ShortcutKind::ImageVw:
         log::write(log::Level::Info, "gfx", "launch: Image Viewer");
@@ -1201,19 +1576,42 @@ void on_mouse_tick()
     {
         if (g_ctx_open)
             close_context_menu();
+
+        const i32 widx = hit_window(mx, my);
+        if (widx >= 0)
+        {
+            // Right-click inside an Explorer window: open its context menu.
+            Window& w = g_windows[static_cast<u32>(widx)];
+            if (w.kind == WindowKind::Explorer)
+            {
+                focus_window(static_cast<u32>(widx));
+                apps_explorer_right_click(mx, my);
+            }
+        }
         else
         {
-            const i32 widx = hit_window(mx, my);
             const i32 ty = to_i32(g_h) - static_cast<i32>(kTaskbarH);
             const bool over_taskbar = (my >= ty);
             const bool over_start = hit_start_button(mx, my);
-            if (widx < 0 && !over_taskbar && !over_start)
+            if (!over_taskbar && !over_start)
                 open_context_menu(mx, my);
         }
+
         g_prev_right = right;
         g_prev_mx = mx;
         g_prev_my = my;
         g_prev_left = left;
+        return;
+    }
+
+    // Left-click while an Explorer context menu is open: the menu wins.
+    if (just_left_pressed && apps_explorer_click_ctx(mx, my))
+    {
+        g_prev_left = left;
+        g_prev_right = right;
+        g_prev_mx = mx;
+        g_prev_my = my;
+        g_dirty_scene = true;
         return;
     }
 
@@ -1360,7 +1758,48 @@ void on_mouse_tick()
     }
 
     if (just_left_released)
+    {
+        if (g_drag_win >= 0)
+        {
+            // Snap on release if the cursor is near a screen edge.
+            const i32 snap = 30;
+            const i32 work_h = to_i32(g_h) - static_cast<i32>(kTaskbarH);
+            Window& w = g_windows[static_cast<u32>(g_drag_win)];
+
+            const bool was_maximized = w.maximized;
+
+            if (mx <= snap)
+            {
+                w.x = 0;
+                w.y = 0;
+                w.w = to_i32(g_w) / 2;
+                w.h = work_h;
+                w.maximized = false;
+            }
+            else if (mx >= to_i32(g_w) - snap)
+            {
+                w.w = to_i32(g_w) / 2;
+                w.x = to_i32(g_w) - w.w;
+                w.y = 0;
+                w.h = work_h;
+                w.maximized = false;
+            }
+            else if (my <= snap)
+            {
+                w.x = 0;
+                w.y = 0;
+                w.w = to_i32(g_w);
+                w.h = work_h;
+                w.maximized = true;
+            }
+            else if (!was_maximized)
+            {
+                // Keep the current free-form position.
+            }
+            g_dirty_scene = true;
+        }
         g_drag_win = -1;
+    }
 
     if (g_drag_win >= 0 && left)
     {
@@ -1387,6 +1826,7 @@ void on_mouse_tick()
         const i32 idx = hit_window(mx, my);
         if (idx >= 0 && g_windows[static_cast<u32>(idx)].kind == WindowKind::Terminal)
         {
+            // 3 lines per wheel tick.
             Compositor::term_scroll_by(wheel * 3);
             g_dirty_scene = true;
         }
@@ -1514,6 +1954,8 @@ void Compositor::init() noexcept
             ++i;
         }
         t.title[i] = 0;
+        t.anim_state = AnimState::Settled;
+        t.anim_start_tick = 0;
     }
     g_win_count = 1;
 
@@ -1521,18 +1963,18 @@ void Compositor::init() noexcept
     const i32 ch = g_windows[0].h - static_cast<i32>(kTitleH);
     g_term_cols = static_cast<u32>(cw) / kCellW;
     g_term_rows = static_cast<u32>(ch) / kCellH;
-    if (g_term_cols > 120)
-        g_term_cols = 120;
-    if (g_term_rows > 60)
-        g_term_rows = 60;
+    if (g_term_cols > kTermMaxCols)
+        g_term_cols = kTermMaxCols;
+    if (g_term_rows > kTermMaxLines)
+        g_term_rows = kTermMaxLines;
     if (g_term_cols == 0)
         g_term_cols = 1;
     if (g_term_rows == 0)
         g_term_rows = 1;
 
-    for (u32 i = 0; i < g_term_cols * g_term_rows; ++i)
-        g_term[i] = 0;
+    libk::memset(g_term, 0, sizeof(g_term));
     g_term_cursor = 0;
+    g_term_stored_lines = 0;
     g_term_scroll = 0;
 
     const auto dt = arch::x86_64::rtc::read();
@@ -1543,6 +1985,23 @@ void Compositor::init() noexcept
     g_ready = true;
     g_dirty_scene = true;
 
+    // Prime the terminal with everything that was logged before the
+    // compositor took over. The log ring contains boot messages from the
+    // very first line, so the terminal starts with a full boot log.
+    Compositor::term_put('\f'); // one clear, before replaying
+    log::replay(
+        [](const char* line, void* user)
+        {
+            (void)user;
+            for (const char* p = line; *p; ++p)
+                Compositor::term_put(*p);
+        },
+        nullptr);
+
+    // After the replay, reset the terminal cursor scroll position so the
+    // latest line is visible.
+    Compositor::term_scroll_bottom();
+
     scene_render();
     fb_blit_full();
 
@@ -1552,6 +2011,8 @@ void Compositor::init() noexcept
     cursor_draw(mx, my);
 
     apps_bind_impl(widget_rect_cb, widget_text_cb);
+
+    icons::init();
 
     log::write(log::Level::Info, "comp", "desktop %llu x %llu, terminal %llu x %llu",
                static_cast<unsigned long long>(g_w), static_cast<unsigned long long>(g_h),
@@ -1573,7 +2034,41 @@ void Compositor::tick() noexcept
     if (!g_ready)
         return;
 
+    // Alt-Tab switcher. `Cycle` fires each time the user presses Tab while
+    // Alt is held; `Commit` fires when Alt is released.
+    switch (arch::x86_64::keyboard_alt_tab_event())
+    {
+    case arch::x86_64::AltTabEvent::Cycle:
+        if (!g_switcher_open)
+        {
+            g_switcher_open = true;
+            g_switcher_idx = (g_win_count > 0) ? static_cast<i32>(g_win_count) - 1 : 0;
+        }
+        else if (g_win_count > 0)
+        {
+            g_switcher_idx = (g_switcher_idx + 1) % static_cast<i32>(g_win_count);
+        }
+        g_dirty_scene = true;
+        break;
+
+    case arch::x86_64::AltTabEvent::Commit:
+        if (g_switcher_open)
+        {
+            g_switcher_open = false;
+            if (g_switcher_idx >= 0 && g_switcher_idx < static_cast<i32>(g_win_count))
+                focus_window(static_cast<u32>(g_switcher_idx));
+            g_dirty_scene = true;
+        }
+        break;
+
+    case arch::x86_64::AltTabEvent::None:
+    default:
+        break;
+    }
+
     on_mouse_tick();
+
+    scene_tick_animations();
 
     if (g_dirty_scene)
     {
@@ -1607,18 +2102,25 @@ u32 Compositor::term_rows() noexcept
 
 void Compositor::term_scroll_by(i32 delta) noexcept
 {
-    if (delta > 0)
+    // Positive delta = scroll up = see older content.
+    const i32 eff = kTermScrollInvert ? -delta : delta;
+
+    if (eff > 0)
     {
-        if (g_term_scroll + static_cast<u32>(delta) < g_term_rows)
-            g_term_scroll += static_cast<u32>(delta);
-        else
-            g_term_scroll = g_term_rows - 1;
+        g_term_scroll += static_cast<u32>(eff);
     }
-    else if (delta < 0)
+    else if (eff < 0)
     {
-        const u32 mag = static_cast<u32>(-delta);
-        g_term_scroll = (mag >= g_term_scroll) ? 0 : (g_term_scroll - mag);
+        const u32 mag = static_cast<u32>(-eff);
+        g_term_scroll = (mag >= g_term_scroll) ? 0u : (g_term_scroll - mag);
     }
+
+    // Clamp against actual available history.
+    const u32 max_scroll =
+        (g_term_stored_lines > g_term_rows) ? (g_term_stored_lines - g_term_rows) : 0u;
+    if (g_term_scroll > max_scroll)
+        g_term_scroll = max_scroll;
+
     g_dirty_scene = true;
 }
 
@@ -1630,9 +2132,9 @@ void Compositor::term_scroll_bottom() noexcept
 
 void Compositor::term_clear() noexcept
 {
-    for (u32 i = 0; i < g_term_cols * g_term_rows; ++i)
-        g_term[i] = 0;
+    libk::memset(g_term, 0, sizeof(g_term));
     g_term_cursor = 0;
+    g_term_stored_lines = 0;
     g_term_scroll = 0;
     g_dirty_scene = true;
 }
@@ -1641,11 +2143,15 @@ void Compositor::term_put(char c) noexcept
 {
     if (!g_ready)
         return;
+    if (g_term_cols == 0 || g_term_rows == 0)
+        return;
+
     if (c == '\f')
     {
         term_clear();
         return;
     }
+
     if (c == '\n')
     {
         const u32 col = g_term_cursor % g_term_cols;
@@ -1671,16 +2177,36 @@ void Compositor::term_put(char c) noexcept
         }
     }
     else
-        g_term[g_term_cursor++] = c;
-
-    if (g_term_cursor >= g_term_cols * g_term_rows)
     {
-        libk::memmove(g_term, g_term + g_term_cols, (g_term_rows - 1) * g_term_cols);
-        for (u32 i = 0; i < g_term_cols; ++i)
-            g_term[(g_term_rows - 1) * g_term_cols + i] = 0;
-        g_term_cursor = (g_term_rows - 1) * g_term_cols;
+        g_term[g_term_cursor++] = c;
     }
-    g_term_scroll = 0;
+
+    // Track stored lines.
+    const u32 line_now = g_term_cursor / g_term_cols;
+    if (line_now + 1u > g_term_stored_lines)
+        g_term_stored_lines = line_now + 1u;
+
+    // Buffer full: shift by one line.
+    if (g_term_cursor >= kTermMaxCols * kTermMaxLines)
+    {
+        libk::memmove(g_term, g_term + g_term_cols, (kTermMaxLines - 1u) * g_term_cols);
+        for (u32 i = 0; i < g_term_cols; ++i)
+            g_term[(kTermMaxLines - 1u) * g_term_cols + i] = 0;
+        g_term_cursor = (kTermMaxLines - 1u) * g_term_cols;
+        g_term_stored_lines = kTermMaxLines;
+
+        // If the user was scrolled up, keep their absolute view position
+        // so the content under their cursor does not slide away.
+        if (g_term_scroll > 0)
+            ++g_term_scroll;
+    }
+
+    // Clamp scroll after content change.
+    const u32 max_scroll =
+        (g_term_stored_lines > g_term_rows) ? (g_term_stored_lines - g_term_rows) : 0u;
+    if (g_term_scroll > max_scroll)
+        g_term_scroll = max_scroll;
+
     g_dirty_scene = true;
 }
 

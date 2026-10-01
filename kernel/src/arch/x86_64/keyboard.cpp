@@ -28,10 +28,20 @@ const char kMapShift[128] = {0,    27,   '!', '@', '#', '$', '%', '^', '&', '*',
 bool g_shift = false;
 bool g_ctrl = false;
 bool g_extended = false;
+bool g_alt = false;
 volatile u8 g_buf[kBufSize];
 volatile u32 g_head = 0;
 volatile u32 g_tail = 0;
 u64 g_key_count = 0;
+
+// Set on the first keyboard_init() call. On ACPI restart this stays true
+// because the kernel reloads from scratch — but the i8042 hardware
+// survives the reset, so we must NOT touch it again.
+bool g_kbd_hardware_initialized = false;
+
+// Alt-Tab signals.
+bool g_alt_tab_pending = false;
+bool g_alt_release_pending = false;
 
 inline void push_char(char c)
 {
@@ -86,6 +96,29 @@ void flush_output() noexcept
     }
 }
 
+// Called on the second and subsequent boots. Does not touch the
+// controller self-test or config byte — those are preserved through an
+// ACPI restart, and re-running them corrupts the mouse clock on VBox.
+bool keyboard_reinit_impl() noexcept
+{
+    flush_output();
+
+    // Re-enable both device ports. Safe no-ops if already enabled.
+    write_cmd(0xAE); // enable kbd
+    write_cmd(0xA8); // enable aux
+
+    // Clear software state; the hardware state is already correct.
+    g_shift = false;
+    g_ctrl = false;
+    g_extended = false;
+    g_alt = false;
+    g_head = 0;
+    g_tail = 0;
+
+    log::write(log::Level::Info, "kbd", "warm re-init (ports re-enabled)");
+    return true;
+}
+
 void process_scancode(u8 sc)
 {
     if (sc == 0xFA)
@@ -132,6 +165,26 @@ void process_scancode(u8 sc)
         default:
             return;
         }
+    }
+
+    // Alt handling — intercept before anything else so Alt+Tab does not
+    // produce a literal Tab into the shell.
+    if (sc == 0x38)
+    {
+        g_alt = true;
+        return;
+    }
+    if (sc == 0xB8)
+    {
+        g_alt = false;
+        g_alt_release_pending = true;
+        return;
+    }
+
+    if (g_alt && sc == 0x0F) // Tab while Alt held
+    {
+        g_alt_tab_pending = true;
+        return;
     }
 
     if (sc == 0x1D)
@@ -184,10 +237,13 @@ void process_scancode(u8 sc)
 
 bool keyboard_init() noexcept
 {
+    // Warm boot path: hardware is already live, do not re-init.
+    if (g_kbd_hardware_initialized)
+        return keyboard_reinit_impl();
+
     log::write(log::Level::Info, "kbd", "init start");
 
-    // Full i8042 reset so that a warm ACPI restart does not leave the
-    // controller in a stale state.
+    // Full i8042 reset (cold boot only).
     write_cmd(0xAD); // disable kbd
     write_cmd(0xA7); // disable aux
     flush_output();
@@ -242,7 +298,28 @@ bool keyboard_init() noexcept
     log::write(log::Level::Info, "kbd", "0xF4 -> 0x%llx", static_cast<unsigned long long>(ack));
 
     log::write(log::Level::Info, "kbd", "i8042 ready");
+    g_kbd_hardware_initialized = true;
     return true;
+}
+
+bool keyboard_reinit() noexcept
+{
+    return keyboard_reinit_impl();
+}
+
+AltTabEvent keyboard_alt_tab_event() noexcept
+{
+    if (g_alt_tab_pending)
+    {
+        g_alt_tab_pending = false;
+        return AltTabEvent::Cycle;
+    }
+    if (g_alt_release_pending)
+    {
+        g_alt_release_pending = false;
+        return AltTabEvent::Commit;
+    }
+    return AltTabEvent::None;
 }
 
 void keyboard_irq_handler() noexcept

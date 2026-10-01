@@ -118,8 +118,66 @@ struct ExplorerState
     i32 hover;
     i32 nav_hover;
     char address[128];
+
+    // Context menu (right-click inside the window).
+    bool ctx_open;
+    i32 ctx_x;
+    i32 ctx_y;
+    i32 ctx_hover;
+    i32 ctx_target; // entry index that was right-clicked, or -1 for blank area
 };
 ExplorerState g_exp{};
+
+enum class ExpCtxItem : u8
+{
+    None = 0,
+    Open,
+    Sep1,
+    NewFolder,
+    Refresh,
+    Sep2,
+    Rename,
+    Delete,
+    Sep3,
+    Properties,
+};
+
+const ExpCtxItem g_exp_ctx[] = {ExpCtxItem::Open,    ExpCtxItem::Sep1, ExpCtxItem::NewFolder,
+                                ExpCtxItem::Refresh, ExpCtxItem::Sep2, ExpCtxItem::Rename,
+                                ExpCtxItem::Delete,  ExpCtxItem::Sep3, ExpCtxItem::Properties,
+                                ExpCtxItem::None};
+
+const char* exp_ctx_label(ExpCtxItem it)
+{
+    switch (it)
+    {
+    case ExpCtxItem::Open:
+        return "Open";
+    case ExpCtxItem::NewFolder:
+        return "New folder";
+    case ExpCtxItem::Refresh:
+        return "Refresh";
+    case ExpCtxItem::Rename:
+        return "Rename";
+    case ExpCtxItem::Delete:
+        return "Delete";
+    case ExpCtxItem::Properties:
+        return "Properties";
+    default:
+        return "";
+    }
+}
+
+i32 exp_ctx_height()
+{
+    i32 h = 0;
+    for (u32 i = 0; g_exp_ctx[i] != ExpCtxItem::None; ++i)
+        h += (g_exp_ctx[i] == ExpCtxItem::Sep1 || g_exp_ctx[i] == ExpCtxItem::Sep2 ||
+              g_exp_ctx[i] == ExpCtxItem::Sep3)
+                 ? 6
+                 : 24;
+    return h;
+}
 
 void explorer_collect()
 {
@@ -422,6 +480,52 @@ void draw_explorer(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my, bool)
         ry += row_h;
     }
     draw_explorer_status(gx, gy + gh - 22, gw);
+    draw_explorer_context_menu();
+}
+
+void draw_explorer_context_menu()
+{
+    if (!g_exp.ctx_open)
+        return;
+    const i32 w = 180;
+    const i32 h = exp_ctx_height();
+
+    i32 x = g_exp.ctx_x;
+    i32 y = g_exp.ctx_y;
+    if (x + w > to_i32(g_w))
+        x = to_i32(g_w) - w;
+    if (y + h > to_i32(g_h) - 30)
+        y = to_i32(g_h) - 30 - h;
+    if (x < 0)
+        x = 0;
+    if (y < 0)
+        y = 0;
+    g_exp.ctx_x = x;
+    g_exp.ctx_y = y;
+
+    r(x, y, w, h, 0x00F8F8F8);
+    r(x, y, w, 1, 0x00A0A0A0);
+    r(x, y + h - 1, w, 1, 0x00A0A0A0);
+    r(x, y, 1, h, 0x00A0A0A0);
+    r(x + w - 1, y, 1, h, 0x00A0A0A0);
+
+    i32 cy = y;
+    for (u32 i = 0; g_exp_ctx[i] != ExpCtxItem::None; ++i)
+    {
+        const ExpCtxItem it = g_exp_ctx[i];
+        if (it == ExpCtxItem::Sep1 || it == ExpCtxItem::Sep2 || it == ExpCtxItem::Sep3)
+        {
+            r(x + 8, cy + 2, w - 16, 1, 0x00D0D0D0);
+            cy += 6;
+            continue;
+        }
+        const bool hover = (static_cast<i32>(i) == g_exp.ctx_hover);
+        const u32 bg = hover ? 0x00CCE4FC : 0x00F8F8F8;
+        if (hover)
+            r(x + 2, cy + 1, w - 4, 22, bg);
+        t(x + 16, cy + 4, exp_ctx_label(it), 0x00202020, bg);
+        cy += 24;
+    }
 }
 
 void draw_theme_swatch(const theme::Palette& p, i32 x, i32 y, i32 w, i32 h)
@@ -722,6 +826,284 @@ void draw_imageviewer(i32 gx, i32 gy, i32 gw, i32 gh, i32, i32, bool)
 
 } // namespace
 
+// ---------------------------------------------------------------------------
+// Game Launcher
+// ---------------------------------------------------------------------------
+
+struct GameEntry
+{
+    char name[64];
+    char path[128];
+    u32 size;
+};
+
+struct GameLauncherState
+{
+    bool initialized;
+    GameEntry games[32];
+    u32 game_count;
+    i32 sel;
+    i32 hover;
+    i32 tab; // 0 = library, 1 = settings
+};
+GameLauncherState g_gl{};
+
+void gamelauncher_scan()
+{
+    g_gl.game_count = 0;
+
+    // Look under /disk/games and /games.
+    const char* dirs[2] = {"/disk/games", "/games"};
+    for (const char* d : dirs)
+    {
+        auto* dir = fs::vfs_lookup(d, "/");
+        if (!dir || dir->type != fs::VType::Dir)
+            continue;
+
+        for (fs::VNode* c = dir->children; c && g_gl.game_count < 32; c = c->next)
+        {
+            if (c->type != fs::VType::File)
+                continue;
+            const u32 len = static_cast<u32>(libk::strlen(c->name));
+            if (len < 4)
+                continue;
+            // Accept .elf and .bin
+            const char* ext = c->name + len - 4;
+            const bool is_elf = libk::strcmp(ext, ".elf") == 0;
+            const bool is_bin = libk::strcmp(ext, ".bin") == 0;
+            if (!is_elf && !is_bin)
+                continue;
+
+            GameEntry& ge = g_gl.games[g_gl.game_count];
+            u32 i = 0;
+            while (c->name[i] && i < 63)
+            {
+                ge.name[i] = c->name[i];
+                ++i;
+            }
+            ge.name[i] = 0;
+
+            u32 k = 0;
+            while (d[k] && k < 100)
+            {
+                ge.path[k] = d[k];
+                ++k;
+            }
+            ge.path[k++] = '/';
+            i = 0;
+            while (c->name[i] && k < 127)
+            {
+                ge.path[k++] = c->name[i++];
+            }
+            ge.path[k] = 0;
+
+            ge.size = 0;
+            if (c->ops && c->ops->size)
+            {
+                const isize s = c->ops->size(c);
+                if (s > 0)
+                    ge.size = static_cast<u32>(s);
+            }
+            ++g_gl.game_count;
+        }
+    }
+
+    if (g_gl.sel >= static_cast<i32>(g_gl.game_count))
+        g_gl.sel = g_gl.game_count ? 0 : -1;
+}
+
+void gamelauncher_init()
+{
+    if (g_gl.initialized)
+        return;
+    g_gl.sel = -1;
+    g_gl.hover = -1;
+    g_gl.tab = 0;
+    gamelauncher_scan();
+    g_gl.initialized = true;
+}
+
+void draw_gamelauncher(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my, bool)
+{
+    gamelauncher_init();
+
+    // --- Toolbar ---
+    const i32 bar_h = 40;
+    r(gx, gy, gw, bar_h, kHeaderBg);
+    r(gx, gy + bar_h - 1, gw, 1, kHeaderEdge);
+
+    // Library / Settings tabs.
+    const char* tabs[2] = {"Library", "Settings"};
+    i32 tx = gx + 12;
+    for (u32 i = 0; i < 2; ++i)
+    {
+        const i32 tw = 90;
+        const bool active = (static_cast<i32>(i) == g_gl.tab);
+        const bool hover = (mx >= tx && mx < tx + tw && my >= gy + 6 && my < gy + bar_h - 6);
+        const u32 bg = active ? 0x00D0E4F4 : hover ? 0x00E8ECF0 : kHeaderBg;
+        r(tx, gy + 6, tw, bar_h - 12, bg);
+        t(tx + 14, gy + 12, tabs[i], 0x00202020, bg);
+        tx += tw + 6;
+    }
+
+    // "Add game" button on the right.
+    const i32 add_w = 100;
+    const i32 add_x = gx + gw - add_w - 12;
+    r(add_x, gy + 6, add_w, bar_h - 12, 0x00E0E8F0);
+    r(add_x, gy + 6, add_w, 1, kHeaderEdge);
+    r(add_x, gy + bar_h - 7, add_w, 1, kHeaderEdge);
+    t(add_x + 12, gy + 12, "+ Add game", 0x00202020, 0x00E0E8F0);
+
+    gy += bar_h;
+    gh -= bar_h;
+
+    if (g_gl.tab == 0)
+    {
+        // --- Library tab: left list + right details ---
+        const i32 side_w = 260;
+        r(gx, gy, side_w, gh, 0x00F8F8F8);
+        r(gx + side_w - 1, gy, 1, gh, kHeaderEdge);
+
+        if (g_gl.game_count == 0)
+        {
+            t(gx + 20, gy + 20, "No games installed.", 0x00606060, 0x00F8F8F8);
+            t(gx + 20, gy + 44, "Copy .elf or .bin files to /disk/games/", 0x00909090, 0x00F8F8F8);
+        }
+        else
+        {
+            i32 ry = gy + 6;
+            g_gl.hover = -1;
+            for (u32 i = 0; i < g_gl.game_count; ++i)
+            {
+                const bool hover = (mx >= gx && mx < gx + side_w - 1 && my >= ry && my < ry + 48);
+                if (hover)
+                    g_gl.hover = static_cast<i32>(i);
+
+                const u32 bg = (static_cast<i32>(i) == g_gl.sel) ? 0x00CCE4FC
+                               : hover                           ? 0x00E0E8F0
+                                                                 : 0x00F8F8F8;
+                if (bg != 0x00F8F8F8)
+                    r(gx + 4, ry, side_w - 8, 44, bg);
+
+                // Game icon (a rounded square for now).
+                r(gx + 12, ry + 8, 28, 28, 0x00305070);
+                r(gx + 12, ry + 8, 28, 2, 0x0060A0E8);
+
+                t(gx + 50, ry + 8, g_gl.games[i].name, 0x00202020, bg);
+
+                char szbuf[24];
+                int n = 0;
+                u32 kb = g_gl.games[i].size / 1024;
+                if (kb == 0)
+                    szbuf[n++] = '0';
+                while (kb)
+                {
+                    szbuf[n++] = static_cast<char>('0' + kb % 10);
+                    kb /= 10;
+                }
+                for (int k = 0; k < n / 2; ++k)
+                {
+                    char t = szbuf[k];
+                    szbuf[k] = szbuf[n - 1 - k];
+                    szbuf[n - 1 - k] = t;
+                }
+                szbuf[n++] = ' ';
+                szbuf[n++] = 'K';
+                szbuf[n++] = 'B';
+                szbuf[n] = 0;
+                t(gx + 50, ry + 26, szbuf, 0x00909090, bg);
+                ry += 48;
+            }
+        }
+
+        // Right details pane.
+        const i32 rx = gx + side_w + 8;
+        const i32 rw = gw - side_w - 16;
+        r(rx, gy, rw, gh, 0x00FFFFFF);
+
+        if (g_gl.sel >= 0 && static_cast<u32>(g_gl.sel) < g_gl.game_count)
+        {
+            const GameEntry& ge = g_gl.games[static_cast<u32>(g_gl.sel)];
+            t(rx + 20, gy + 20, ge.name, 0x00202020, 0x00FFFFFF);
+            r(rx + 20, gy + 46, rw - 40, 1, kHeaderEdge);
+
+            t(rx + 20, gy + 60, "Path:", 0x00606060, 0x00FFFFFF);
+            t(rx + 90, gy + 60, ge.path, 0x00202020, 0x00FFFFFF);
+
+            char szbuf[32];
+            int n = 0;
+            u32 b = ge.size;
+            if (b == 0)
+                szbuf[n++] = '0';
+            while (b)
+            {
+                szbuf[n++] = static_cast<char>('0' + b % 10);
+                b /= 10;
+            }
+            for (int k = 0; k < n / 2; ++k)
+            {
+                char t = szbuf[k];
+                szbuf[k] = szbuf[n - 1 - k];
+                szbuf[n - 1 - k] = t;
+            }
+            szbuf[n++] = ' ';
+            szbuf[n++] = 'B';
+            szbuf[n++] = 'y';
+            szbuf[n++] = 't';
+            szbuf[n++] = 'e';
+            szbuf[n++] = 's';
+            szbuf[n] = 0;
+            t(rx + 20, gy + 82, "Size:", 0x00606060, 0x00FFFFFF);
+            t(rx + 90, gy + 82, szbuf, 0x00202020, 0x00FFFFFF);
+
+            // Play button.
+            r(rx + 20, gy + gh - 60, 140, 36, 0x003070C0);
+            t(rx + 62, gy + gh - 50, "Play", 0x00FFFFFF, 0x003070C0);
+        }
+        else
+        {
+            t(rx + 20, gy + 20, "Select a game", 0x00909090, 0x00FFFFFF);
+        }
+    }
+    else
+    {
+        // --- Settings tab: per-game settings for the selected entry ---
+        r(gx, gy, gw, gh, 0x00FFFFFF);
+        t(gx + 20, gy + 20, "Game settings", 0x00202020, 0x00FFFFFF);
+        r(gx + 20, gy + 46, gw - 40, 1, kHeaderEdge);
+
+        if (g_gl.sel < 0)
+        {
+            t(gx + 20, gy + 60, "Select a game in the Library tab first.", 0x00909090, 0x00FFFFFF);
+            return;
+        }
+
+        auto row = [&](const char* key, const char* value, i32 y)
+        {
+            t(gx + 30, y, key, 0x00404040, 0x00FFFFFF);
+            r(gx + 260, y - 2, 200, 20, 0x00F0F0F0);
+            r(gx + 260, y - 2, 200, 1, kHeaderEdge);
+            r(gx + 260, y + 18, 200, 1, kHeaderEdge);
+            t(gx + 268, y, value, 0x00202020, 0x00F0F0F0);
+        };
+
+        row("Resolution", "1280 x 720", gy + 70);
+        row("VSync", "On", gy + 96);
+        row("FPS cap", "60", gy + 122);
+        row("Frame skip", "Auto", gy + 148);
+        row("PPU interpreter", "JIT", gy + 174);
+        row("SPU interpreter", "JIT", gy + 200);
+        row("Translation cache", "Enabled", gy + 226);
+        row("Depth buffer", "24-bit", gy + 252);
+        row("Texture quality", "High", gy + 278);
+        row("Anisotropic", "4x", gy + 304);
+
+        r(gx + 30, gy + gh - 50, 160, 32, 0x003070C0);
+        t(gx + 80, gy + gh - 40, "Save", 0x00FFFFFF, 0x003070C0);
+    }
+    (void)my;
+}
+
 void apps_bind_impl(AppRectFn rect_fn, AppTextFn text_fn) noexcept
 {
     g_rect = rect_fn;
@@ -773,6 +1155,83 @@ bool apps_click_explorer(i32 mx, i32 my, bool pressed_edge) noexcept
     return false;
 }
 
+// Right-click handler for the Explorer window. Called by the compositor
+// when the user right-clicks while an Explorer window is focused.
+void apps_explorer_right_click(i32 mx, i32 my) noexcept
+{
+    explorer_init();
+    // Find out whether the click landed on a row.
+    i32 target = -1;
+    for (u32 i = 0; i < g_exp.entry_count; ++i)
+    {
+        // Rows are laid out at y = row_start + i * 22 in window space.
+        // We do not have the window origin here, so the compositor passes
+        // absolute screen coordinates and we accept any y that maps to an
+        // entry given the current hover computation in draw_explorer.
+        (void)i;
+    }
+
+    g_exp.ctx_open = true;
+    g_exp.ctx_x = mx;
+    g_exp.ctx_y = my;
+    g_exp.ctx_hover = -1;
+    g_exp.ctx_target = target;
+}
+
+// Returns true if the explorer consumed this click (i.e. the menu was
+// open and the click was inside it). Otherwise the compositor should
+// close the menu and continue with normal handling.
+bool apps_explorer_click_ctx(i32 mx, i32 my) noexcept
+{
+    if (!g_exp.ctx_open)
+        return false;
+    const i32 w = 180;
+    const i32 h = exp_ctx_height();
+    const i32 x = g_exp.ctx_x;
+    const i32 y = g_exp.ctx_y;
+
+    if (mx < x || mx >= x + w || my < y || my >= y + h)
+    {
+        g_exp.ctx_open = false;
+        return false;
+    }
+
+    i32 cy = y;
+    for (u32 i = 0; g_exp_ctx[i] != ExpCtxItem::None; ++i)
+    {
+        const ExpCtxItem it = g_exp_ctx[i];
+        const i32 ch =
+            (it == ExpCtxItem::Sep1 || it == ExpCtxItem::Sep2 || it == ExpCtxItem::Sep3) ? 6 : 24;
+        if (my >= cy && my < cy + ch)
+        {
+            g_exp.ctx_open = false;
+            if (it == ExpCtxItem::Refresh)
+            {
+                // Re-scan the directory.
+                g_exp.initialized = false;
+                explorer_init();
+            }
+            else if (it == ExpCtxItem::Delete)
+            {
+                if (g_exp.sel >= 0 && static_cast<u32>(g_exp.sel) < g_exp.entry_count)
+                {
+                    // Log the action; a real unlink is a syscall from the shell.
+                    log::write(log::Level::Info, "expl", "delete requested: %s",
+                               g_exp.entries[static_cast<u32>(g_exp.sel)].name);
+                }
+            }
+            else if (it == ExpCtxItem::Open)
+            {
+                log::write(log::Level::Info, "expl", "open requested");
+            }
+            return true;
+        }
+        cy += ch;
+    }
+    g_exp.ctx_open = false;
+    return true;
+}
+
 bool apps_click_settings(i32, i32, bool pressed_edge) noexcept
 {
     if (!pressed_edge)
@@ -795,5 +1254,10 @@ bool apps_click_bin(i32, i32, bool) noexcept
 {
     return true;
 }
-
+bool apps_draw_gamelauncher(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my,
+                            bool mouse_down) noexcept
+{
+    draw_gamelauncher(gx, gy, gw, gh, mx, my, mouse_down);
+    return true;
+}
 } // namespace notyvos::gfx

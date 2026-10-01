@@ -21,6 +21,19 @@ bool keyboard_poll() noexcept;
 i32 keyboard_pop() noexcept;
 bool keyboard_has_data() noexcept;
 u64 keyboard_irq_count() noexcept;
+// Warm re-init path: called on the second and subsequent kernel boots
+// (i.e. after an ACPI restart). Skips the i8042 self-test because the
+// controller is already powered and configured.
+bool keyboard_reinit() noexcept;
+
+// Alt-Tab event channel. Consumed by the compositor.
+enum class AltTabEvent : u8
+{
+    None,
+    Cycle,
+    Commit
+};
+AltTabEvent keyboard_alt_tab_event() noexcept;
 void keyboard_inject(char c) noexcept;
 
 } // namespace notyvos::arch::x86_64

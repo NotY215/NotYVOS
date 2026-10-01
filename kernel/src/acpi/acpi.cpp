@@ -282,7 +282,14 @@ void restart() noexcept
             asm volatile("pause");
     }
 
-    // Fallback: pulse the i8042 reset line via port 0x64.
+    // Fallback #1: the standard PCI reset register. 0xCF9 with value 0x06
+    // (SYS_RST | CPU_RST) triggers a full platform reset on virtually
+    // every x86 chipset including VBox.
+    asm volatile("outb %0, %1" ::"a"(static_cast<u8>(0x06)), "Nd"(static_cast<u16>(0xCF9)));
+    for (u32 i = 0; i < 1000000u; ++i)
+        asm volatile("pause");
+
+    // Fallback #2: the legacy keyboard-controller reset line.
     asm volatile("outb %0, %1" ::"a"(static_cast<u8>(0xFE)), "Nd"(static_cast<u16>(0x64)));
     for (;;)
         asm volatile("hlt");
