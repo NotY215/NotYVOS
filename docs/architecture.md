@@ -6,36 +6,10 @@ NOTYVOS is a freestanding x86-64 kernel with user-mode processes, a VFS,
 persistent NYFS storage, a software-rendered desktop, native device drivers,
 and a PS3 runtime foundation.
 
-The repository currently contains implementation for Phases 1 through 2N,
-3A through 3E, and 4A through 4E. Phase 5A contains the baseline JIT and
-trampoline work, with boot verification still pending.
-
-## System domains
-
-### Native domain
-
-The native domain contains:
-- Limine boot entry and x86-64 kernel
-- Memory management and kernel heap
-- Scheduler and user processes
-- Syscall ABI and user access validation
-- VFS, initramfs and NYFS
-- ACPI, AHCI, e1000, HDA and PS/2 drivers
-- Graphics API, HAL, compositor, widgets and desktop applications
-
-### PS3 runtime domain
-
-The PS3 domain is isolated from native firmware and contains:
-- PS3 ELF parsing
-- PowerPC decoder
-- PPU interpreter
-- SPU interpreter
-- DMA model
-- Executable translation arena
-- x86-64 baseline JIT, emitter, trampoline and translation cache
-
-The runtime currently validates its components through built-in self-tests.
-RSX compatibility and complete game execution are future phases.
+The repository currently contains implementation through Phase 10A, including
+native kernel/userland, desktop graphics, PS3 runtime foundations, RSX
+compatibility, GameRunner, rendering validation, BMP image support and the
+initial theme system. The next implementation stages are 5B, 6E, 9B and 10B.
 
 ### Windows compatibility domain
 
@@ -94,9 +68,11 @@ The graphics stack has four layers:
 3. GPU abstraction — triangle, quad, line and rectangle primitives.
 4. Compositor — desktop scene, windows, widgets, input and presentation.
 
-The current rendering path is software rasterization into a scene buffer,
-followed by framebuffer/VBE presentation. A native GPU backend is the next
-graphics phase.
+The native desktop rendering path remains software rasterization into a scene
+buffer followed by framebuffer/VBE presentation. The PS3 runtime additionally
+has a software RSX compatibility path with FIFO command processing,
+rasterization, vertex/index buffers, depth/scissor state, smooth shading and
+texture binding. Native GPU acceleration remains a separate future phase.
 
 The compositor currently provides:
 - desktop background and optional wallpaper.raw
@@ -168,3 +144,43 @@ expands this into broader memory/control-flow translation and block chaining.
 - Windows compatibility is not currently implemented.
 - Brave and VLC installers under Inbuilt Devices/ are application packages,
   not kernel components.
+
+
+## Image and theme domains
+
+Phase 9A adds BMP decoding and the Image Viewer application. The current
+image path is:
+
+```text
+VFS file
+   ↓
+BMP decoder
+   ↓
+decoded pixel buffer
+   ↓
+Image Viewer
+   ↓
+Graphics API
+   ↓
+Compositor
+   ↓
+framebuffer
+```
+
+Phase 10A adds the initial theme system with Dark, Light and macOS Dark
+variants. Theme state feeds the desktop UI styling layer. Settings-based
+Appearance controls are Phase 10B and are not part of the current delivered
+boundary.
+
+## Current roadmap boundary
+
+Implemented:
+
+**1A–1G → 2A–2N → 3A–3E → 4A–4E → 5A → 6A–6D → 7A–7C → 8A–8B → 9A → 10A**
+
+Next:
+
+**5B, 6E, 9B, 10B**
+
+Not started later work includes the remaining GameRunner integration, full UI
+management, Windows executable compatibility and advanced compatibility.
