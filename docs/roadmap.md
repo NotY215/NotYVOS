@@ -46,7 +46,7 @@ Phase numbers 2H and 2J are intentionally absent from the current roadmap.
 | 3C — Shell + power menu | Done | Start menu, launcher and power actions |
 | 3D — Native drivers + widgets | Done | ACPI, e1000, HDA, AHCI, PS/2 input and widgets |
 | **3E — Graphics API + HAL** | **DONE** | Graphics API, HAL, software/VBE backends, RSDP cast fix |
-| **3F — Native GPU backend** | **Next** | VBE accelerated backend, then PCI GPU integration |
+| **3F — Native GPU backend** | **DONE** | VBE accelerated backend, then PCI GPU integration |
 
 Phase 3 currently provides a software-rendered desktop and a
 VBE/framebuffer presentation path. It does not yet provide hardware GPU
