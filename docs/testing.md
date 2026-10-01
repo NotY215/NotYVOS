@@ -25,10 +25,10 @@ Look for messages covering:
 - VFS/initramfs mount
 - graphics backend registration
 - PS3 runtime self-tests
-- RSX command/rasterizer validation
+- RSX command/rasterizer/UV/perspective/mipmap validation
 - GameRunner format detection and bounded guest launch
-- BMP/Image Viewer validation
-- Theme-state rendering validation
+- BMP/PNG/GIF/ICO/JPEG decoder and Image Viewer validation
+- Theme-state, shortcut and Settings Appearance validation
 - scheduler start
 - user init
 
@@ -115,6 +115,6 @@ or desktop behavior, followed by the relevant runtime self-tests.
 
 The delivered boundary is now:
 
-**1A–1G → 2A–2N → 3A–3F → 4A–4E → 5A–5D → 6A–6D → 7A–7C → 8A–8B → 9A → 10A**
+**1A–1G → 2A–2N → 3A–3F → 4A–4E → 5A–5D → 6A–6F → 7A–7C → 8A–8B → 9A–9C → 10A–10B**
 
-The next validation targets are **6E, 9B and 10B**.
+All defined Phase 1–10 subphases are now implementation targets for regression validation; later work begins with 7D and remaining Phase 10 UI management.
