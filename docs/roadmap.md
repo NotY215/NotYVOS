@@ -48,9 +48,9 @@ Phase numbers 2H and 2J are intentionally absent from the current roadmap.
 | **3E — Graphics API + HAL** | **DONE** | Graphics API, HAL, software/VBE backends, RSDP cast fix |
 | **3F — Native GPU backend** | **DONE** | VBE accelerated backend, then PCI GPU integration |
 
-Phase 3 currently provides a software-rendered desktop and a
-VBE/framebuffer presentation path. It does not yet provide hardware GPU
-acceleration.
+Phase 3 provides the desktop graphics API, HAL, backend registration and native
+GPU backend integration. The PS3 RSX compatibility path remains separately
+implemented in software.
 
 ## Phase 4 — PS3 Runtime Foundation
 
@@ -75,11 +75,12 @@ acceleration.
 
 | Subphase | Status | Focus |
 |---|---|---|
-| 6A — RSX structural | Done | RSX registers, FIFO, command processing and surface state |
-| 6B — RSX rasterizer | Done | Software RSX primitive rasterization and presentation path |
-| 6C — RSX vertex buffers + depth + scissor | Done | Guest vertex/index buffers, depth buffer and scissor state |
+| **6A — RSX structural** | **Done** | RSX registers, FIFO, command processing and surface state |
+| **6B — RSX rasterizer** | **Done** | Software RSX primitive rasterization and presentation path |
+| **6C — RSX vertex buffers + depth + scissor** | **Done** | Guest vertex/index buffers, depth buffer and scissor state |
 | **6D — RSX smooth shading + texture bind** | **Done** | Smooth shading and texture binding support |
-| 6E — Per-vertex UVs, wrap modes, perspective | Next | UV interpolation, texture wrapping and perspective-correct attributes |
+| **6E — Per-vertex UVs + wrap + perspective** | **Done** | UV attributes, texture wrapping and perspective-correct interpolation |
+| **6F — Mipmaps + LOD** | **Done** | Mipmap levels, LOD bias and mip-aware texture sampling |
 
 ## Phase 7 — GameRunner + Compatibility Layer
 
@@ -102,14 +103,15 @@ acceleration.
 | Subphase | Status | Focus |
 |---|---|---|
 | **9A — BMP decoder + Image Viewer app** | **Done** | BMP decoding and native Image Viewer application |
-| 9B — PNG with inflate + JPEG decoders | Next | PNG decoding with inflate and JPEG decoding |
+| **9B — PNG + inflate** | **Done** | PNG decoding with the native inflate path |
+| **9C — GIF + ICO + JPEG** | **Done** | GIF LZW decoding, ICO container/DIB/PNG support and JPEG decoding |
 
 ## Phase 10 — Theme and UI Management
 
 | Subphase | Status | Focus |
 |---|---|---|
-| **10A — Theme system (Dark / Light / macOS Dark)** | **Done** | Theme definitions and runtime theme selection |
-| 10B — Settings → Appearance tab | Next | Theme selection through Settings |
+| **10A — Theme system + shortcuts** | **Done** | Dark, Light and macOS Dark themes plus desktop shortcut integration |
+| **10B — Settings → Appearance tab** | **Done** | Appearance controls and theme selection through Settings |
 | 10 (rest) — Full UI management | Not started | Broader desktop appearance and UI management |
 
 ## Phase 11 — Windows Compatibility
@@ -128,11 +130,11 @@ acceleration.
 
 The implemented roadmap now reaches through:
 
-**1A–1G → 2A–2N → 3A–3E → 4A–4E → 5A–5D → 6A–6D → 7A–7C → 8A–8B → 9A → 10A**
+**1A–1G → 2A–2N → 3A–3F → 4A–4E → 5A–5D → 6A–6F → 7A–7C → 8A–8B → 9A–9C → 10A–10B**
 
 The immediate next items are:
 
-**6E, 9B and 10B**
+**None within Phases 1–10**
 
 The later compatibility work remains:
 
@@ -144,10 +146,10 @@ boundary.
 
 
 
-The PS3 runtime currently has loader, decoder, interpreters, DMA,
-executable-memory, JIT and self-test infrastructure. It is not yet a full
-PS3 game compatibility layer.
+The PS3 runtime has loader, decoder, interpreters, DMA, executable-memory, JIT,
+RSX and GameRunner foundations. Full game-session compatibility remains beyond
+the delivered Phase 7C boundary.
 
-The current desktop uses the software graphics path. The gpu and gfx APIs
-are designed so future native hardware backends can replace the software
-path without changing the high-level drawing interface.
+The native desktop graphics stack includes the implemented graphics API, HAL and
+GPU abstraction. The PS3 RSX path remains a software compatibility renderer,
+while the documented roadmap through Phase 10 is complete.
