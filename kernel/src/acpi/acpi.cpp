@@ -270,13 +270,19 @@ void restart() noexcept
 
     if (g_has_reset_reg && g_reset_reg.address != 0)
     {
-        const u8 v = 0x06;
-        if (g_reset_reg.address_space == 1)
+        const u8 value = g_fadt ? reinterpret_cast<const Fadt*>(g_fadt)->reset_value : 0x06;
+        if (g_reset_reg.address_space == 1) // I/O space
         {
-            asm volatile("outb %0, %1" ::"a"(v), "Nd"(static_cast<u16>(g_reset_reg.address)));
+            asm volatile("outb %0, %1" ::"a"(value), "Nd"(static_cast<u16>(g_reset_reg.address)));
         }
+        // Give the platform a short window to actually reset. If we return
+        // from this loop the reset did not take, so fall through to the
+        // 8042-based fallback.
+        for (u32 i = 0; i < 1000000u; ++i)
+            asm volatile("pause");
     }
 
+    // Fallback: pulse the i8042 reset line via port 0x64.
     asm volatile("outb %0, %1" ::"a"(static_cast<u8>(0xFE)), "Nd"(static_cast<u16>(0x64)));
     for (;;)
         asm volatile("hlt");

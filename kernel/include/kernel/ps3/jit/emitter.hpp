@@ -14,8 +14,8 @@ constexpr u8 kRsp = 4;
 constexpr u8 kRbp = 5;
 constexpr u8 kRsi = 6;
 constexpr u8 kRdi = 7;
-constexpr u8 kR8  = 8;
-constexpr u8 kR9  = 9;
+constexpr u8 kR8 = 8;
+constexpr u8 kR9 = 9;
 constexpr u8 kR10 = 10;
 constexpr u8 kR11 = 11;
 constexpr u8 kR12 = 12;
@@ -27,7 +27,7 @@ constexpr u8 kR15 = 15;
 namespace alu
 {
 constexpr u8 kAdd = 0;
-constexpr u8 kOr  = 1;
+constexpr u8 kOr = 1;
 constexpr u8 kAnd = 4;
 constexpr u8 kSub = 5;
 constexpr u8 kXor = 6;
@@ -36,14 +36,20 @@ constexpr u8 kCmp = 7;
 
 namespace cc
 {
-constexpr u8 kE  = 0x4;
+constexpr u8 kE = 0x4;
 constexpr u8 kNe = 0x5;
-constexpr u8 kL  = 0xC;
+constexpr u8 kL = 0xC;
 constexpr u8 kGe = 0xD;
 constexpr u8 kLe = 0xE;
-constexpr u8 kG  = 0xF;
+constexpr u8 kG = 0xF;
 } // namespace cc
 
+// Minimal x86-64 instruction emitter for the NOTYVOS baseline JIT.
+//
+// Only base-register + disp32 addressing is supported for memory operands.
+// The base register's low 3 bits must not be 4 (RSP/R12) — the emitter
+// never emits a SIB byte. The JIT uses R15 exclusively as the Context
+// base; R15's low 3 bits are 7, so it is safe.
 class Emitter
 {
 public:
@@ -62,7 +68,7 @@ public:
     void mov_rm(u8 dst, u8 base, i32 disp) noexcept;
     void mov_mr(u8 base, i32 disp, u8 src) noexcept;
 
-    // 32-bit memory moves (upper halves zeroed).
+    // 32-bit memory moves (writes to 32-bit reg zero the upper 32).
     void mov_r32_mem(u8 dst, u8 base, i32 disp) noexcept;
     void mov_mem_r32(u8 base, i32 disp, u8 src) noexcept;
 
@@ -74,7 +80,7 @@ public:
     // Zeroing.
     void zero_r(u8 dst) noexcept;
 
-    // Stack.
+    // Stack pointer adjustment.
     void sub_rsp_imm8(u8 imm8) noexcept;
     void add_rsp_imm8(u8 imm8) noexcept;
 
@@ -83,6 +89,10 @@ public:
     void sar_ri8_64(u8 dst, u8 imm8) noexcept;
     void sar_ri8_32(u8 dst, u8 imm8) noexcept;
 
+    // Rotates.
+    void rol_ri8_32(u8 dst, u8 imm8) noexcept; // C1 /0 ib, r/m32
+    void rol_r32_cl(u8 dst) noexcept;          // D3 /0, r/m32 rotate by CL
+
     void call_r(u8 reg) noexcept;
     void ret() noexcept;
 
@@ -90,10 +100,22 @@ public:
     u32 jcc_placeholder(u8 condition) noexcept;
     void patch_branch_to_here(u32 disp_offset) noexcept;
 
-    bool overflowed() const noexcept { return overflow_; }
-    usize size() const noexcept { return pos_; }
-    u8* data() noexcept { return buf_; }
-    u32 here() const noexcept { return static_cast<u32>(pos_); }
+    bool overflowed() const noexcept
+    {
+        return overflow_;
+    }
+    usize size() const noexcept
+    {
+        return pos_;
+    }
+    u8* data() noexcept
+    {
+        return buf_;
+    }
+    u32 here() const noexcept
+    {
+        return static_cast<u32>(pos_);
+    }
 
 private:
     void ensure(usize n) noexcept;

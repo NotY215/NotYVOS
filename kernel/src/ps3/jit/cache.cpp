@@ -73,6 +73,47 @@ void TranslationCache::flush() noexcept
     g_bytes = 0;
 }
 
+Block* TranslationCache::probe(u64 ppc_pc) noexcept
+{
+    Block* b = g_buckets[bucket_of(ppc_pc)];
+    while (b)
+    {
+        if (b->ppc_start == ppc_pc)
+            return b;
+        b = b->next;
+    }
+    return nullptr;
+}
+
+void TranslationCache::invalidate_range(u64 lo, u64 hi) noexcept
+{
+    if (lo >= hi)
+        return;
+    u64 removed = 0;
+    for (u32 i = 0; i < kBuckets; ++i)
+    {
+        Block** pp = &g_buckets[i];
+        while (*pp)
+        {
+            Block* b = *pp;
+            if (b->ppc_start >= lo && b->ppc_start < hi)
+            {
+                *pp = b->next;
+                if (g_blocks > 0)
+                    --g_blocks;
+                if (g_bytes >= b->x86_size)
+                    g_bytes -= b->x86_size;
+                ++removed;
+            }
+            else
+            {
+                pp = &b->next;
+            }
+        }
+    }
+    (void)removed;
+}
+
 u64 TranslationCache::hits() noexcept
 {
     return g_hits;

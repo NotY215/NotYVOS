@@ -106,6 +106,7 @@ extern "C"
 #include <kernel/proc/elf.hpp>
 #include <kernel/ps3/jit/jit.hpp>
 #include <kernel/ps3/self_test.hpp>
+#include <kernel/ps3/rsx/rsx.hpp>
 #include <kernel/sched/scheduler.hpp>
 #include <kernel/types.hpp>
 
@@ -268,6 +269,7 @@ extern "C" [[noreturn]] void kernel_main()
 
     // ---- PS3 runtime: JIT must be ready before self-tests run. ----
     ps3::jit::init();
+    ps3::rsx::Rsx::init();
     ps3::self_test();
 
     // ---- Scheduler + init ----

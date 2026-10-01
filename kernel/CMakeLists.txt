@@ -36,7 +36,9 @@ set(KERNEL_SOURCES
     src/ps3/jit/jit.cpp                     
     src/ps3/jit/jit_enter.S                 
     src/ps3/jit/self_test.cpp
-    src/ps3/jit/translate.cpp 
+    src/ps3/jit/translate.cpp
+    src/ps3/rsx/rsx.cpp
+    src/ps3/rsx/self_test.cpp
     src/gpu/gpu.cpp
     src/gfx/hal.cpp
     src/gfx/api.cpp

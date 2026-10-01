@@ -5,6 +5,10 @@
 #include <kernel/ps3/jit/jit.hpp>
 #include <kernel/ps3/jit/self_test.hpp>
 
+// Declared in translate.cpp with extern "C" linkage.
+extern "C" bool notyvos_jit_store32(notyvos::ps3::ppu::Context* ctx, notyvos::u64 ea,
+                                    notyvos::u64 value) noexcept;
+
 namespace notyvos::ps3::jit
 {
 
@@ -20,6 +24,7 @@ bool ram_read8(void* u, u64 a, u8* o) noexcept
     *o = g_ram[a];
     return true;
 }
+
 bool ram_read16(void* u, u64 a, u16* o) noexcept
 {
     (void)u;
@@ -28,6 +33,7 @@ bool ram_read16(void* u, u64 a, u16* o) noexcept
     *o = static_cast<u16>((static_cast<u32>(g_ram[a]) << 8) | static_cast<u32>(g_ram[a + 1]));
     return true;
 }
+
 bool ram_read32(void* u, u64 a, u32* o) noexcept
 {
     (void)u;
@@ -37,6 +43,7 @@ bool ram_read32(void* u, u64 a, u32* o) noexcept
          (static_cast<u32>(g_ram[a + 2]) << 8) | static_cast<u32>(g_ram[a + 3]);
     return true;
 }
+
 bool ram_read64(void* u, u64 a, u64* o) noexcept
 {
     (void)u;
@@ -57,6 +64,7 @@ bool ram_write8(void* u, u64 a, u8 v) noexcept
     g_ram[a] = v;
     return true;
 }
+
 bool ram_write16(void* u, u64 a, u16 v) noexcept
 {
     (void)u;
@@ -106,12 +114,15 @@ void wire_ram(ppu::Context& c) noexcept
     c.write64 = ram_write64;
 }
 
+// ---------------------------------------------------------------------------
+// Test 1: integer arithmetic (5A).
+// ---------------------------------------------------------------------------
 void test_arith() noexcept
 {
     libk::memset(g_ram, 0, sizeof(g_ram));
     put_insn(0x00, 0x3860000Au); // addi r3, r0, 10
     put_insn(0x04, 0x38800014u); // addi r4, r0, 20
-    put_insn(0x08, 0x7CA32214u); // add  r5, r3, r4   -> r5 = 30
+    put_insn(0x08, 0x7CA32214u); // add  r5, r3, r4   -> 30
     put_insn(0x0C, 0x48000000u); // b .
 
     ppu::Context ctx{};
@@ -129,13 +140,16 @@ void test_arith() noexcept
                static_cast<unsigned long long>(ctx.gpr[5]));
 }
 
+// ---------------------------------------------------------------------------
+// Test 2: D-form memory round-trip (5B).
+// ---------------------------------------------------------------------------
 void test_memory() noexcept
 {
     libk::memset(g_ram, 0, sizeof(g_ram));
     put_insn(0x00, 0x38600064u); // addi r3, r0, 100
     put_insn(0x04, 0x90600100u); // stw  r3, 0x100(r0)
     put_insn(0x08, 0x80800100u); // lwz  r4, 0x100(r0)
-    put_insn(0x0C, 0x7CA32214u); // add  r5, r3, r4   -> r5 = 200
+    put_insn(0x0C, 0x7CA32214u); // add  r5, r3, r4   -> 200
     put_insn(0x10, 0x48000000u); // b .
 
     ppu::Context ctx{};
@@ -153,13 +167,15 @@ void test_memory() noexcept
                static_cast<unsigned long long>(ctx.gpr[5]));
 }
 
+// ---------------------------------------------------------------------------
+// Test 3: bdnz loop (5B conditional branch).
+// ---------------------------------------------------------------------------
 void test_branch() noexcept
 {
     libk::memset(g_ram, 0, sizeof(g_ram));
     put_insn(0x00, 0x38600003u); // addi r3, r0, 3
-    // mtspr 9, r3  (CTR = r3)
     const u32 mtspr = (31u << 26) | (3u << 21) | (9u << 16) | (467u << 1);
-    put_insn(0x04, mtspr);
+    put_insn(0x04, mtspr);       // mtspr 9, r3  (CTR = r3)
     put_insn(0x08, 0x38800000u); // addi r4, r0, 0
     put_insn(0x0C, 0x38840001u); // addi r4, r4, 1
     put_insn(0x10, 0x4200FFFCu); // bc 16,0,-4 (bdnz 0x0C)
@@ -181,21 +197,22 @@ void test_branch() noexcept
                static_cast<unsigned long long>(ctx.ctr));
 }
 
-// 5C: extsb + extsh + srawi
+// ---------------------------------------------------------------------------
+// Test 4: extsb + srawi (5C part 1).
+//
+// r3 = 0xFFFF8000 built via addis then ori low byte 0x80.
+// extsb r4, r3  -> 0xFFFFFFFFFFFFFF80
+// srawi r5, r4, 4 -> 0x00000000FFFFFFF8
+// ---------------------------------------------------------------------------
 void test_extend_shift() noexcept
 {
     libk::memset(g_ram, 0, sizeof(g_ram));
-    // r3 = 0xFFFFFF80 (128 with sign flipped in low byte)
-    // Not via addi (16-bit); build with addis+ori: r3 = 0xFFFF8000
-    put_insn(0x00, 0x3C60FFFFu); // addis r3, r0, -1   -> r3 = 0xFFFFFFFFFFFF0000
-    put_insn(0x04, 0x60638000u); // ori   r3, r3, 0x8000 -> r3 = 0xFFFFFFFFFFFF8000
-    // extsb r4, r3  -> low byte 0x80 -> sign-extended to 0xFFFFFFFFFFFFFF80
-    // extsb: primary 31, XO 954, rt=rS(3), ra=rA(4)
+    put_insn(0x00, 0x3C60FFFFu); // addis r3, r0, -1
+    put_insn(0x04, 0x60630080u); // ori   r3, r3, 0x0080
     const u32 extsb_w = (31u << 26) | (3u << 21) | (4u << 16) | (954u << 1);
-    put_insn(0x08, extsb_w);
-    // srawi r5, r4, 4  -> arithmetic shift right (r4 is -128, /16 = -8)
+    put_insn(0x08, extsb_w); // extsb r4, r3
     const u32 srawi_w = (31u << 26) | (4u << 21) | (5u << 16) | (4u << 11) | (824u << 1);
-    put_insn(0x0C, srawi_w);
+    put_insn(0x0C, srawi_w);     // srawi r5, r4, 4
     put_insn(0x10, 0x48000000u); // b .
 
     ppu::Context ctx{};
@@ -205,11 +222,6 @@ void test_extend_shift() noexcept
     TranslationCache::flush();
     (void)notyvos::ps3::jit::run(&ctx, 5);
 
-    // r4 = 0xFFFFFFFFFFFFFF80 (sign-extended 0x80)
-    // r5 = (i32)(r4 low 32) >> 4, zero-extended:
-    //      low32 of r4 = 0xFFFFFF80 = -128 (i32)
-    //      >> 4 = -8 = 0xFFFFFFF8
-    //      zero-extended to 64: 0x00000000FFFFFFF8
     const bool r4_ok = (ctx.gpr[4] == 0xFFFFFFFFFFFFFF80ULL);
     const bool r5_ok = (ctx.gpr[5] == 0x00000000FFFFFFF8ULL);
     const bool ok = r4_ok && r5_ok;
@@ -220,27 +232,17 @@ void test_extend_shift() noexcept
                static_cast<unsigned long long>(ctx.gpr[5]));
 }
 
-// 5C: ld / std
+// ---------------------------------------------------------------------------
+// Test 5: ld / std (5C part 1, DS-form).
+// ---------------------------------------------------------------------------
 void test_ld_std() noexcept
 {
     libk::memset(g_ram, 0, sizeof(g_ram));
-    // r3 = 0xDEADBEEFCAFEBABE via addis+ori sequence
-    // Build high half via addis, low via ori, then shift left 32 and or.
-    // Easier: store the constant in memory and ld it back? No, ld reads memory.
-    // So we need the constant in a register. Use two 16-bit immediate ops:
-    //   addis r3, r0, 0xDEAD   -> r3 = sign_ext(0xDEAD)<<16 = 0xFFFFFFFFDEAD0000
-    //   ori   r3, r3, 0xBEEF   -> r3 = 0xFFFFFFFFDEADBEEF
-    // To build the full 64-bit value, we'd need shift-left 32. Not available.
-    // Simplify: use a value whose sign-extended upper half is acceptable.
-    put_insn(0x00, 0x3C60DEADu); // addis r3, r0, 0xDEAD  (=> r3 = 0xFFFFFFFFDEAD0000)
-    put_insn(0x04, 0x6063BEEFu); // ori   r3, r3, 0xBEEF  (=> r3 = 0xFFFFFFFFDEADBEEF)
-    // std r3, 0x200(r0)  : DS-form, primary 62, XO=0, DS=0x200
-    // word = (62<<26) | (3<<21) | (0<<16) | (0x200 & 0xFFFC) | 0
-    put_insn(0x08, 0xF8600200u);
-    // ld  r4, 0x200(r0)  : DS-form, primary 58, XO=0, DS=0x200
-    put_insn(0x0C, 0xE8800200u);
-    // add r5, r3, r4  -> 2 * r3
-    put_insn(0x10, 0x7CA32214u);
+    put_insn(0x00, 0x3C60DEADu); // addis r3, r0, 0xDEAD  (sign-extended)
+    put_insn(0x04, 0x6063BEEFu); // ori   r3, r3, 0xBEEF
+    put_insn(0x08, 0xF8600200u); // std r3, 0x200(r0)
+    put_insn(0x0C, 0xE8800200u); // ld  r4, 0x200(r0)
+    put_insn(0x10, 0x7CA32214u); // add r5, r3, r4
     put_insn(0x14, 0x48000000u); // b .
 
     ppu::Context ctx{};
@@ -251,16 +253,210 @@ void test_ld_std() noexcept
     (void)notyvos::ps3::jit::run(&ctx, 6);
 
     const u64 expected = 0xFFFFFFFFDEADBEEFULL;
-    const bool r3_ok = (ctx.gpr[3] == expected);
-    const bool r4_ok = (ctx.gpr[4] == expected);
-    const bool r5_ok = (ctx.gpr[5] == (expected + expected));
-    const bool ok = r3_ok && r4_ok && r5_ok;
-
+    const bool ok = (ctx.gpr[3] == expected) && (ctx.gpr[4] == expected) &&
+                    (ctx.gpr[5] == (expected + expected));
     log::write(ok ? log::Level::Info : log::Level::Warn, "jit",
                "JIT ld/std test: %s r3=0x%llx r4=0x%llx r5=0x%llx", ok ? "PASS" : "FAIL",
                static_cast<unsigned long long>(ctx.gpr[3]),
                static_cast<unsigned long long>(ctx.gpr[4]),
                static_cast<unsigned long long>(ctx.gpr[5]));
+}
+
+// ---------------------------------------------------------------------------
+// Test 6: rlwinm (5C part 2).
+//
+// r3 = 0xFFFF5678 (via addis+ori)
+// rlwinm r4, r3, 8, 0, 7   -> low32(r3) = 0xFFFF5678
+//                             rotl32(x, 8) = 0xFF5678FF
+//                             & 0x000000FF  = 0x000000FF
+// ---------------------------------------------------------------------------
+void test_rlwinm() noexcept
+{
+    libk::memset(g_ram, 0, sizeof(g_ram));
+    put_insn(0x00, 0x3C60FFFFu); // addis r3, r0, -1
+    put_insn(0x04, 0x60635678u); // ori   r3, r3, 0x5678
+    const u32 rlwinm_w = (21u << 26) | (3u << 21) | (4u << 16) | (8u << 11) | (0u << 6) | (7u << 1);
+    put_insn(0x08, rlwinm_w);    // rlwinm r4, r3, 8, 0, 7
+    put_insn(0x0C, 0x48000000u); // b .
+
+    ppu::Context ctx{};
+    ppu::init(&ctx);
+    wire_ram(ctx);
+    ctx.pc = 0;
+    TranslationCache::flush();
+    (void)notyvos::ps3::jit::run(&ctx, 3);
+
+    const bool ok = (ctx.gpr[4] == 0x00000000000000FFULL);
+    log::write(ok ? log::Level::Info : log::Level::Warn, "jit",
+               "JIT rlwinm test: %s r4=0x%llx (expected 0xff)", ok ? "PASS" : "FAIL",
+               static_cast<unsigned long long>(ctx.gpr[4]));
+}
+
+// ---------------------------------------------------------------------------
+// Test 7: rlwimi (5C part 2).
+//
+// r3 = 0xABCD1234
+// r4 = 0x11223344
+// rlwimi r4, r3, 4, 8, 15   -> r4[8:15] <- bits 8:15 of rotl32(r3, 4)
+// ---------------------------------------------------------------------------
+void test_rlwimi() noexcept
+{
+    libk::memset(g_ram, 0, sizeof(g_ram));
+    // r3 = 0x00000000ABCD1234 (via addis+ori, sign-extended high)
+    put_insn(0x00, 0x3C600000u); // addis r3, r0, 0
+    put_insn(0x04, 0x60630000u); // ori r3, r3, 0    (clear)
+    // easier: load the constant via ld from memory. Not available in test
+    // ram without extra plumbing. Use addis+ori.
+    put_insn(0x00, 0x3C60ABCDu); // addis r3, r0, 0xABCD  -> 0xFFFFFFFFABCD0000
+    put_insn(0x04, 0x60631234u); // ori   r3, r3, 0x1234  -> 0xFFFFFFFFABCD1234
+    put_insn(0x08, 0x3C801122u); // addis r4, r0, 0x1122
+    put_insn(0x0C, 0x60843344u); // ori   r4, r4, 0x3344  -> 0xFFFFFFFF11223344
+
+    // rlwimi r4, r3, 4, 8, 15
+    //   word = 20<<26 | RS(3)<<21 | RA(4)<<16 | SH(4)<<11 | MB(8)<<6 | ME(15)<<1
+    const u32 rlwimi_w =
+        (20u << 26) | (3u << 21) | (4u << 16) | (4u << 11) | (8u << 6) | (15u << 1);
+    put_insn(0x10, rlwimi_w);
+    put_insn(0x14, 0x48000000u); // b .
+
+    ppu::Context ctx{};
+    ppu::init(&ctx);
+    wire_ram(ctx);
+    ctx.pc = 0;
+    TranslationCache::flush();
+    (void)notyvos::ps3::jit::run(&ctx, 6);
+
+    // low32(r3) = 0xABCD1234
+    // rotl32(0xABCD1234, 4) = 0xBCD1234A
+    // bits 8:15 = 0x23
+    // r4 result = (0x11223344 & ~0xFF00) | (0x23 << 8)
+    //           = 0x11220044 | 0x2300 = 0x11222344
+    const bool ok = (ctx.gpr[4] == 0x0000000011222344ULL);
+    log::write(ok ? log::Level::Info : log::Level::Warn, "jit",
+               "JIT rlwimi test: %s r4=0x%llx (expected 0x11222344)", ok ? "PASS" : "FAIL",
+               static_cast<unsigned long long>(ctx.gpr[4]));
+}
+
+// ---------------------------------------------------------------------------
+// Test 8: rlwnm (5C part 2).
+//
+// r3 = 0x12345678
+// r4 = 5
+// rlwnm r5, r3, r4, 0, 7  ->  rotl32(r3, 5) & 0xFF
+//                           = 0x2468ACF0 & 0xFF = 0xF0
+// ---------------------------------------------------------------------------
+void test_rlwnm() noexcept
+{
+    libk::memset(g_ram, 0, sizeof(g_ram));
+    put_insn(0x00, 0x3C601234u); // addis r3, r0, 0x1234
+    put_insn(0x04, 0x60635678u); // ori   r3, r3, 0x5678
+    put_insn(0x08, 0x38800005u); // addi  r4, r0, 5
+    // rlwnm r5, r3, r4, 0, 7
+    //   word = 23<<26 | RS(3)<<21 | RA(5)<<16 | RB(4)<<11 | MB(0)<<6 | ME(7)<<1
+    const u32 rlwnm_w = (23u << 26) | (3u << 21) | (5u << 16) | (4u << 11) | (0u << 6) | (7u << 1);
+    put_insn(0x0C, rlwnm_w);
+    put_insn(0x10, 0x48000000u); // b .
+
+    ppu::Context ctx{};
+    ppu::init(&ctx);
+    wire_ram(ctx);
+    ctx.pc = 0;
+    TranslationCache::flush();
+    (void)notyvos::ps3::jit::run(&ctx, 4);
+
+    // low32(r3) = 0x12345678
+    // rotl32 by 5 = 0x2468ACF0
+    // & 0xFF = 0xF0
+    const bool ok = (ctx.gpr[5] == 0x00000000000000F0ULL);
+    log::write(ok ? log::Level::Info : log::Level::Warn, "jit",
+               "JIT rlwnm  test: %s r5=0x%llx (expected 0xf0)", ok ? "PASS" : "FAIL",
+               static_cast<unsigned long long>(ctx.gpr[5]));
+}
+
+// ---------------------------------------------------------------------------
+// Test 9: indexed load/store (5C part 2).
+//
+// r3 = 0xCAFEBABE12345678
+// r4 = 0x100
+// stwx r3, r0, r4       -> mem[0x100] = r3
+// lwzx r5, r0, r4       -> r5 = low32(mem[0x100]) zero-ext
+// stdx r3, r0, r4       -> mem[0x100] = r3 (8 bytes)
+// ldx  r6, r0, r4       -> r6 = mem[0x100]
+// ---------------------------------------------------------------------------
+void test_indexed() noexcept
+{
+    libk::memset(g_ram, 0, sizeof(g_ram));
+    put_insn(0x00, 0x3C60CAFEu); // addis r3, r0, 0xCAFE  -> 0xFFFFFFFFCAFE0000
+    put_insn(0x04, 0x6063BABEu); // ori   r3, r3, 0xBABE  -> 0xFFFFFFFFCAFEBABE
+    put_insn(0x08, 0x38800100u); // addi  r4, r0, 0x100
+    // stwx r3, r0, r4
+    const u32 stwx_w = (31u << 26) | (3u << 21) | (0u << 16) | (4u << 11) | (151u << 1);
+    put_insn(0x0C, stwx_w);
+    // lwzx r5, r0, r4
+    const u32 lwzx_w = (31u << 26) | (5u << 21) | (0u << 16) | (4u << 11) | (23u << 1);
+    put_insn(0x10, lwzx_w);
+    // stdx r3, r0, r4
+    const u32 stdx_w = (31u << 26) | (3u << 21) | (0u << 16) | (4u << 11) | (149u << 1);
+    put_insn(0x14, stdx_w);
+    // ldx r6, r0, r4
+    const u32 ldx_w = (31u << 26) | (6u << 21) | (0u << 16) | (4u << 11) | (21u << 1);
+    put_insn(0x18, ldx_w);
+    put_insn(0x1C, 0x48000000u); // b .
+
+    ppu::Context ctx{};
+    ppu::init(&ctx);
+    wire_ram(ctx);
+    ctx.pc = 0;
+    TranslationCache::flush();
+    (void)notyvos::ps3::jit::run(&ctx, 8);
+
+    const u64 expect = 0xFFFFFFFFCAFEBABEULL;
+    const bool r5_ok = (ctx.gpr[5] == 0x00000000CAFEBABEULL); // lwzx: zero-ext low 32
+    const bool r6_ok = (ctx.gpr[6] == expect);                // ldx: full 64-bit
+    const bool ok = r5_ok && r6_ok;
+
+    log::write(ok ? log::Level::Info : log::Level::Warn, "jit",
+               "JIT indexed test: %s r5=0x%llx r6=0x%llx", ok ? "PASS" : "FAIL",
+               static_cast<unsigned long long>(ctx.gpr[5]),
+               static_cast<unsigned long long>(ctx.gpr[6]));
+}
+
+// ---------------------------------------------------------------------------
+// Test 10: SMC invalidation (5D).
+//
+// Translate a block, then write new code over it through the JIT store
+// helper, and verify the block is invalidated and re-translated on the
+// next execution.
+// ---------------------------------------------------------------------------
+void test_smc() noexcept
+{
+    libk::memset(g_ram, 0, sizeof(g_ram));
+    put_insn(0x00, 0x38600007u); // addi r3, r0, 7
+    put_insn(0x04, 0x48000000u); // b .
+
+    ppu::Context ctx{};
+    ppu::init(&ctx);
+    wire_ram(ctx);
+    ctx.pc = 0;
+    TranslationCache::flush();
+    (void)notyvos::ps3::jit::run(&ctx, 2);
+
+    const bool first_ok = (ctx.gpr[3] == 7) && (TranslationCache::probe(0x00) != nullptr);
+
+    // Overwrite the first insn through the JIT store helper (which
+    // triggers notyvos_jit_smc_check and invalidates the cached block).
+    (void)notyvos_jit_store32(&ctx, 0x00, 0x3860002Au); // addi r3, r0, 42
+    const bool invalidated = (TranslationCache::probe(0x00) == nullptr);
+
+    ctx.gpr[3] = 0;
+    ctx.pc = 0;
+    (void)notyvos::ps3::jit::run(&ctx, 2);
+    const bool second_ok = (ctx.gpr[3] == 42);
+
+    const bool ok = first_ok && invalidated && second_ok;
+    log::write(ok ? log::Level::Info : log::Level::Warn, "jit",
+               "JIT SMC test: %s first=%s invalidated=%s second=%s", ok ? "PASS" : "FAIL",
+               first_ok ? "yes" : "no", invalidated ? "yes" : "no", second_ok ? "yes" : "no");
 }
 
 } // namespace
@@ -278,6 +474,11 @@ void self_test() noexcept
     test_branch();
     test_extend_shift();
     test_ld_std();
+    test_rlwinm();
+    test_rlwimi();
+    test_rlwnm();
+    test_indexed();
+    test_smc();
 
     log::write(log::Level::Info, "jit",
                "JIT stats: blocks=%llu translated=%llu entered=%llu fallback=%llu faults=%llu",

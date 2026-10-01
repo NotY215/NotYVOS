@@ -8,44 +8,32 @@ namespace notyvos::ps3::spu
 namespace
 {
 
-// ---------------------------------------------------------------------------
-// Synthetic SPU instruction encoding (NOTYVOS Phase 4C/5C).
+// Synthetic SPU encoding, big-endian 32-bit on disk:
+//   bits 31..25  opcode    (7)
+//   bits 24..18  rt        (7)
+//   bits 17..11  ra        (7)
+//   bits 10..4   rb        (7)
+//   bits 3..0    spare     (4, must be 0)
 //
-// Real SPU encoding is 32-bit big-endian. NOTYVOS uses a simplified,
-// non-overlapping layout for the interpreter stage. Real SPU semantics
-// land in a later phase once the JIT can host them.
-//
-// Field layout, MSB-first, big-endian on disk:
-//   bits 31..25  opcode  (7 bits)
-//   bits 24..19  unused  (6 bits, must be 0)
-//   bits 18..12  rt      (7 bits, target register)
-//   bits 11..5   ra      (7 bits, source A)
-//   bits 4..0    rb      (5 bits, source B, register 0..31 for synthetic ops)
-//   bits 15..0   imm16   (16 bits, used only by `il` and dma size)
+// Immediate format (opcode-dependent): the same word carries the 16-bit
+// immediate at bits 17..2, i.e. `rt` and `imm16` coexist without overlap
+// because `ra`/`rb` are not used by immediate ops.
 //
 // Opcodes:
-//   0x00 halt
-//   0x01 nop
-//   0x10 a   (add word)       rt = ra + rb
-//   0x11 sf  (subtract word)  rt = ra - rb
-//   0x12 and                  rt = ra & rb
-//   0x13 or                   rt = ra | rb
-//   0x14 xor                  rt = ra ^ rb
-//   0x20 il  (load imm)       rt[all lanes] = imm16
-//   0x21 wrch                 outbound mailbox <- ra
-//   0x22 rdch                 rt = inbound mailbox
-//   0x23 dma_read             main -> local
-//   0x24 dma_write            local -> main
-//   0x25 stop
-// ---------------------------------------------------------------------------
-
+//   0x00 halt            0x01 nop
+//   0x10 a   (add)       0x11 sf (sub)   0x12 and   0x13 or   0x14 xor
+//   0x20 il  (load imm)  0x21 wrch       0x22 rdch
+//   0x23 dma_read        0x24 dma_write  0x25 stop
 constexpr u32 kOpShift = 25;
 constexpr u32 kOpMask = 0x7Fu;
-constexpr u32 kRtShift = 12;
+constexpr u32 kRtShift = 18;
 constexpr u32 kRtMask = 0x7Fu;
-constexpr u32 kRaShift = 5;
+constexpr u32 kRaShift = 11;
 constexpr u32 kRaMask = 0x7Fu;
-constexpr u32 kRbMask = 0x1Fu;
+constexpr u32 kRbShift = 4;
+constexpr u32 kRbMask = 0x7Fu;
+constexpr u32 kImmShift = 2;
+constexpr u32 kImmMask = 0xFFFFu;
 
 constexpr u32 kOpHalt = 0x00;
 constexpr u32 kOpNop = 0x01;
@@ -75,25 +63,25 @@ inline bool fetch32(Context* ctx, u32 addr, u32* out) noexcept
     return true;
 }
 
-inline u32 decode_op(u32 word) noexcept
+inline u32 op_of(u32 w) noexcept
 {
-    return (word >> kOpShift) & kOpMask;
+    return (w >> kOpShift) & kOpMask;
 }
-inline u32 decode_rt(u32 word) noexcept
+inline u32 rt_of(u32 w) noexcept
 {
-    return (word >> kRtShift) & kRtMask;
+    return (w >> kRtShift) & kRtMask;
 }
-inline u32 decode_ra(u32 word) noexcept
+inline u32 ra_of(u32 w) noexcept
 {
-    return (word >> kRaShift) & kRaMask;
+    return (w >> kRaShift) & kRaMask;
 }
-inline u32 decode_rb(u32 word) noexcept
+inline u32 rb_of(u32 w) noexcept
 {
-    return word & kRbMask;
+    return (w >> kRbShift) & kRbMask;
 }
-inline u32 decode_imm16(u32 word) noexcept
+inline u32 imm_of(u32 w) noexcept
 {
-    return word & 0xFFFFu;
+    return (w >> kImmShift) & kImmMask;
 }
 
 enum class Lop
@@ -149,19 +137,15 @@ void init(Context* ctx) noexcept
             ctx->gpr[r][l] = 0;
     ctx->pc = 0;
     libk::memset(ctx->local_store, 0, kLocalStoreSize);
-
     ctx->spu_status = 0;
     ctx->spu_cfg = 0;
     ctx->lslr = 0x3FFFF;
     ctx->lsr = 0;
-
     ctx->inbound.head = ctx->inbound.tail = ctx->inbound.count = 0;
     ctx->outbound.head = ctx->outbound.tail = ctx->outbound.count = 0;
-
     ctx->event_mask = 0;
     ctx->stopped = false;
     ctx->halted = false;
-
     ctx->dma_read = nullptr;
     ctx->dma_write = nullptr;
     ctx->user = nullptr;
@@ -210,7 +194,6 @@ bool step(Context* ctx) noexcept
 {
     if (ctx->halted || ctx->stopped)
         return false;
-
     u32 word = 0;
     if (!fetch32(ctx, ctx->pc, &word))
     {
@@ -219,51 +202,45 @@ bool step(Context* ctx) noexcept
         return false;
     }
 
-    const u32 op = decode_op(word);
-
+    const u32 op = op_of(word);
     switch (op)
     {
     case kOpHalt:
         ctx->halted = true;
         return true;
-
     case kOpNop:
         ctx->pc += 4;
         return true;
 
     case kOpAdd:
-        lane_apply(ctx, decode_rt(word), decode_ra(word), decode_rb(word), Lop::Add);
+        lane_apply(ctx, rt_of(word), ra_of(word), rb_of(word), Lop::Add);
         ctx->pc += 4;
         return true;
-
     case kOpSub:
-        lane_apply(ctx, decode_rt(word), decode_ra(word), decode_rb(word), Lop::Sub);
+        lane_apply(ctx, rt_of(word), ra_of(word), rb_of(word), Lop::Sub);
         ctx->pc += 4;
         return true;
-
     case kOpAnd:
-        lane_apply(ctx, decode_rt(word), decode_ra(word), decode_rb(word), Lop::And);
+        lane_apply(ctx, rt_of(word), ra_of(word), rb_of(word), Lop::And);
         ctx->pc += 4;
         return true;
-
     case kOpOr:
-        lane_apply(ctx, decode_rt(word), decode_ra(word), decode_rb(word), Lop::Or);
+        lane_apply(ctx, rt_of(word), ra_of(word), rb_of(word), Lop::Or);
         ctx->pc += 4;
         return true;
-
     case kOpXor:
-        lane_apply(ctx, decode_rt(word), decode_ra(word), decode_rb(word), Lop::Xor);
+        lane_apply(ctx, rt_of(word), ra_of(word), rb_of(word), Lop::Xor);
         ctx->pc += 4;
         return true;
 
     case kOpIl:
-        load_imm(ctx, decode_rt(word), decode_imm16(word));
+        load_imm(ctx, rt_of(word), imm_of(word));
         ctx->pc += 4;
         return true;
 
     case kOpWrch:
     {
-        const u32 ra = decode_ra(word);
+        const u32 ra = ra_of(word);
         const u32 v = ctx->gpr[ra][0];
         if (ctx->outbound.count < kMailboxDepth)
         {
@@ -278,14 +255,11 @@ bool step(Context* ctx) noexcept
     case kOpRdch:
     {
         if (ctx->inbound.count == 0)
-        {
-            // Blocked: leave PC unchanged so a scheduler can yield.
-            return true;
-        }
+            return true; // blocked
         const u32 v = ctx->inbound.items[ctx->inbound.tail];
         ctx->inbound.tail = (ctx->inbound.tail + 1) % kMailboxDepth;
         --ctx->inbound.count;
-        load_imm(ctx, decode_rt(word), v);
+        load_imm(ctx, rt_of(word), v);
         ctx->pc += 4;
         return true;
     }
@@ -297,11 +271,11 @@ bool step(Context* ctx) noexcept
             ctx->halted = true;
             return false;
         }
-        const u32 ra = decode_ra(word);
-        const u32 rb = decode_rb(word);
+        const u32 ra = ra_of(word);
+        const u32 rb = rb_of(word);
         const u32 main_addr_lo = ctx->gpr[ra][0];
         const u32 ls_addr = ctx->gpr[rb][0];
-        const u32 size = decode_imm16(word);
+        const u32 size = imm_of(word);
         if (!ctx->dma_read(ctx->user, main_addr_lo, ls_addr, size, 0))
             return false;
         ctx->pc += 4;
@@ -315,11 +289,11 @@ bool step(Context* ctx) noexcept
             ctx->halted = true;
             return false;
         }
-        const u32 ra = decode_ra(word);
-        const u32 rb = decode_rb(word);
+        const u32 ra = ra_of(word);
+        const u32 rb = rb_of(word);
         const u32 main_addr_lo = ctx->gpr[ra][0];
         const u32 ls_addr = ctx->gpr[rb][0];
-        const u32 size = decode_imm16(word);
+        const u32 size = imm_of(word);
         if (!ctx->dma_write(ctx->user, main_addr_lo, ls_addr, size, 0))
             return false;
         ctx->pc += 4;

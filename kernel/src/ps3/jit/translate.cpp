@@ -2,6 +2,7 @@
 #include <kernel/log.hpp>
 #include <kernel/mm/exec_page.hpp>
 #include <kernel/mm/heap.hpp>
+#include <kernel/ps3/jit/cache.hpp>
 #include <kernel/ps3/jit/emitter.hpp>
 #include <kernel/ps3/jit/translate.hpp>
 #include <kernel/ps3/powerpc/decode.hpp>
@@ -34,9 +35,8 @@ constexpr u8 kScratch = reg::kRcx;
 constexpr u8 kScratch2 = reg::kRdx;
 constexpr u8 kCtx = reg::kR15;
 
-constexpr usize kScratchBuf = 16384;
-constexpr u32 kMaxFailPatches = 32;
-
+constexpr usize kScratchBuf = 32768;
+constexpr u32 kMaxFailPatches = 64;
 constexpr u64 kJitFault = 1;
 
 inline i32 gpr_disp(u32 n) noexcept
@@ -44,18 +44,30 @@ inline i32 gpr_disp(u32 n) noexcept
     return static_cast<i32>(kOffGpr + static_cast<usize>(n) * 8u);
 }
 
-// DS-form displacement: 14 bits, lower two bits ignored.
+// DS-form displacement (14 bits, low two ignored).
 inline i32 ds_disp(const Instruction& ins) noexcept
 {
     return ins.simm & ~3;
 }
+
+// Build the 32-bit mask for MB..ME (inclusive), handling MB > ME wrap.
+inline u32 build_mask(u32 mb, u32 me) noexcept
+{
+    const u32 m1 = (me == 31u) ? 0xFFFFFFFFu : ((1u << (me + 1u)) - 1u);
+    const u32 m2 = (mb == 0u) ? 0u : ((1u << mb) - 1u);
+    return (mb <= me) ? (m1 & ~m2) : (m1 | ~m2);
+}
 } // namespace
 
 // ---------------------------------------------------------------------------
-// Runtime helpers.
+// extern "C" runtime helpers. Address is taken by the JIT and injected into
+// the emitted code as a 64-bit immediate.
 // ---------------------------------------------------------------------------
 extern "C"
 {
+
+    // Forward decl so the store helpers can call it.
+    void notyvos_jit_smc_check(u64 ea, u64 size) noexcept;
 
     bool notyvos_jit_load8(ppu::Context* ctx, u64 ea, u32 rt_disp) noexcept
     {
@@ -79,18 +91,6 @@ extern "C"
         return true;
     }
 
-    bool notyvos_jit_load32(ppu::Context* ctx, u64 ea, u32 rt_disp) noexcept
-    {
-        if (!ctx->read32)
-            return false;
-        u32 v = 0;
-        if (!ctx->read32(ctx->user, ea, &v))
-            return false;
-        *reinterpret_cast<u64*>(reinterpret_cast<u8*>(ctx) + rt_disp) = static_cast<u64>(v);
-        return true;
-    }
-
-    // lha: load halfword algebraic (sign-extended) into a 64-bit GPR.
     bool notyvos_jit_load16s(ppu::Context* ctx, u64 ea, u32 rt_disp) noexcept
     {
         if (!ctx->read16)
@@ -104,14 +104,14 @@ extern "C"
         return true;
     }
 
-    bool notyvos_jit_load64(ppu::Context* ctx, u64 ea, u32 rt_disp) noexcept
+    bool notyvos_jit_load32(ppu::Context* ctx, u64 ea, u32 rt_disp) noexcept
     {
-        if (!ctx->read64)
+        if (!ctx->read32)
             return false;
-        u64 v = 0;
-        if (!ctx->read64(ctx->user, ea, &v))
+        u32 v = 0;
+        if (!ctx->read32(ctx->user, ea, &v))
             return false;
-        *reinterpret_cast<u64*>(reinterpret_cast<u8*>(ctx) + rt_disp) = v;
+        *reinterpret_cast<u64*>(reinterpret_cast<u8*>(ctx) + rt_disp) = static_cast<u64>(v);
         return true;
     }
 
@@ -128,10 +128,22 @@ extern "C"
         return true;
     }
 
+    bool notyvos_jit_load64(ppu::Context* ctx, u64 ea, u32 rt_disp) noexcept
+    {
+        if (!ctx->read64)
+            return false;
+        u64 v = 0;
+        if (!ctx->read64(ctx->user, ea, &v))
+            return false;
+        *reinterpret_cast<u64*>(reinterpret_cast<u8*>(ctx) + rt_disp) = v;
+        return true;
+    }
+
     bool notyvos_jit_store8(ppu::Context* ctx, u64 ea, u64 value) noexcept
     {
         if (!ctx->write8)
             return false;
+        notyvos_jit_smc_check(ea, 1);
         return ctx->write8(ctx->user, ea, static_cast<u8>(value & 0xFFu));
     }
 
@@ -139,6 +151,7 @@ extern "C"
     {
         if (!ctx->write16)
             return false;
+        notyvos_jit_smc_check(ea, 2);
         return ctx->write16(ctx->user, ea, static_cast<u16>(value & 0xFFFFu));
     }
 
@@ -146,6 +159,7 @@ extern "C"
     {
         if (!ctx->write32)
             return false;
+        notyvos_jit_smc_check(ea, 4);
         return ctx->write32(ctx->user, ea, static_cast<u32>(value & 0xFFFFFFFFu));
     }
 
@@ -153,6 +167,7 @@ extern "C"
     {
         if (!ctx->write64)
             return false;
+        notyvos_jit_smc_check(ea, 8);
         return ctx->write64(ctx->user, ea, value);
     }
 
@@ -160,7 +175,6 @@ extern "C"
     {
         bool ctr_ok = true;
         bool cr_ok = true;
-
         if ((bo & 0x04u) == 0)
             ctx->ctr = ctx->ctr - 1u;
         if ((bo & 0x01u) == 0)
@@ -177,10 +191,23 @@ extern "C"
         return ctr_ok && cr_ok;
     }
 
+    void notyvos_jit_smc_check(u64 ea, u64 size) noexcept
+    {
+        if (size == 0)
+            return;
+        const u64 start = ea & ~static_cast<u64>(3u);
+        const u64 end = (ea + size + 3u) & ~static_cast<u64>(3u);
+        for (u64 a = start; a < end; a += 4)
+        {
+            if (TranslationCache::probe(a))
+                TranslationCache::invalidate_range(a, a + 4);
+        }
+    }
+
 } // extern "C"
 
 // ---------------------------------------------------------------------------
-// Translator internals.
+// Translator.
 // ---------------------------------------------------------------------------
 namespace
 {
@@ -188,6 +215,7 @@ namespace
 struct Translator
 {
     Emitter* e;
+    u64 block_start_pc;
     u32 fail_patch_off[kMaxFailPatches];
     u64 fail_patch_pc[kMaxFailPatches];
     u32 fail_count;
@@ -197,7 +225,7 @@ struct Translator
         e->mov_ri64(reg::kRax, helper_addr);
         e->call_r(reg::kRax);
         e->emit_u8(0x84);
-        e->emit_u8(0xC0);
+        e->emit_u8(0xC0); // test al, al
         const u32 off = e->jcc_placeholder(cc::kE);
         if (fail_count < kMaxFailPatches)
         {
@@ -242,8 +270,23 @@ struct Translator
         }
     }
 
-    // ---- Integer / logical -----------------------------------------------
+    void emit_ea_indexed_into_rsi(u32 ra, u32 rb) noexcept
+    {
+        if (ra == 0)
+        {
+            load_gpr(reg::kRsi, rb);
+        }
+        else
+        {
+            e->mov_rm(reg::kRsi, kCtx, gpr_disp(ra));
+            load_gpr(kScratch, rb);
+            e->alu_rr(alu::kAdd, reg::kRsi, kScratch);
+        }
+    }
 
+    // ----------------------------------------------------------------------
+    // D-form immediate arithmetic
+    // ----------------------------------------------------------------------
     bool d_form_imm(const Instruction& ins) noexcept
     {
         const u8 op = ins.opcode;
@@ -273,6 +316,9 @@ struct Translator
         return true;
     }
 
+    // ----------------------------------------------------------------------
+    // X-form register-register arithmetic
+    // ----------------------------------------------------------------------
     bool x_form_rr(const Instruction& ins) noexcept
     {
         u8 op = 0;
@@ -281,31 +327,26 @@ struct Translator
         {
         case 266:
             op = alu::kAdd;
-            break;
+            break; // add
         case 40:
             op = alu::kSub;
             is_subf = true;
-            break;
+            break; // subf (rb - ra)
         case 28:
             op = alu::kAnd;
-            break;
+            break; // and
         case 444:
             op = alu::kOr;
-            break;
+            break; // or
         case 316:
             op = alu::kXor;
-            break;
+            break; // xor
         default:
             return false;
         }
 
-        // PPC: X-form arithmetic/logical takes rS (source) in the rt slot for
-        // AND/OR/XOR, and rD in the rt slot for ADD/SUBF. In all cases, the
-        // operands are (rt, ra) or (ra, rb). We load rt and rb for ADD/AND/
-        // OR/XOR, and ra and rb for SUBF.
         if (is_subf)
         {
-            // subf rD, rA, rB  =>  rD = rB - rA
             load_gpr(kScratch2, ins.rb);
             load_gpr(kScratch, ins.ra);
             e->alu_rr(alu::kSub, kScratch2, kScratch);
@@ -313,7 +354,6 @@ struct Translator
         }
         else
         {
-            // add/and/or/xor rD, rA, rB  =>  rD = rA OP rB
             load_gpr(kScratch, ins.ra);
             load_gpr(kScratch2, ins.rb);
             e->alu_rr(op, kScratch, kScratch2);
@@ -322,6 +362,9 @@ struct Translator
         return true;
     }
 
+    // ----------------------------------------------------------------------
+    // mfspr / mtspr for LR / CTR / XER
+    // ----------------------------------------------------------------------
     bool spr_access(const Instruction& ins) noexcept
     {
         i32 disp = -1;
@@ -334,28 +377,26 @@ struct Translator
         else
             return false;
 
-        if (ins.xo == 339)
+        if (ins.xo == 339) // mfspr
         {
             e->mov_rm(kScratch, kCtx, disp);
             store_gpr(ins.rt, kScratch);
         }
-        else if (ins.xo == 467)
+        else if (ins.xo == 467) // mtspr
         {
             load_gpr(kScratch, ins.rt);
             e->mov_mr(kCtx, disp, kScratch);
         }
         else
-        {
             return false;
-        }
         return true;
     }
 
-    // ---- 5C: sign-extend byte / halfword ---------------------------------
-
+    // ----------------------------------------------------------------------
+    // extsb / extsh
+    // ----------------------------------------------------------------------
     bool extsb(const Instruction& ins) noexcept
     {
-        // extsb rA, rS  => rA = sign_extend_8(rS[7:0])
         load_gpr(kScratch, ins.rt);
         e->shl_ri8_64(kScratch, 56);
         e->sar_ri8_64(kScratch, 56);
@@ -372,44 +413,98 @@ struct Translator
         return true;
     }
 
-    // ---- 5C: srawi -------------------------------------------------------
-
+    // ----------------------------------------------------------------------
+    // srawi (immediate arithmetic shift right)
+    // ----------------------------------------------------------------------
     bool srawi(const Instruction& ins) noexcept
     {
-        // srawi rA, rS, SH  =>  rA = sign_extend_32(rS[31:0] >> SH) as u64
-        // SH is bits 11-15.
         const u32 sh = (ins.word >> 11) & 0x1Fu;
-        // Load full 64 bits but operate on the low 32 by writing to a 32-bit
-        // register first. mov r32, m32 zeroes the upper half.
-        e->mov_r32_mem(kScratch, kCtx, gpr_disp(ins.rt));
-        e->sar_ri8_32(kScratch, static_cast<u8>(sh));
-        // Writing r32 to memory at the GPR slot stores zero-extended 64-bit;
-        // PPC semantics require the 32-bit signed result zero-extended.
+        e->mov_r32_mem(kScratch, kCtx, gpr_disp(ins.rt)); // 32-bit load, zero-extends
+        e->sar_ri8_32(kScratch, static_cast<u8>(sh));     // 32-bit SAR, zero-extends
         store_gpr(ins.ra, kScratch);
         return true;
     }
 
-    // ---- Memory ----------------------------------------------------------
+    // ----------------------------------------------------------------------
+    // rlwinm / rlwimi / rlwnm
+    // ----------------------------------------------------------------------
+    bool rlwinm(const Instruction& ins) noexcept
+    {
+        const u32 rs = (ins.word >> 21) & 0x1Fu;
+        const u32 ra = (ins.word >> 16) & 0x1Fu;
+        const u32 sh = (ins.word >> 11) & 0x1Fu;
+        const u32 mb = (ins.word >> 6) & 0x1Fu;
+        const u32 me = (ins.word >> 1) & 0x1Fu;
+        const u32 mask = build_mask(mb, me);
 
-    bool emit_load(const Instruction& ins, u64 ins_pc, u64 helper_addr) noexcept
+        e->mov_r32_mem(kScratch, kCtx, gpr_disp(rs));
+        if (sh != 0)
+            e->rol_ri8_32(kScratch, static_cast<u8>(sh));
+        e->alu_ri32(alu::kAnd, kScratch, static_cast<i32>(mask));
+        store_gpr(ra, kScratch);
+        return true;
+    }
+
+    bool rlwimi(const Instruction& ins) noexcept
+    {
+        const u32 rs = (ins.word >> 21) & 0x1Fu;
+        const u32 ra = (ins.word >> 16) & 0x1Fu;
+        const u32 sh = (ins.word >> 11) & 0x1Fu;
+        const u32 mb = (ins.word >> 6) & 0x1Fu;
+        const u32 me = (ins.word >> 1) & 0x1Fu;
+        const u32 mask = build_mask(mb, me);
+        const u32 nmask = ~mask;
+
+        // scratch  = rotl32(GPR[rs], sh) & mask
+        e->mov_r32_mem(kScratch, kCtx, gpr_disp(rs));
+        if (sh != 0)
+            e->rol_ri8_32(kScratch, static_cast<u8>(sh));
+        e->alu_ri32(alu::kAnd, kScratch, static_cast<i32>(mask));
+
+        // scratch2 = GPR[ra] & ~mask
+        e->mov_r32_mem(kScratch2, kCtx, gpr_disp(ra));
+        e->alu_ri32(alu::kAnd, kScratch2, static_cast<i32>(nmask));
+
+        // result = scratch | scratch2
+        e->alu_rr(alu::kOr, kScratch, kScratch2);
+        store_gpr(ra, kScratch);
+        return true;
+    }
+
+    bool rlwnm(const Instruction& ins) noexcept
+    {
+        const u32 rs = (ins.word >> 21) & 0x1Fu;
+        const u32 ra = (ins.word >> 16) & 0x1Fu;
+        const u32 rb = (ins.word >> 11) & 0x1Fu; // shift amount register
+        const u32 mb = (ins.word >> 6) & 0x1Fu;
+        const u32 me = (ins.word >> 1) & 0x1Fu;
+        const u32 mask = build_mask(mb, me);
+
+        // rcx = GPR[rb] & 31   (CL is the shift count)
+        load_gpr(kScratch, rb);
+        e->alu_ri32(alu::kAnd, kScratch, 0x1F);
+
+        // edx = low32(GPR[rs]); rol edx, cl; and edx, mask
+        e->mov_r32_mem(kScratch2, kCtx, gpr_disp(rs));
+        e->rol_r32_cl(kScratch2);
+        e->alu_ri32(alu::kAnd, kScratch2, static_cast<i32>(mask));
+        store_gpr(ra, kScratch2);
+        return true;
+    }
+
+    // ----------------------------------------------------------------------
+    // D-form loads / stores (byte-offset immediate, sign-extended)
+    // ----------------------------------------------------------------------
+    bool emit_load_d(const Instruction& ins, u64 ins_pc, u64 helper) noexcept
     {
         e->mov_rr(reg::kRdi, kCtx);
         emit_ea_into_rsi(ins.ra, ins.simm);
         e->mov_ri32(reg::kRdx, static_cast<u32>(gpr_disp(ins.rt)));
-        emit_call_checked(helper_addr, ins_pc);
+        emit_call_checked(helper, ins_pc);
         return true;
     }
 
-    bool emit_load_ds(const Instruction& ins, u64 ins_pc, u64 helper_addr) noexcept
-    {
-        e->mov_rr(reg::kRdi, kCtx);
-        emit_ea_into_rsi(ins.ra, ds_disp(ins));
-        e->mov_ri32(reg::kRdx, static_cast<u32>(gpr_disp(ins.rt)));
-        emit_call_checked(helper_addr, ins_pc);
-        return true;
-    }
-
-    bool emit_store(const Instruction& ins, u64 ins_pc, u64 helper_addr) noexcept
+    bool emit_store_d(const Instruction& ins, u64 ins_pc, u64 helper) noexcept
     {
         e->mov_rr(reg::kRdi, kCtx);
         emit_ea_into_rsi(ins.ra, ins.simm);
@@ -417,11 +512,21 @@ struct Translator
             e->zero_r(reg::kRdx);
         else
             e->mov_rm(reg::kRdx, kCtx, gpr_disp(ins.rt));
-        emit_call_checked(helper_addr, ins_pc);
+        emit_call_checked(helper, ins_pc);
         return true;
     }
 
-    bool emit_store_ds(const Instruction& ins, u64 ins_pc, u64 helper_addr) noexcept
+    // DS-form (ld/std/lwa): 14-bit displacement, low two bits ignored
+    bool emit_load_ds(const Instruction& ins, u64 ins_pc, u64 helper) noexcept
+    {
+        e->mov_rr(reg::kRdi, kCtx);
+        emit_ea_into_rsi(ins.ra, ds_disp(ins));
+        e->mov_ri32(reg::kRdx, static_cast<u32>(gpr_disp(ins.rt)));
+        emit_call_checked(helper, ins_pc);
+        return true;
+    }
+
+    bool emit_store_ds(const Instruction& ins, u64 ins_pc, u64 helper) noexcept
     {
         e->mov_rr(reg::kRdi, kCtx);
         emit_ea_into_rsi(ins.ra, ds_disp(ins));
@@ -429,12 +534,35 @@ struct Translator
             e->zero_r(reg::kRdx);
         else
             e->mov_rm(reg::kRdx, kCtx, gpr_disp(ins.rt));
-        emit_call_checked(helper_addr, ins_pc);
+        emit_call_checked(helper, ins_pc);
         return true;
     }
 
-    // ---- Branches --------------------------------------------------------
+    // X-form indexed loads / stores (EA = (RA==0?0:GPR[RA]) + GPR[RB])
+    bool emit_load_x(const Instruction& ins, u64 ins_pc, u64 helper) noexcept
+    {
+        e->mov_rr(reg::kRdi, kCtx);
+        emit_ea_indexed_into_rsi(ins.ra, ins.rb);
+        e->mov_ri32(reg::kRdx, static_cast<u32>(gpr_disp(ins.rt)));
+        emit_call_checked(helper, ins_pc);
+        return true;
+    }
 
+    bool emit_store_x(const Instruction& ins, u64 ins_pc, u64 helper) noexcept
+    {
+        e->mov_rr(reg::kRdi, kCtx);
+        emit_ea_indexed_into_rsi(ins.ra, ins.rb);
+        if (ins.rt == 0)
+            e->zero_r(reg::kRdx);
+        else
+            e->mov_rm(reg::kRdx, kCtx, gpr_disp(ins.rt));
+        emit_call_checked(helper, ins_pc);
+        return true;
+    }
+
+    // ----------------------------------------------------------------------
+    // Branches
+    // ----------------------------------------------------------------------
     bool branch_i(const Instruction& ins, u64 ins_pc) noexcept
     {
         const u64 target = ins_pc + static_cast<u64>(static_cast<i64>(ins.bdisp));
@@ -559,72 +687,111 @@ struct Translator
         return true;
     }
 
-    // ---------------------------------------------------------------------
-
+    // ----------------------------------------------------------------------
+    // Per-instruction dispatch.
+    // ----------------------------------------------------------------------
     bool one(const Instruction& ins, u64 ins_pc, BlockEnd& end) noexcept
     {
         const u8 op = ins.opcode;
 
+        // D-form immediate arithmetic.
         if (op == 14 || op == 15 || (op >= 24 && op <= 27))
             return d_form_imm(ins);
 
+        // rlwinm / rlwimi / rlwnm (their own primary opcodes).
+        if (op == 20)
+            return rlwimi(ins);
+        if (op == 21)
+            return rlwinm(ins);
+        if (op == 23)
+            return rlwnm(ins);
+
+        // Primary 31: X/XO/XFX.
         if (op == 31)
         {
+            // SPR access.
             if (ins.xo == 339 || ins.xo == 467)
                 return spr_access(ins);
-            if (ins.xo == 954)
-                return extsb(ins); // 5C
-            if (ins.xo == 986)
-                return extsh(ins); // 5C
-            if (ins.xo == 824)
-                return srawi(ins); // 5C
+
+            // Register-register arithmetic.
             if (ins.xo == 266 || ins.xo == 40 || ins.xo == 28 || ins.xo == 444 || ins.xo == 316)
                 return x_form_rr(ins);
+
+            // Sign-extend.
+            if (ins.xo == 954)
+                return extsb(ins);
+            if (ins.xo == 986)
+                return extsh(ins);
+
+            // Arithmetic shift right immediate.
+            if (ins.xo == 824)
+                return srawi(ins);
+
+            // Indexed loads: lwzx 23, lbzx 87, lhzx 279, lhax 343, ldx 21.
+            if (ins.xo == 23)
+                return emit_load_x(ins, ins_pc, reinterpret_cast<u64>(&notyvos_jit_load32));
+            if (ins.xo == 87)
+                return emit_load_x(ins, ins_pc, reinterpret_cast<u64>(&notyvos_jit_load8));
+            if (ins.xo == 279)
+                return emit_load_x(ins, ins_pc, reinterpret_cast<u64>(&notyvos_jit_load16));
+            if (ins.xo == 343)
+                return emit_load_x(ins, ins_pc, reinterpret_cast<u64>(&notyvos_jit_load16s));
+            if (ins.xo == 21)
+                return emit_load_x(ins, ins_pc, reinterpret_cast<u64>(&notyvos_jit_load64));
+
+            // Indexed stores: stwx 151, stbx 215, sthx 407, stdx 149.
+            if (ins.xo == 151)
+                return emit_store_x(ins, ins_pc, reinterpret_cast<u64>(&notyvos_jit_store32));
+            if (ins.xo == 215)
+                return emit_store_x(ins, ins_pc, reinterpret_cast<u64>(&notyvos_jit_store8));
+            if (ins.xo == 407)
+                return emit_store_x(ins, ins_pc, reinterpret_cast<u64>(&notyvos_jit_store16));
+            if (ins.xo == 149)
+                return emit_store_x(ins, ins_pc, reinterpret_cast<u64>(&notyvos_jit_store64));
+
             return false;
         }
 
-        // 5C 64-bit memory ops.
-        if (op == 58)
+        // DS-form 64-bit memory ops.
+        if (op == 58) // ld / ldu / lwa
         {
             if (ins.xo == 0)
-                return emit_load_ds(ins, ins_pc,
-                                    reinterpret_cast<u64>(&notyvos_jit_load64)); // ld
+                return emit_load_ds(ins, ins_pc, reinterpret_cast<u64>(&notyvos_jit_load64));
             if (ins.xo == 2)
-                return emit_load_ds(ins, ins_pc,
-                                    reinterpret_cast<u64>(&notyvos_jit_load32s)); // lwa
+                return emit_load_ds(ins, ins_pc, reinterpret_cast<u64>(&notyvos_jit_load32s));
             return false;
         }
-        if (op == 62)
+        if (op == 62) // std / stdu
         {
             if (ins.xo == 0)
-                return emit_store_ds(ins, ins_pc,
-                                     reinterpret_cast<u64>(&notyvos_jit_store64)); // std
+                return emit_store_ds(ins, ins_pc, reinterpret_cast<u64>(&notyvos_jit_store64));
             return false;
         }
 
-        // 5B 32/16/8-bit memory ops.
+        // D-form 32/16/8-bit memory ops.
         if (op == 32)
-            return emit_load(ins, ins_pc,
-                             reinterpret_cast<u64>(&notyvos_jit_load32)); // lwz
+            return emit_load_d(ins, ins_pc,
+                               reinterpret_cast<u64>(&notyvos_jit_load32)); // lwz
         if (op == 34)
-            return emit_load(ins, ins_pc,
-                             reinterpret_cast<u64>(&notyvos_jit_load8)); // lbz
+            return emit_load_d(ins, ins_pc,
+                               reinterpret_cast<u64>(&notyvos_jit_load8)); // lbz
         if (op == 40)
-            return emit_load(ins, ins_pc,
-                             reinterpret_cast<u64>(&notyvos_jit_load16)); // lhz
+            return emit_load_d(ins, ins_pc,
+                               reinterpret_cast<u64>(&notyvos_jit_load16)); // lhz
         if (op == 42)
-            return emit_load(ins, ins_pc,
-                             reinterpret_cast<u64>(&notyvos_jit_load16s)); // lha
+            return emit_load_d(ins, ins_pc,
+                               reinterpret_cast<u64>(&notyvos_jit_load16s)); // lha
         if (op == 36)
-            return emit_store(ins, ins_pc,
-                              reinterpret_cast<u64>(&notyvos_jit_store32)); // stw
+            return emit_store_d(ins, ins_pc,
+                                reinterpret_cast<u64>(&notyvos_jit_store32)); // stw
         if (op == 38)
-            return emit_store(ins, ins_pc,
-                              reinterpret_cast<u64>(&notyvos_jit_store8)); // stb
+            return emit_store_d(ins, ins_pc,
+                                reinterpret_cast<u64>(&notyvos_jit_store8)); // stb
         if (op == 44)
-            return emit_store(ins, ins_pc,
-                              reinterpret_cast<u64>(&notyvos_jit_store16)); // sth
+            return emit_store_d(ins, ins_pc,
+                                reinterpret_cast<u64>(&notyvos_jit_store16)); // sth
 
+        // Branch family.
         if (op == 18)
         {
             if (!branch_i(ins, ins_pc))
@@ -645,9 +812,7 @@ struct Translator
                     return false;
             }
             else
-            {
                 return false;
-            }
             end = BlockEnd::Branch;
             return true;
         }
@@ -665,12 +830,16 @@ struct Translator
             end = BlockEnd::Syscall;
             return true;
         }
+
         return false;
     }
 };
 
 } // namespace
 
+// ---------------------------------------------------------------------------
+// Public entry point.
+// ---------------------------------------------------------------------------
 Block* translate_block(ppu::Context* ctx, u64 ppc_pc) noexcept
 {
     if (!ctx || !ctx->read32)
@@ -679,10 +848,14 @@ Block* translate_block(ppu::Context* ctx, u64 ppc_pc) noexcept
     alignas(16) u8 scratch[kScratchBuf];
     Emitter e(scratch, sizeof(scratch));
 
+    // Per-block prologue: align RSP so helper calls satisfy the System V ABI.
+    // Each chained block does the same prologue, and each exit path does the
+    // matching epilogue before returning.
     e.sub_rsp_imm8(8);
 
     Translator t{};
     t.e = &e;
+    t.block_start_pc = ppc_pc;
     t.fail_count = 0;
 
     u64 pc = ppc_pc;
@@ -729,10 +902,13 @@ Block* translate_block(ppu::Context* ctx, u64 ppc_pc) noexcept
     if (end == BlockEnd::FallThrough)
         t.set_pc(pc);
 
+    // Normal exit: status 0, restore RSP, RET.
     e.zero_r(reg::kRax);
     e.add_rsp_imm8(8);
     e.ret();
 
+    // Fault exits: one per memory-op site. Each restores RSP, sets the
+    // PPC pc back to the failing instruction, and returns status 1.
     for (u32 i = 0; i < t.fail_count; ++i)
     {
         e.patch_branch_to_here(t.fail_patch_off[i]);
@@ -759,6 +935,7 @@ Block* translate_block(ppu::Context* ctx, u64 ppc_pc) noexcept
     blk->insns = count;
     blk->end = end;
     blk->next = nullptr;
+
     return blk;
 }
 

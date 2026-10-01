@@ -7,6 +7,7 @@
 #include <kernel/ps3/powerpc/decode.hpp>
 #include <kernel/ps3/ppu.hpp>
 #include <kernel/ps3/spu.hpp>
+#include <kernel/ps3/rsx/self_test.hpp>
 
 namespace notyvos::ps3
 {
@@ -126,12 +127,16 @@ void test_ppu() noexcept
                static_cast<unsigned long long>(ctx.gpr[5]));
 }
 
-// SPU encoding helpers, matching spu.cpp. Must match the layout defined
-// there; if spu.cpp changes, update these too.
-static constexpr u32 spu_word(u32 op, u32 rt, u32 ra, u32 rb, u32 imm) noexcept
+// SPU encoding helpers. Layout must match spu.cpp:
+//   opcode bits 31..25, rt bits 24..18, ra bits 17..11, rb bits 10..4
+// Immediate form (il, dma): imm16 at bits 17..2.
+static constexpr u32 spu_R(u32 op, u32 rt, u32 ra, u32 rb) noexcept
 {
-    return ((op & 0x7Fu) << 25) | ((rt & 0x7Fu) << 12) | ((ra & 0x7Fu) << 5) | (rb & 0x1Fu) |
-           (imm & 0xFFFFu);
+    return ((op & 0x7Fu) << 25) | ((rt & 0x7Fu) << 18) | ((ra & 0x7Fu) << 11) | ((rb & 0x7Fu) << 4);
+}
+static constexpr u32 spu_I(u32 op, u32 rt, u32 imm) noexcept
+{
+    return ((op & 0x7Fu) << 25) | ((rt & 0x7Fu) << 18) | ((imm & 0xFFFFu) << 2);
 }
 static constexpr u32 spu_op_halt = 0x00;
 static constexpr u32 spu_op_or = 0x13;
@@ -145,17 +150,16 @@ void test_spu() noexcept
 {
     spu::init(&g_spu_ctx);
 
-    // Program:
-    //   0x00: il   r1, imm16=1       -> r1[all lanes] = 1
-    //   0x04: il   r2, imm16=2       -> r2[all lanes] = 2
-    //   0x08: or   r3, r1, r2        -> r3 = 1 | 2 = 3
-    //   0x0C: wrch r3                -> outbound <- r3[0] = 3
+    //   0x00: il   r1, 1    -> r1 = 1
+    //   0x04: il   r2, 2    -> r2 = 2
+    //   0x08: or   r3, r1, r2 -> r3 = 3
+    //   0x0C: wrch r3       -> outbound <- 3
     //   0x10: halt
-    write_be32(g_spu_ctx.local_store + 0x00, spu_word(spu_op_il, /*rt=*/1, 0, 0, 1));
-    write_be32(g_spu_ctx.local_store + 0x04, spu_word(spu_op_il, /*rt=*/2, 0, 0, 2));
-    write_be32(g_spu_ctx.local_store + 0x08, spu_word(spu_op_or, /*rt=*/3, /*ra=*/1, /*rb=*/2, 0));
-    write_be32(g_spu_ctx.local_store + 0x0C, spu_word(spu_op_wrch, 0, /*ra=*/3, 0, 0));
-    write_be32(g_spu_ctx.local_store + 0x10, spu_word(spu_op_halt, 0, 0, 0, 0));
+    write_be32(g_spu_ctx.local_store + 0x00, spu_I(spu_op_il, 1, 1));
+    write_be32(g_spu_ctx.local_store + 0x04, spu_I(spu_op_il, 2, 2));
+    write_be32(g_spu_ctx.local_store + 0x08, spu_R(spu_op_or, 3, 1, 2));
+    write_be32(g_spu_ctx.local_store + 0x0C, spu_R(spu_op_wrch, 0, 3, 0));
+    write_be32(g_spu_ctx.local_store + 0x10, spu_I(spu_op_halt, 0, 0));
 
     const u64 steps = spu::run(&g_spu_ctx, 32);
     u32 got = 0;
@@ -166,7 +170,7 @@ void test_spu() noexcept
                "SPU self-test: steps=%llu out=%llu (expected 5, 3)",
                static_cast<unsigned long long>(steps), static_cast<unsigned long long>(got));
 
-    // Mailbox FIFO test.
+    // Mailbox FIFO.
     spu::init(&g_spu_ctx);
     (void)spu::mailbox_push_inbound(&g_spu_ctx, 0xAA);
     (void)spu::mailbox_push_inbound(&g_spu_ctx, 0xBB);
@@ -244,6 +248,7 @@ void self_test() noexcept
     test_spu();
     test_dma();
     jit::self_test();
+    rsx::self_test();
     log::write(log::Level::Info, "ps3", "self-tests complete");
 }
 
