@@ -41,8 +41,9 @@ pre-converted raw wallpaper is present.
 
 ## Boot boundary
 
-The repository currently treats Phase 5A as requiring a fresh rebuild and
-boot verification after the latest JIT boot fixes.
+Phases 1 through 5, including all their subphases, are delivered. Phase 3F
+native GPU backend and the complete Phase 5 translation work are part of the
+current implementation boundary.
 
 ## Firmware separation
 
@@ -56,6 +57,8 @@ domain.
 After the original kernel/userland foundation, the current repository also
 contains:
 
+- Native GPU backend from Phase 3F
+- Complete native translation path through Phase 5D
 - RSX structural and software rasterization support through Phase 6D
 - GameRunner format detection and PS3 guest launch through Phase 7C
 - Rendering validation through Phase 8B
