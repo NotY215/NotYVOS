@@ -8,32 +8,32 @@ in the source tree. Runtime verification items are called out separately.
 
 | Subphase | Status | Focus |
 |---|---|---|
-| 1A | Done | CPU initialization, GDT, TSS, serial and framebuffer |
-| 1B | Done | IDT, ISR stubs, exceptions, PIC and PIT |
-| 1C | Done | Physical memory manager and frame allocation |
-| 1D | Done | Virtual memory, paging and HHDM |
-| 1E | Done | Kernel heap |
-| 1F | Done | Logging, panic and assertions |
-| 1G | Done | Per-CPU state, LAPIC and SMP bring-up |
+| 1A | **Done** | CPU initialization, GDT, TSS, serial and framebuffer |
+| 1B | **Done** | IDT, ISR stubs, exceptions, PIC and PIT |
+| 1C | **Done** | Physical memory manager and frame allocation |
+| 1D | **Done** | Virtual memory, paging and HHDM |
+| 1E | **Done** | Kernel heap |
+| 1F | **Done** | Logging, panic and assertions |
+| 1G | **Done** | Per-CPU state, LAPIC and SMP bring-up |
 
 ## Phase 2 — Processes, Syscalls, VFS and Userland
 
 | Subphase | Status | Focus |
 |---|---|---|
-| 2A — Ring 3 transition | Done | GDT/TSS, user entry, syscall/sysret |
-| 2B — Scheduler + threads | Done | Tasks, context switch, preemption |
-| 2C — Processes + ELF loader | Done | ELF64 PT_LOAD, per-process PML4 |
-| 2C-followup — fork / wait | Done | User-memory clone, process hierarchy, reaping |
-| 2D — Syscall ABI + uaccess | Done | Syscall dispatch, copy_from_user, copy_to_user |
-| 2D-followup — readdir / mmap | Done | Directory enumeration, anonymous mappings |
-| 2E — VFS | Done | VNode, File, FileTable, cwd/path lookup |
-| 2F — Initramfs | Done | ustar parser mounted at / |
-| 2G — libc + shell | Done | libnoty, shell, PS/2 keyboard input |
-| 2I — exec / brk | Done | Program replacement, heap extension |
+| 2A — Ring 3 transition | **Done** | GDT/TSS, user entry, syscall/sysret |
+| 2B — Scheduler + threads | **Done** | Tasks, context switch, preemption |
+| 2C — Processes + ELF loader | **Done** | ELF64 PT_LOAD, per-process PML4 |
+| 2C-followup — fork / wait | **Done** | User-memory clone, process hierarchy, reaping |
+| 2D — Syscall ABI + uaccess | **Done** | Syscall dispatch, copy_from_user, copy_to_user |
+| 2D-followup — readdir / mmap | **Done** | Directory enumeration, anonymous mappings |
+| 2E — VFS | **Done** | VNode, File, FileTable, cwd/path lookup |
+| 2F — Initramfs | **Done** | ustar parser mounted at / |
+| 2G — libc + shell | **Done** | libnoty, shell, PS/2 keyboard input |
+| 2I — exec / brk | **Done** | Program replacement, heap extension |
 | 2K — Persistent FS (NYFS) | **DONE** | Superblock, file table, create, read/write, unlink |
-| 2L — Time / sleep / kill | Done | Uptime, blocking sleep, SIGTERM path |
-| 2M — stdio + malloc | Done | fopen, fread, fwrite, malloc |
-| 2N — Signals + Ctrl+C | Done | SIGINT delivery and task termination |
+| 2L — Time / sleep / kill | **Done** | Uptime, blocking sleep, SIGTERM path |
+| 2M — stdio + malloc | **Done** | fopen, fread, fwrite, malloc |
+| 2N — Signals + Ctrl+C | **Done** | SIGINT delivery and task termination |
 
 Phase numbers 2H and 2J are intentionally absent from the current roadmap.
 
@@ -66,7 +66,7 @@ acceleration.
 
 | Subphase | Status | Focus |
 |---|---|---|
-| **5A — Baseline JIT + trampoline + self-test** | **Boot fixes applied — rebuild + boot to verify** | Baseline PPU block translation, x86-64 emitter, executable entry, translation cache and self-tests |
+| **5A — Baseline JIT + trampoline + self-test** | **Done** | Baseline PPU block translation, x86-64 emitter, executable entry, translation cache and self-tests |
 | **5B — Memory opcodes + conditional branch + block chaining** | **Next** | Broader memory operations, conditional control flow and chained translated blocks |
 | 5C — FPU + VMX translation | Not started | PPU floating-point and VMX/vector translation |
 | 5D — Cache invalidation + self-modifying-code detection | Not started | Translation invalidation and self-modifying code handling |
