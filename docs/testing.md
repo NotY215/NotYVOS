@@ -99,11 +99,11 @@ Boot runs:
 A self-test log entry marked Warn indicates that the relevant test did not
 match its expected result.
 
-## Phase 5A verification
+## Phase 5 verification
 
-The latest Phase 5A state requires a fresh rebuild and boot. Until that
-verification is completed, Phase 5A remains marked as
-Boot fixes applied — rebuild + boot to verify.
+Phase 5A through 5D is delivered. Boot testing should cover the completed
+baseline JIT, memory/control-flow translation, FPU/VMX translation, block
+chaining, cache invalidation and self-modifying-code handling.
 
 ## Regression rule
 
@@ -115,7 +115,6 @@ or desktop behavior, followed by the relevant runtime self-tests.
 
 The delivered boundary is now:
 
-**6A–6D → 7A–7C → 8A–8B → 9A → 10A**
+**1A–1G → 2A–2N → 3A–3F → 4A–4E → 5A–5D → 6A–6D → 7A–7C → 8A–8B → 9A → 10A**
 
-The next validation targets are **5B, 6E, 9B and 10B** as those features are
-implemented.
+The next validation targets are **6E, 9B and 10B**.
