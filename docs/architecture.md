@@ -69,7 +69,7 @@ The graphics stack has four layers:
 3. GPU abstraction — triangle, quad, line and rectangle primitives.
 4. Compositor — desktop scene, windows, widgets, input and presentation.
 
-The native desktop rendering path uses the graphics API/HAL/backend architecture,
+The native desktop rendering path uses the Graphics API/HAL/backend architecture,
 while the PS3 runtime additionally has a software RSX compatibility path with
 FIFO command processing, rasterization, vertex/index buffers, depth/scissor
 state, smooth shading, texture binding, UVs, perspective correction, wrapping
