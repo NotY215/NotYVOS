@@ -29,8 +29,9 @@ The repository setup script creates a development VM with:
 | Storage | SATA / Intel AHCI |
 | VM disk | 256 MiB VDI |
 
-This is a development configuration. The interrupt and device model will
-change as later SMP, USB and native hardware phases are implemented.
+This is a development configuration. SMP and the current PS/2, storage,
+graphics and audio initialization are already implemented. USB and additional
+hardware models remain outside the current VM configuration.
 
 ## Why I/O APIC is off
 
