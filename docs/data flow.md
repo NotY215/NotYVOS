@@ -4,11 +4,15 @@ This document maps the data and control flow of the **implemented and
 currently active NOTYVOS phases**. It is intentionally based on the current
 repository implementation rather than future interfaces.
 
-> **Diagram note:** the diagrams use Mermaid flow and sequence notation.
-> GitHub renders them as interactive diagrams in supported Markdown views.
-> The sequence diagrams provide an animation-like time progression from input
-> to output. They are not intended to claim hardware acceleration or runtime
-> behavior that has not been implemented.
+> **Diagram note:** GitHub renders the Mermaid flow and sequence diagrams
+> below. Editable architecture sources (Markmap, D2, Ilograph, Excalidraw,
+> Cytoscape.js, GoJS, Eraser, Python Diagrams) live in
+> [`docs/diagrams/`](diagrams/README.md). Sequence diagrams show time
+> progression from input to output. They do not claim hardware acceleration
+> or runtime behavior that has not been implemented.
+>
+> Mermaid node labels that contain `()` or `::` are quoted. Unquoted
+> `font::draw_text()` is parsed as class / stadium syntax and fails.
 
 ## System-wide flow
 
@@ -542,45 +546,198 @@ flowchart LR
 
 ## Phase 6 — RSX Graphics Compatibility
 
-The completed RSX path is documented in the source-level flows below. It covers
-6A–6F, including command processing, rasterization, buffers, depth/scissor,
-smooth shading, texture binding, UVs, wrapping, perspective correction and
-mipmap/LOD sampling.
-
-## Phase 7 — GameRunner + Compatibility Layer
-
-The completed GameRunner path is documented below through 7C. Phase 7D remains
-the next runtime integration stage.
-
-## Phase 8 — Rendering Validation
-
-The completed 8A/8B validation path is documented below and exercises the RSX
-rendering pipeline through framebuffer output.
-
-## Phase 9 — Image Support
-
-The completed image pipeline is documented below through 9A–9C:
-BMP, PNG/inflate, GIF/LZW, ICO and JPEG decoding.
-
-## Phase 10 — Theme and UI Management
-
-The completed theme and Settings path is documented below through 10A–10F.
-
-## Phase 11 — TrueType Font Subsystem
+The completed RSX path covers 6A–6F: command processing, rasterization,
+buffers, depth/scissor, smooth shading, texture binding, UVs, wrapping,
+perspective correction and mipmap/LOD sampling.
 
 ```mermaid
 flowchart LR
-    FONT[Inter TTF] --> PARSE[TrueType table parser]
-    PARSE --> GLYPH[Simple glyph outline]
-    GLYPH --> FLAT[Quadratic Bézier flattening]
-    FLAT --> RASTER[4x supersampled coverage rasterizer]
-    RASTER --> CACHE[Per-face glyph cache]
-    CACHE --> DRAW[font::draw_text()]
-    DRAW --> COMP[Compositor]
+    PPU[PPU / JIT] --> FIFO[RSX FIFO]
+    FIFO --> METH[Method decoder]
+    METH --> RASTER[Software rasterizer]
+    METH --> TEX[Texture bind]
+    TEX --> UV[UVs + wrap + perspective]
+    UV --> MIP[Mipmap / LOD sample]
+    MIP --> RASTER
+    RASTER --> DEPTH[Depth + scissor]
+    RASTER --> SHADE[Smooth shading]
+    DEPTH --> COLOR[Color buffer]
+    SHADE --> COLOR
+    COLOR --> FB[Framebuffer]
+```
+
+```d2
+direction: right
+PPU: PPU / JIT
+FIFO: RSX FIFO
+Decode: Method decoder
+Raster: Software rasterizer
+Tex: Texture + UV + mip
+FB: Framebuffer
+
+PPU -> FIFO -> Decode
+Decode -> Raster
+Decode -> Tex -> Raster
+Raster -> FB
+```
+
+## Phase 7 — GameRunner + Compatibility Layer
+
+The completed GameRunner path is documented through 7C. Phase 7D remains
+the next runtime integration stage.
+
+```mermaid
+flowchart LR
+    FILE[Guest ELF / package] --> DETECT[Format detection]
+    DETECT --> LOAD[PS3 ELF loader]
+    LOAD --> ABI[PS3 ABI / syscalls]
+    ABI --> PPU[PPU interpreter / JIT]
+    ABI --> FS[cellFs]
+    FS --> VFS[VFS]
+    VFS --> NYFS[NYFS]
+    PPU --> RSX[RSX path]
+```
+
+## Phase 8 — Rendering Validation
+
+The completed 8A/8B validation path exercises the RSX rendering pipeline
+through framebuffer output.
+
+```mermaid
+flowchart LR
+    SUITE[Validation suite] --> RSX[RSX pipeline]
+    RSX --> FB[Framebuffer]
+    FB --> CHECK[Reference compare]
+    CHECK --> LOG[Self-test log]
+```
+
+## Phase 9 — Image Support
+
+The completed image pipeline through 9A–9C: BMP, PNG/inflate, GIF/LZW, ICO
+and JPEG decoding.
+
+```mermaid
+flowchart LR
+    PATH[VFS file] --> KIND{Format}
+    KIND --> BMP[BMP]
+    KIND --> PNG[PNG / inflate]
+    KIND --> GIF[GIF / LZW]
+    KIND --> ICO[ICO]
+    KIND --> JPEG[JPEG]
+    BMP --> PIX[Decoded pixel buffer]
+    PNG --> PIX
+    GIF --> PIX
+    ICO --> PIX
+    JPEG --> PIX
+    PIX --> VIEW[Image Viewer]
+    VIEW --> GFX[Graphics API]
+    GFX --> COMP[Compositor]
+```
+
+## Phase 10 — Theme and UI Management
+
+The completed theme and Settings path through 10A–10F.
+
+```mermaid
+flowchart LR
+    SET[Settings Appearance] --> THEME[Theme state]
+    THEME --> DARK[Dark]
+    THEME --> LIGHT[Light]
+    THEME --> MAC[macOS Dark]
+    SHORT[Desktop shortcuts] --> THEME
+    THEME --> STYLE[Desktop styling]
+    STYLE --> COMP[Compositor]
     COMP --> FB[Framebuffer]
 ```
 
-**Status: DONE.** Multiple weights, kerning, complex-script shaping and subpixel horizontal rendering remain deferred.
+## Phase 11 — TrueType Font Subsystem
+
+**Status: DONE.** Multiple weights, kerning, complex-script shaping and
+subpixel horizontal rendering remain deferred.
+
+Quoted Mermaid labels are required here: `font::draw_text()` contains both
+`::` (class syntax) and `()` (stadium / subroutine shape).
+
+```mermaid
+flowchart LR
+    FONT["Inter TTF"] --> PARSE["TrueType table parser"]
+    PARSE --> HEAD["head / hhea / hmtx / maxp"]
+    PARSE --> CMAP["cmap 4 / 12"]
+    PARSE --> LOCA["loca + glyf"]
+    HEAD --> GLYPH["Simple glyph outline"]
+    CMAP --> GLYPH
+    LOCA --> GLYPH
+    GLYPH --> FLAT["Quadratic Bezier flattening"]
+    FLAT --> RASTER["4x supersampled coverage rasterizer"]
+    RASTER --> CACHE["Per-face glyph cache"]
+    CACHE --> DRAW["font::draw_text()"]
+    DRAW --> COMP["Compositor"]
+    COMP --> FB["Framebuffer"]
+```
+
+```mermaid
+sequenceDiagram
+    participant Face as Inter Regular
+    participant Parse as TTF parser
+    participant Cache as Glyph cache
+    participant Draw as "font::draw_text()"
+    participant Comp as Compositor
+    participant FB as Framebuffer
+
+    Face->>Parse: Load required tables
+    Parse->>Parse: Extract simple outline
+    Parse->>Parse: Flatten quadratic Beziers
+    Parse->>Cache: Rasterize 4x coverage
+    Draw->>Cache: Lookup codepoint
+    alt Cache miss
+        Cache->>Cache: Rasterize and insert
+    end
+    Cache-->>Draw: Cached glyph coverage
+    Draw->>Comp: Blit anti-aliased run
+    Comp->>FB: Present desktop scene
+```
+
+```d2
+direction: right
+Inter: Inter Regular TTF {shape: page}
+Parser: TrueType table parser
+Outline: Simple glyph outline
+Flat: Quadratic Bezier flatten
+Raster: 4x coverage rasterizer
+Cache: Per-face glyph cache {shape: cylinder}
+Draw: "font::draw_text()"
+Compositor: Compositor
+FB: Framebuffer {shape: rectangle}
+
+Inter -> Parser -> Outline -> Flat -> Raster -> Cache -> Draw -> Compositor -> FB
+```
+
+### Phase 11 map (Markmap source)
+
+- Phase 11 TrueType
+  - Parser
+    - head, hhea, hmtx, maxp
+    - cmap formats 4 and 12
+    - loca + glyf
+  - Outline
+    - Simple glyphs
+    - Quadratic Bezier flattening
+  - Rasterizer
+    - 4x vertical supersampling
+    - Coverage AA
+  - Cache
+    - 512-entry per-face
+    - Age-based eviction
+  - Integration
+    - font::draw_text()
+    - Compositor
+    - Boot self-test
+  - Deferred
+    - Multiple weights
+    - Kerning
+    - Complex-script shaping
+    - Subpixel horizontal rendering
+
 
 # Phase 12 — Explorer 10G + Real File Operations
 

@@ -1,13 +1,33 @@
 # NOTYVOS Roadmap Mindmap
 
+Markmap parses this native Markdown outline into an interactive mindmap
+(`npx markmap-cli docs/diagrams/roadmap.markmap.md`).
+
 - NOTYVOS
   - Delivered
     - Phase 0–10F
+      - Kernel / CPU / memory
+      - Processes / VFS / NYFS
+      - Desktop compositor
+      - RSX 6A–6F
+      - GameRunner 7A–7C
+      - Rendering validation 8A–8B
+      - Image codecs 9A–9C
+      - Themes / Settings 10A–10F
     - Phase 11 — TrueType Font Subsystem
       - 11A Parser
+        - head, hhea, hmtx, maxp
+        - cmap 4 / 12
+        - loca + glyf
       - 11B Rasterizer
+        - Simple outlines
+        - Quadratic Bezier flatten
+        - 4x coverage AA
       - 11C Glyph cache
+        - 512-entry per-face
+        - Age-based eviction
       - 11D Compositor integration
+        - font::draw_text()
       - 11E Boot self-test
   - Next
     - Phase 12 — Explorer 10G + Real File Operations

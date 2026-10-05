@@ -1,0 +1,37 @@
+# Phase 11 TrueType pipeline
+# Render: d2 docs/diagrams/truetype.d2 truetype.svg
+
+vars: {
+  d2-config: {
+    layout-engine: elk
+    theme-id: 200
+  }
+}
+
+direction: right
+
+Inter: Inter Regular TTF {
+  shape: page
+}
+
+Parser: TrueType table parser {
+  head: "head / hhea / hmtx / maxp"
+  cmap: "cmap 4 / 12"
+  glyf: "loca + glyf"
+}
+
+Outline: Simple glyph outline
+Flat: Quadratic Bezier flatten
+Raster: "4x coverage rasterizer"
+Cache: Per-face glyph cache {
+  shape: cylinder
+}
+Draw: "font::draw_text()"
+Compositor: Compositor
+FB: Framebuffer
+
+Inter -> Parser
+Parser.head -> Outline
+Parser.cmap -> Outline
+Parser.glyf -> Outline
+Outline -> Flat -> Raster -> Cache -> Draw -> Compositor -> FB

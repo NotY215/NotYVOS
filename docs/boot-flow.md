@@ -2,6 +2,33 @@
 
 ## Current boot sequence
 
+```mermaid
+sequenceDiagram
+    participant UEFI as UEFI firmware
+    participant Limine as Limine v12.9.0
+    participant Start as _start
+    participant Main as kernel_main
+    participant Comp as Compositor
+    participant Font as TrueType
+    participant Init as init.elf
+
+    UEFI->>Limine: Load boot environment
+    Limine->>Start: Kernel ELF + modules
+    Start->>Main: Establish stack
+    Main->>Main: CPU, memory, devices, VFS
+    Main->>Font: Load Inter Regular
+    Main->>Comp: Desktop + text path
+    Main->>Init: Scheduler starts init
+```
+
+```d2
+direction: down
+UEFI -> Limine: firmware handoff
+Limine -> Kernel: ELF + initramfs + requests
+Kernel -> Desktop: compositor + TrueType
+Kernel -> Userland: init.elf
+```
+
 1. UEFI firmware loads the Limine boot environment.
 2. Limine loads the NOTYVOS kernel ELF and configured user modules.
 3. Limine provides framebuffer, memory-map, HHDM, SMP/MP, module and RSDP

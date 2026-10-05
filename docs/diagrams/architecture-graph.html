@@ -5,66 +5,131 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>NOTYVOS Architecture Graph</title>
     <style>
-      html, body, #graph {
+      :root {
+        --bg: #0b0f14;
+        --panel: #151b22;
+        --text: #e7ecf1;
+        --muted: #8b9aab;
+        --boot: #3b82f6;
+        --kernel: #f59e0b;
+        --desktop: #22c55e;
+        --ps3: #a855f7;
+      }
+      * { box-sizing: border-box; }
+      html, body {
         width: 100%;
         height: 100%;
         margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: ui-sans-serif, system-ui, sans-serif;
       }
-
-      body {
-        font-family: system-ui, sans-serif;
-        background: #0b0f14;
+      #toolbar {
+        position: absolute;
+        z-index: 2;
+        top: 16px;
+        left: 16px;
+        right: 16px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 16px;
+        align-items: center;
+        padding: 10px 14px;
+        background: var(--panel);
+        border: 1px solid #243040;
+        border-radius: 12px;
       }
-
-      #graph {
-        background: #0b0f14;
+      #toolbar h1 {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 650;
+        letter-spacing: 0.02em;
       }
+      #toolbar span { color: var(--muted); font-size: 12px; }
+      button {
+        background: #1f2a36;
+        color: var(--text);
+        border: 1px solid #334155;
+        border-radius: 8px;
+        padding: 6px 10px;
+        cursor: pointer;
+      }
+      button:hover { background: #263241; }
+      .swatch { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+      .dot { width: 8px; height: 8px; border-radius: 99px; display: inline-block; }
+      #graph { width: 100%; height: 100%; }
     </style>
   </head>
   <body>
+    <div id="toolbar">
+      <h1>NOTYVOS architecture</h1>
+      <span>Cytoscape.js · drag nodes · cose layout</span>
+      <span class="swatch"><i class="dot" style="background:var(--boot)"></i>Boot</span>
+      <span class="swatch"><i class="dot" style="background:var(--kernel)"></i>Kernel</span>
+      <span class="swatch"><i class="dot" style="background:var(--desktop)"></i>Desktop</span>
+      <span class="swatch"><i class="dot" style="background:var(--ps3)"></i>PS3</span>
+      <button id="relayout">Relayout</button>
+      <button id="fit">Fit</button>
+    </div>
     <div id="graph"></div>
-
-    <script src="https://unpkg.com/cytoscape/dist/cytoscape.min.js"></script>
+    <script src="https://unpkg.com/cytoscape@3.30.2/dist/cytoscape.min.js"></script>
     <script>
       const elements = {
         nodes: [
-          { data: { id: "boot", label: "UEFI / Limine" } },
-          { data: { id: "kernel", label: "Kernel" } },
-          { data: { id: "memory", label: "Memory" } },
-          { data: { id: "sched", label: "Scheduler" } },
-          { data: { id: "sys", label: "Syscalls" } },
-          { data: { id: "vfs", label: "VFS" } },
-          { data: { id: "nyfs", label: "NYFS" } },
-          { data: { id: "gfx", label: "Graphics" } },
-          { data: { id: "comp", label: "Compositor" } },
-          { data: { id: "font", label: "TrueType / Inter" } },
-          { data: { id: "desktop", label: "Desktop" } },
-          { data: { id: "explorer", label: "Explorer" } },
-          { data: { id: "ps3", label: "PS3 Runtime" } },
-          { data: { id: "ppu", label: "PPU / JIT" } },
-          { data: { id: "spu", label: "SPU / DMA" } },
-          { data: { id: "rsx", label: "RSX" } },
-          { data: { id: "game", label: "GameRunner" } }
+          { data: { id: "bootg", label: "Boot", kind: "group" } },
+          { data: { id: "kernelg", label: "Kernel", kind: "group" } },
+          { data: { id: "deskg", label: "Desktop", kind: "group" } },
+          { data: { id: "ps3g", label: "PS3 runtime", kind: "group" } },
+
+          { data: { id: "uefi", label: "UEFI", parent: "bootg", kind: "boot" } },
+          { data: { id: "limine", label: "Limine v12.9.0", parent: "bootg", kind: "boot" } },
+
+          { data: { id: "cpu", label: "CPU + SMP", parent: "kernelg", kind: "kernel" } },
+          { data: { id: "memory", label: "PMM / VMM / heap", parent: "kernelg", kind: "kernel" } },
+          { data: { id: "sched", label: "Scheduler", parent: "kernelg", kind: "kernel" } },
+          { data: { id: "sys", label: "Syscalls", parent: "kernelg", kind: "kernel" } },
+          { data: { id: "vfs", label: "VFS", parent: "kernelg", kind: "kernel" } },
+          { data: { id: "nyfs", label: "NYFS /disk", parent: "kernelg", kind: "kernel" } },
+
+          { data: { id: "gfx", label: "Graphics API / HAL", parent: "deskg", kind: "desktop" } },
+          { data: { id: "font", label: "TrueType / Inter", parent: "deskg", kind: "desktop" } },
+          { data: { id: "comp", label: "Compositor", parent: "deskg", kind: "desktop" } },
+          { data: { id: "desktop", label: "Windows / widgets", parent: "deskg", kind: "desktop" } },
+          { data: { id: "explorer", label: "Explorer", parent: "deskg", kind: "desktop" } },
+
+          { data: { id: "game", label: "GameRunner", parent: "ps3g", kind: "ps3" } },
+          { data: { id: "ps3", label: "PS3 ELF", parent: "ps3g", kind: "ps3" } },
+          { data: { id: "ppu", label: "PPU / JIT", parent: "ps3g", kind: "ps3" } },
+          { data: { id: "spu", label: "SPU / DMA", parent: "ps3g", kind: "ps3" } },
+          { data: { id: "rsx", label: "RSX", parent: "ps3g", kind: "ps3" } }
         ],
         edges: [
-          { data: { source: "boot", target: "kernel" } },
-          { data: { source: "kernel", target: "memory" } },
+          { data: { source: "uefi", target: "limine", label: "boot" } },
+          { data: { source: "limine", target: "cpu", label: "entry" } },
+          { data: { source: "cpu", target: "memory" } },
           { data: { source: "memory", target: "sched" } },
           { data: { source: "sched", target: "sys" } },
           { data: { source: "sys", target: "vfs" } },
-          { data: { source: "vfs", target: "nyfs" } },
-          { data: { source: "kernel", target: "gfx" } },
+          { data: { source: "vfs", target: "nyfs", label: "/disk" } },
+          { data: { source: "sys", target: "gfx" } },
+          { data: { source: "font", target: "comp", label: "draw_text" } },
           { data: { source: "gfx", target: "comp" } },
-          { data: { source: "font", target: "comp" } },
           { data: { source: "comp", target: "desktop" } },
           { data: { source: "desktop", target: "explorer" } },
-          { data: { source: "explorer", target: "vfs" } },
-          { data: { source: "kernel", target: "ps3" } },
+          { data: { source: "explorer", target: "vfs", label: "file ops" } },
+          { data: { source: "cpu", target: "ps3" } },
           { data: { source: "game", target: "ps3" } },
           { data: { source: "ps3", target: "ppu" } },
           { data: { source: "ppu", target: "spu" } },
-          { data: { source: "spu", target: "rsx" } }
+          { data: { source: "ppu", target: "rsx" } }
         ]
+      };
+
+      const color = {
+        boot: "#3b82f6",
+        kernel: "#f59e0b",
+        desktop: "#22c55e",
+        ps3: "#a855f7"
       };
 
       const cy = cytoscape({
@@ -74,42 +139,68 @@
           name: "cose",
           animate: true,
           fit: true,
-          padding: 48,
-          nodeRepulsion: 16000,
-          idealEdgeLength: 220,
-          edgeElasticity: 0.6,
+          padding: 72,
+          nodeRepulsion: 18000,
+          idealEdgeLength: 140,
+          edgeElasticity: 0.45,
           randomize: false
         },
         style: [
           {
-            selector: "node",
+            selector: "node[kind='group']",
             style: {
               label: "data(label)",
-              color: "#fff",
-              background: "#263241",
+              color: "#8b9aab",
+              "text-valign": "top",
+              "text-halign": "left",
+              "text-margin-y": -8,
+              "background-opacity": 0.08,
+              "background-color": "#94a3b8",
+              "border-color": "#334155",
+              "border-width": 1,
+              shape: "roundrectangle",
+              padding: "24px",
+              "font-size": "11px"
+            }
+          },
+          {
+            selector: "node[kind!='group']",
+            style: {
+              label: "data(label)",
+              color: "#0b0f14",
+              "background-color": (ele) => color[ele.data("kind")] || "#94a3b8",
               padding: "10px",
               "text-valign": "center",
               "text-halign": "center",
               width: "label",
               height: "label",
               "font-size": "12px",
+              "font-weight": 600,
               "text-wrap": "wrap",
-              "text-max-width": "140px"
+              "text-max-width": "140px",
+              shape: "roundrectangle"
             }
           },
           {
             selector: "edge",
             style: {
               width: 2,
-              "line-color": "#718096",
-              "target-arrow-color": "#718096",
+              label: "data(label)",
+              color: "#8b9aab",
+              "font-size": "9px",
+              "text-rotation": "autorotate",
+              "line-color": "#475569",
+              "target-arrow-color": "#475569",
               "target-arrow-shape": "triangle",
-              "curve-style": "bezier",
-              "control-point-step-size": 20
+              "curve-style": "bezier"
             }
           }
         ]
       });
+
+      document.getElementById("relayout").onclick = () =>
+        cy.layout({ name: "cose", animate: true, fit: true, padding: 72 }).run();
+      document.getElementById("fit").onclick = () => cy.fit(undefined, 48);
     </script>
   </body>
 </html>

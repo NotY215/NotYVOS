@@ -69,6 +69,18 @@ The graphics stack has four layers:
 3. GPU abstraction — triangle, quad, line and rectangle primitives.
 4. Compositor — desktop scene, windows, widgets, input and presentation.
 
+```mermaid
+flowchart LR
+    APP[Desktop / apps] --> API[Graphics API]
+    API --> HAL[Graphics HAL]
+    HAL --> SW[Software backend]
+    HAL --> VBE[VBE backend]
+    TT["TrueType / font::draw_text()"] --> COMP[Compositor]
+    SW --> COMP
+    VBE --> COMP
+    COMP --> FB[Framebuffer]
+```
+
 The native desktop rendering path uses the Graphics API/HAL/backend architecture,
 while the PS3 runtime additionally has a software RSX compatibility path with
 FIFO command processing, rasterization, vertex/index buffers, depth/scissor
@@ -124,21 +136,35 @@ invalidation/self-modifying-code handling.
 
 ## Boot architecture
 
-    UEFI firmware
-        ↓
-    Limine v12.9.0
-        ↓
-    _start
-        ↓
-    kernel_main
-        ├── framebuffer + serial
-        ├── CPU + memory + heap
-        ├── ACPI + storage + device initialization
-        ├── VFS + initramfs + NYFS
-        ├── compositor + graphics HAL
-        ├── PS3 runtime self-tests
-        ├── scheduler
-        └── init.elf
+```mermaid
+flowchart TD
+    UEFI[UEFI firmware] --> LIM[Limine v12.9.0]
+    LIM --> START["_start"]
+    START --> MAIN[kernel_main]
+    MAIN --> FB[Framebuffer + serial]
+    MAIN --> CPU[CPU + memory + heap]
+    MAIN --> DEV[ACPI + storage + devices]
+    MAIN --> VFS[VFS + initramfs + NYFS]
+    MAIN --> GFX[Compositor + graphics HAL + TrueType]
+    MAIN --> PS3[PS3 runtime self-tests]
+    MAIN --> SCHED[Scheduler]
+    SCHED --> INIT[init.elf]
+```
+
+```d2
+direction: down
+UEFI -> Limine: boot
+Limine -> Start: "_start"
+Start -> Main: kernel_main
+Main -> FB: framebuffer + serial
+Main -> CPU: CPU + memory + heap
+Main -> Devices: ACPI + storage
+Main -> VFS: initramfs + NYFS
+Main -> Desktop: compositor + TrueType
+Main -> PS3: runtime self-tests
+Main -> Scheduler
+Scheduler -> Init: init.elf
+```
 
 ## Important boundaries
 
@@ -190,8 +216,68 @@ from the current roadmap.
 
 ## Architecture visualization sources
 
-Editable architecture mappings are maintained in `docs/diagrams/`. Markmap
-covers the roadmap mindmap, D2 covers the infrastructure topology, Ilograph
-covers multiple architecture perspectives, Excalidraw provides a sketch-style
-view, and Cytoscape.js provides an interactive dependency graph. The canonical
-architecture remains this document and `docs/roadmap.md`.
+Canonical facts remain this document and `docs/roadmap.md`. Visualization
+sources live in [`docs/diagrams/`](diagrams/README.md).
+
+| Source | Tool | Renders on GitHub |
+|---|---|---|
+| Mermaid in this file | Mermaid | Yes |
+| `diagrams/roadmap.markmap.md` | Markmap | As Markdown outline |
+| `diagrams/architecture.d2` | D2 | Source only |
+| `diagrams/architecture.ilograph.yaml` | Ilograph | Source only |
+| `diagrams/architecture.eraser.md` | Eraser | Source only |
+| `diagrams/architecture.excalidraw.md` | Excalidraw | Source only |
+| `diagrams/architecture-graph.html` | Cytoscape.js | Open the HTML |
+| `diagrams/architecture.gojs.html` | GoJS | Open the HTML |
+| `diagrams/host-infrastructure.py` | Python Diagrams | Generate PNG/SVG |
+
+### System layer map (Markmap source)
+
+- NOTYVOS
+  - Boot
+    - UEFI firmware
+    - Limine v12.9.0
+    - `_start` / `kernel_main`
+  - Kernel
+    - CPU / GDT / TSS / SMP
+    - PMM / VMM / heap
+    - Scheduler / syscalls
+    - VFS / initramfs / NYFS
+  - Desktop
+    - Graphics API / HAL
+    - Compositor / widgets
+    - TrueType / Inter
+    - Explorer / Settings
+  - PS3 runtime
+    - ELF loader / ABI
+    - PPU interpreter + JIT
+    - SPU / DMA
+    - RSX software path
+    - GameRunner
+  - Next
+    - Phase 12 Explorer 10G
+
+```ilograph
+# Valid Ilograph excerpt. Full multi-perspective file:
+# docs/diagrams/architecture.ilograph.yaml
+resources:
+  - name: Kernel
+    children:
+      - name: VFS
+      - name: NYFS
+      - name: Compositor
+      - name: TrueType
+      - name: PS3 Runtime
+perspectives:
+  - name: System
+    relations:
+      - from: VFS
+        to: NYFS
+        label: /disk
+      - from: TrueType
+        to: Compositor
+        label: font::draw_text
+      - from: Compositor
+        to: VFS
+        label: desktop I/O
+```

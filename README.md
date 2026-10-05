@@ -181,13 +181,18 @@ bypasses.
 
 ## Architecture maps
 
-The repository now keeps editable architecture sources under `docs/diagrams/`:
+Canonical architecture is `docs/architecture.md`, `docs/data flow.md` and
+`docs/roadmap.md`. Markdown-native diagrams (Mermaid, Markmap outlines, D2,
+Ilograph YAML) are inlined in those docs. Additional renderer sources live
+under `docs/diagrams/`:
 
 - Markmap roadmap mindmap
-- D2 system architecture
+- D2 system / boot / TrueType layouts
 - Ilograph multi-perspective architecture
-- Excalidraw sketch source
+- Eraser / DiagramGPT source
+- Excalidraw sketch JSON
 - Cytoscape.js interactive dependency graph
+- GoJS layered flowchart
+- Python Diagrams host/build map
 
-These are visualization layers over the canonical roadmap and architecture docs.
 See `docs/diagrams/README.md`.

@@ -1,0 +1,41 @@
+# NOTYVOS boot pipeline
+# Render: d2 docs/diagrams/boot.d2 boot.svg
+
+vars: {
+  d2-config: {
+    layout-engine: elk
+    theme-id: 200
+  }
+}
+
+direction: down
+
+UEFI: UEFI firmware
+Limine: Limine v12.9.0
+Start: "_start"
+Main: kernel_main
+
+Init: {
+  label: kernel_main work
+  FB: "framebuffer + serial"
+  CPU: "CPU + memory + heap"
+  Devices: "ACPI + AHCI + e1000 + HDA"
+  VFS: "initramfs + NYFS"
+  Desktop: "compositor + TrueType"
+  PS3: "runtime self-tests"
+  Sched: Scheduler
+}
+
+User: init.elf
+
+UEFI -> Limine: firmware handoff
+Limine -> Start: kernel ELF + modules
+Start -> Main
+Main -> Init.FB
+Main -> Init.CPU
+Main -> Init.Devices
+Main -> Init.VFS
+Main -> Init.Desktop
+Main -> Init.PS3
+Main -> Init.Sched
+Init.Sched -> User

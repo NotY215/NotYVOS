@@ -30,6 +30,33 @@ The scripts populate:
     ├── limine-12.9.0/
     └── limine-binary/
 
+## Build data flow
+
+```mermaid
+flowchart LR
+    SRC[kernel / user sources] --> CMAKE[CMake + Ninja]
+    FONT[Fonts/Inter] --> CMAKE
+    LIM[Limine v12.9.0] --> CMAKE
+    CMAKE --> ELF[notyvos-kernel.elf]
+    CMAKE --> INIT[init.elf]
+    CMAKE --> RAM[initramfs.tar]
+    ELF --> ISO[notyvos.iso]
+    INIT --> ISO
+    RAM --> ISO
+    ISO --> VBOX[VirtualBox]
+```
+
+```d2
+direction: right
+Sources -> CMake: Clang/LLD
+Inter -> CMake: bundled TTF
+Limine -> CMake: boot files
+CMake -> ISO: notyvos.iso
+ISO -> VirtualBox
+```
+
+Host-side Python Diagrams source: [`diagrams/host-infrastructure.py`](diagrams/host-infrastructure.py).
+
 ## Configure and build
 
 ### Windows

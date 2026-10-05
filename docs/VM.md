@@ -2,6 +2,28 @@
 
 NOTYVOS is currently developed and tested in VirtualBox.
 
+## VM topology
+
+```mermaid
+flowchart LR
+    HOST[Host] --> VBOX[VirtualBox]
+    VBOX --> EFI[EFI firmware]
+    VBOX --> CPU[1 CPU / 2048 MiB]
+    VBOX --> GPU[VBoxSVGA]
+    VBOX --> SATA[AHCI / 256 MiB VDI]
+    VBOX --> PS2[PS/2 kbd + mouse]
+    VBOX --> COM[COM1 TCP 2323]
+    ISO[notyvos.iso] --> VBOX
+```
+
+```d2
+direction: right
+Host -> VirtualBox
+VirtualBox -> Guest: EFI + VBoxSVGA + AHCI
+ISO -> VirtualBox: attach
+Guest -> Serial: COM1 :2323
+```
+
 ## Current VM configuration
 
 The repository setup script creates a development VM with:

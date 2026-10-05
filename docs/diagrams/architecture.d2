@@ -1,57 +1,77 @@
+# NOTYVOS infrastructure architecture (D2)
+# Render: d2 docs/diagrams/architecture.d2 architecture.svg
+# Nested references use Container.Child so edges stay inside the real nodes.
+
+vars: {
+  d2-config: {
+    layout-engine: elk
+    theme-id: 200
+  }
+}
+
 direction: right
 
 Boot: {
-  label: "Boot"
-  UEFI -> Limine: "boot"
-  Limine -> Kernel: "kernel entry"
+  label: Boot
+  UEFI: "UEFI firmware"
+  Limine: "Limine v12.9.0"
+  UEFI -> Limine: boot
 }
 
 Kernel: {
-  label: "Kernel"
-  CPU: "CPU + SMP"
+  label: Kernel
+  CPU: "CPU + GDT + SMP"
   Memory: "PMM / VMM / heap"
   Scheduler: "Scheduler / tasks"
   Syscalls: "Syscall ABI"
   VFS: "VFS"
-  NYFS: "NYFS"
+  Initramfs: "Initramfs /"
+  NYFS: "NYFS /disk"
+
+  CPU -> Memory
+  Memory -> Scheduler
+  Scheduler -> Syscalls
+  Syscalls -> VFS
+  VFS -> Initramfs
+  VFS -> NYFS
 }
 
 Desktop: {
-  label: "Desktop"
+  label: Desktop
   Graphics: "Graphics API / HAL"
   Compositor: "Compositor"
-  UI: "Windows / widgets / taskbar"
   Fonts: "TrueType / Inter"
+  UI: "Windows / widgets / taskbar"
   Explorer: "Explorer"
+
+  Graphics -> Compositor
+  Fonts -> Compositor: "font::draw_text()"
+  Compositor -> UI
+  UI -> Explorer
 }
 
 PS3: {
   label: "PS3 runtime"
-  Loader: "ELF loader"
+  Loader: "PS3 ELF loader"
   PPU: "PPU interpreter"
   JIT: "x86-64 JIT"
   SPU: "SPU interpreter"
-  DMA: "DMA"
+  DMA: "DMA engine"
   RSX: "RSX compatibility"
   GameRunner: "GameRunner"
+
+  GameRunner -> Loader
+  Loader -> PPU
+  Loader -> JIT
+  PPU -> JIT
+  PPU -> SPU
+  SPU -> DMA
+  PPU -> RSX
+  JIT -> RSX
 }
 
-Limine -> Memory
-Memory -> Scheduler
-Scheduler -> Syscalls
-Syscalls -> VFS
-VFS -> NYFS
-Kernel -> Graphics
-Graphics -> Compositor
-Fonts -> Compositor
-Compositor -> UI
-UI -> Explorer
-Explorer -> VFS
-Kernel -> PS3
-Loader -> PPU
-Loader -> JIT
-PPU -> JIT
-PPU -> SPU
-SPU -> DMA
-JIT -> RSX
-GameRunner -> Loader
+Boot.Limine -> Kernel.CPU: kernel entry
+Kernel.Syscalls -> Desktop.Graphics
+Desktop.Explorer -> Kernel.VFS: file ops
+Desktop.Fonts -> Kernel.Memory: glyph cache
+Kernel.CPU -> PS3.Loader

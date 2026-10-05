@@ -28,6 +28,50 @@ The repository contains the Inter family, including regular, italic and multiple
 
 Inter is redistributed under the SIL Open Font License 1.1. See NOTICE, THIRD_PARTY_LICENSES/inter-font.txt and Fonts/README.md.
 
+
+
+## Data flow
+
+Quoted Mermaid is required so `font::draw_text()` is not parsed as class /
+stadium syntax. Full pipeline: [`data flow.md`](data%20flow.md#phase-11--truetype-font-subsystem)
+and [`diagrams/truetype.d2`](diagrams/truetype.d2).
+
+```mermaid
+flowchart LR
+    TTF["Inter Regular TTF"] --> PARSE["TrueType parser"]
+    PARSE --> GLYPH["Simple glyph outline"]
+    GLYPH --> RASTER["4x coverage rasterizer"]
+    RASTER --> CACHE["512-entry glyph cache"]
+    CACHE --> DRAW["font::draw_text()"]
+    DRAW --> COMP["Compositor"]
+```
+
+```d2
+direction: right
+Inter -> Parser: TTF tables
+Parser -> Outline: glyf + loca
+Outline -> Raster: flatten Beziers
+Raster -> Cache: coverage
+Cache -> Draw: "font::draw_text()"
+Draw -> Compositor
+```
+
+### Font subsystem map (Markmap source)
+
+- TrueType / Inter
+  - Delivered
+    - Table parser
+    - Simple outlines
+    - 4x coverage rasterizer
+    - Glyph cache
+    - compositor draw_text
+    - Boot self-test
+  - Deferred
+    - Multiple weights
+    - Kerning
+    - Complex-script shaping
+    - Subpixel AA
+
 ## Next integration
 
 Phase 12 uses the delivered font subsystem for Explorer 10G labels and controls.

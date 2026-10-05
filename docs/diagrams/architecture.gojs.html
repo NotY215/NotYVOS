@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NOTYVOS Architecture — GoJS</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #0b0f14; color: #e7ecf1;
+        font-family: ui-sans-serif, system-ui, sans-serif; }
+      #bar { padding: 12px 16px; border-bottom: 1px solid #243040; }
+      #bar h1 { margin: 0; font-size: 14px; }
+      #bar p { margin: 4px 0 0; color: #8b9aab; font-size: 12px; }
+      #diagram { width: 100%; height: calc(100% - 58px); }
+    </style>
+  </head>
+  <body>
+    <div id="bar">
+      <h1>NOTYVOS architecture</h1>
+      <p>GoJS layered flowchart. Drag nodes. Evaluation GoJS build for documentation only.</p>
+    </div>
+    <div id="diagram"></div>
+    <script src="https://cdn.jsdelivr.net/npm/gojs@3.0.16/release/go.js"></script>
+    <script>
+      const $ = go.GraphObject.make;
+      const diagram = $(go.Diagram, "diagram", {
+        "undoManager.isEnabled": true,
+        layout: $(go.LayeredDigraphLayout, { direction: 0, layerSpacing: 48, columnSpacing: 24 })
+      });
+
+      diagram.nodeTemplate = $(
+        go.Node, "Auto",
+        $(go.Shape, "RoundedRectangle", {
+          strokeWidth: 0,
+          portId: "",
+          fromLinkable: true,
+          toLinkable: true
+        }, new go.Binding("fill", "color")),
+        $(go.TextBlock, { margin: 10, stroke: "#0b0f14", font: "600 12px sans-serif" },
+          new go.Binding("text", "key"))
+      );
+
+      diagram.groupTemplate = $(
+        go.Group, "Auto",
+        { layout: $(go.LayeredDigraphLayout, { direction: 0, layerSpacing: 28 }) },
+        $(go.Shape, "RoundedRectangle", { fill: "rgba(148,163,184,0.08)", stroke: "#334155" }),
+        $(go.Panel, "Vertical",
+          $(go.TextBlock, { alignment: go.Spot.Left, margin: 8, stroke: "#8b9aab", font: "12px sans-serif" },
+            new go.Binding("text", "key")),
+          $(go.Placeholder, { padding: 12 })
+        )
+      );
+
+      diagram.linkTemplate = $(
+        go.Link, { routing: go.Routing.AvoidsNodes, corner: 8 },
+        $(go.Shape, { stroke: "#64748b", strokeWidth: 1.5 }),
+        $(go.Shape, { toArrow: "Triangle", fill: "#64748b", stroke: null }),
+        $(go.TextBlock, { segmentOffset: new go.Point(0, -10), stroke: "#8b9aab", font: "10px sans-serif" },
+          new go.Binding("text", "text"))
+      );
+
+      diagram.model = new go.GraphLinksModel(
+        [
+          { key: "Boot", isGroup: true },
+          { key: "Kernel", isGroup: true },
+          { key: "Desktop", isGroup: true },
+          { key: "PS3 runtime", isGroup: true },
+          { key: "UEFI", group: "Boot", color: "#93c5fd" },
+          { key: "Limine", group: "Boot", color: "#93c5fd" },
+          { key: "CPU + SMP", group: "Kernel", color: "#fcd34d" },
+          { key: "Memory", group: "Kernel", color: "#fcd34d" },
+          { key: "Scheduler", group: "Kernel", color: "#fcd34d" },
+          { key: "Syscalls", group: "Kernel", color: "#fcd34d" },
+          { key: "VFS", group: "Kernel", color: "#fcd34d" },
+          { key: "NYFS", group: "Kernel", color: "#fcd34d" },
+          { key: "Graphics", group: "Desktop", color: "#86efac" },
+          { key: "TrueType", group: "Desktop", color: "#86efac" },
+          { key: "Compositor", group: "Desktop", color: "#86efac" },
+          { key: "Explorer", group: "Desktop", color: "#86efac" },
+          { key: "GameRunner", group: "PS3 runtime", color: "#d8b4fe" },
+          { key: "PPU / JIT", group: "PS3 runtime", color: "#d8b4fe" },
+          { key: "SPU / DMA", group: "PS3 runtime", color: "#d8b4fe" },
+          { key: "RSX", group: "PS3 runtime", color: "#d8b4fe" }
+        ],
+        [
+          { from: "UEFI", to: "Limine", text: "boot" },
+          { from: "Limine", to: "CPU + SMP", text: "entry" },
+          { from: "CPU + SMP", to: "Memory" },
+          { from: "Memory", to: "Scheduler" },
+          { from: "Scheduler", to: "Syscalls" },
+          { from: "Syscalls", to: "VFS" },
+          { from: "VFS", to: "NYFS", text: "/disk" },
+          { from: "Syscalls", to: "Graphics" },
+          { from: "TrueType", to: "Compositor", text: "draw_text" },
+          { from: "Graphics", to: "Compositor" },
+          { from: "Compositor", to: "Explorer" },
+          { from: "Explorer", to: "VFS", text: "file ops" },
+          { from: "CPU + SMP", to: "GameRunner" },
+          { from: "GameRunner", to: "PPU / JIT" },
+          { from: "PPU / JIT", to: "SPU / DMA" },
+          { from: "PPU / JIT", to: "RSX" }
+        ]
+      );
+    </script>
+  </body>
+</html>

@@ -1,5 +1,18 @@
 # Testing
 
+## Test flow
+
+```mermaid
+flowchart TD
+    BUILD[Release ISO] --> VBOX[VirtualBox boot]
+    VBOX --> SERIAL[Serial smoke]
+    VBOX --> DESK[Desktop smoke]
+    VBOX --> SHELL[Userland shell]
+    VBOX --> PS3[PS3 / RSX self-tests]
+    VBOX --> FONT[Phase 11 TrueType self-test]
+    FONT --> NEXT[Phase 12A Explorer regression]
+```
+
 ## Current test environment
 
 The documented development target is VirtualBox. QEMU is not the current

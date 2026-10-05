@@ -1,44 +1,212 @@
-# NOTYVOS architecture perspectives
-title: NOTYVOS Architecture
-views:
-  - name: System
-    perspective: system
-    graph:
-      - UEFI
-      - Limine
-      - Kernel
-      - VFS
-      - NYFS
-      - Compositor
-      - TrueType
-      - PS3 Runtime
-      - GameRunner
+# NOTYVOS multi-perspective architecture (Ilograph)
+# Open in https://app.ilograph.com or the Ilograph VS Code extension.
+# Spec: https://www.ilograph.com/docs/spec/
+description: |
+  Implemented NOTYVOS architecture through Phase 11 TrueType. Switch
+  perspectives for system, desktop, storage, PS3 and font views.
+
+resources:
+  - name: Host Firmware
+    subtitle: Platform firmware
+    children:
+      - name: UEFI
+        subtitle: UEFI firmware
+      - name: Limine
+        subtitle: Limine v12.9.0
+
+  - name: Kernel
+    subtitle: Freestanding x86-64
+    children:
+      - name: CPU
+        subtitle: GDT / TSS / SMP
+      - name: Memory
+        subtitle: PMM / VMM / heap
+      - name: Scheduler
+        subtitle: Tasks / preemption
+      - name: Syscalls
+        subtitle: Syscall ABI
+      - name: VFS
+        subtitle: VNode namespace
+      - name: Initramfs
+        subtitle: ustar /
+      - name: NYFS
+        subtitle: Persistent /disk
+      - name: AHCI
+        subtitle: Block storage
+
   - name: Desktop
-    perspective: desktop
-    graph:
-      - Input
-      - Window Manager
-      - Compositor
-      - Widgets
-      - TrueType
-      - Explorer
-      - Settings
-      - VFS
+    subtitle: Software-rendered UI
+    children:
+      - name: Graphics API
+        subtitle: Device-independent primitives
+      - name: Compositor
+        subtitle: Scene / windows / presentation
+      - name: TrueType
+        subtitle: Inter rasterizer
+        children:
+          - name: Inter Regular
+            subtitle: Bundled TTF
+      - name: Widgets
+        subtitle: Button / Label / ListView
+      - name: Explorer
+        subtitle: File manager
+      - name: Settings
+        subtitle: Appearance / themes
+      - name: Input
+        subtitle: PS/2 keyboard + mouse
+
+  - name: PS3 Runtime
+    subtitle: Cell compatibility
+    children:
+      - name: GameRunner
+        subtitle: Format detect / launch
+      - name: PS3 ELF
+        subtitle: Loader
+      - name: PPU
+        subtitle: Interpreter
+      - name: JIT
+        subtitle: x86-64 translation
+      - name: SPU
+        subtitle: Local store + mailboxes
+      - name: DMA
+        subtitle: Cell-style DMA
+      - name: RSX
+        subtitle: Software RSX path
+
+perspectives:
+  - name: System
+    orientation: leftToRight
+    relations:
+      - from: UEFI
+        to: Limine
+        label: boot
+      - from: Limine
+        to: CPU
+        label: kernel entry
+      - from: CPU
+        to: Memory
+        label: paging
+      - from: Memory
+        to: Scheduler
+        label: tasks
+      - from: Scheduler
+        to: Syscalls
+        label: dispatch
+      - from: Syscalls
+        to: VFS
+        label: file ops
+      - from: Syscalls
+        to: Graphics API
+        label: desktop
+      - from: TrueType
+        to: Compositor
+        label: draw_text
+      - from: Compositor
+        to: Graphics API
+        label: present
+      - from: CPU
+        to: PS3 ELF
+        label: runtime
+      - from: GameRunner
+        to: PS3 ELF
+        label: launch
+
+  - name: Desktop
+    orientation: leftToRight
+    relations:
+      - from: Input
+        to: Compositor
+        label: pointer / keys
+      - from: Widgets
+        to: Compositor
+        label: controls
+      - from: TrueType
+        to: Compositor
+        label: anti-aliased text
+      - from: Settings
+        to: Compositor
+        label: theme
+      - from: Explorer
+        to: VFS
+        label: list / navigate
+      - from: Graphics API
+        to: Compositor
+        label: HAL backends
+
   - name: Storage
-    perspective: storage
-    graph:
-      - Syscalls
-      - VFS
-      - Initramfs
-      - NYFS
-      - AHCI
+    orientation: leftToRight
+    relations:
+      - from: Syscalls
+        to: VFS
+        label: path lookup
+      - from: VFS
+        to: Initramfs
+        label: /
+      - from: VFS
+        to: NYFS
+        label: /disk
+      - from: NYFS
+        to: AHCI
+        label: sectors
+      - from: Explorer
+        to: VFS
+        label: file operations
+
   - name: PS3
-    perspective: ps3
-    graph:
-      - GameRunner
-      - PS3 ELF
-      - PPU
-      - JIT
-      - SPU
-      - DMA
-      - RSX
+    orientation: leftToRight
+    relations:
+      - from: GameRunner
+        to: PS3 ELF
+        label: detect
+      - from: PS3 ELF
+        to: PPU
+        label: load
+      - from: PPU
+        to: JIT
+        label: translate
+      - from: PPU
+        to: SPU
+        label: mailbox
+      - from: SPU
+        to: DMA
+        label: local store
+      - from: PPU
+        to: RSX
+        label: FIFO
+      - from: JIT
+        to: RSX
+        label: guest draw
+
+  - name: TrueType
+    orientation: leftToRight
+    relations:
+      - from: TrueType
+        to: Compositor
+        label: font::draw_text
+      - from: TrueType
+        to: Memory
+        label: glyph cache
+      - from: Widgets
+        to: TrueType
+        label: labels
+      - from: Explorer
+        to: TrueType
+        label: UI text
+      - from: Compositor
+        to: Graphics API
+        label: blit coverage
+
+  - name: Text draw sequence
+    sequence:
+      start: Inter Regular
+      steps:
+        - to: TrueType
+          label: parse TTF tables
+        - to: TrueType
+          label: flatten and rasterize
+        - to: Memory
+          label: cache glyph
+        - to: Compositor
+          label: font::draw_text
+        - to: Graphics API
+          label: present

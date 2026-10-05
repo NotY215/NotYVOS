@@ -4,6 +4,33 @@ This is the canonical NOTYVOS roadmap. It supersedes the previous phase numberin
 Phases 0–10 are frozen as delivered. Windows .exe compatibility and Brave/VLC
 validation are explicitly excluded from the current queue.
 
+## Roadmap map
+
+Markmap source: [`diagrams/roadmap.markmap.md`](diagrams/roadmap.markmap.md).
+
+```mermaid
+flowchart TD
+    D[Phases 0-10F delivered] --> P11[11 TrueType DONE]
+    P11 --> P12[12 Explorer NEXT]
+    P12 --> P13[13 Clipboard]
+    P12 --> P14[14 GameRunner 7D]
+    P13 --> P15[15 USB + HID]
+    P15 --> P16[16 Production network]
+    P16 --> P17[17 Wi-Fi]
+    P15 --> P18[18 Bluetooth]
+    P16 --> P20[20 Firewall]
+    P19[19 NYFS maturity]
+    P21[21 NotYVFirm]
+    X[Windows PE / Brave / VLC]:::ex
+    classDef ex fill:#3b1f1f,stroke:#c44,color:#fff
+```
+
+- NOTYVOS roadmap
+  - Delivered: 0–10F, 11 TrueType
+  - Next: 12 Explorer 10G
+  - Queued: 13–21
+  - Excluded: Windows PE, Brave, VLC
+
 ## Current state
 
 | Subsystem | Status | Approx. | Reality |
