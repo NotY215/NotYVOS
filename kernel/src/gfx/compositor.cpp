@@ -5,8 +5,11 @@
 #include <kernel/arch/x86_64/keyboard.hpp>
 #include <kernel/arch/x86_64/pit.hpp>
 #include <kernel/arch/x86_64/rtc.hpp>
+#include <kernel/block/block.hpp>
 #include <kernel/fb/framebuffer.hpp>
 #include <kernel/fs/vfs.hpp>
+#include <kernel/font/font.hpp>
+#include <kernel/fs/nyfs.hpp>
 #include <kernel/gfx/api.hpp>
 #include <kernel/gfx/apps.hpp>
 #include <kernel/gfx/backend_vbe.hpp>
@@ -14,14 +17,14 @@
 #include <kernel/gfx/hal.hpp>
 #include <kernel/gfx/theme.hpp>
 #include <kernel/gfx/icons.hpp>
+#include <kernel/gfx/clipboard.hpp>
 #include <kernel/gpu/gpu.hpp>
 #include <kernel/libk/mem.hpp>
 #include <kernel/libk/string.hpp>
 #include <kernel/log.hpp>
 #include <kernel/mm/heap.hpp>
-#include <kernel/block/block.hpp>
 #include <kernel/mm/pmm.hpp>
-#include <kernel/fs/nyfs.hpp>
+#include <kernel/sched/scheduler.hpp>
 
 namespace notyvos::gfx
 {
@@ -32,6 +35,7 @@ namespace
 constexpr u32 kScale = 2;
 constexpr u32 kCellW = 8 * kScale;
 constexpr u32 kCellH = 8 * kScale;
+constexpr u32 kTextPx = 16;
 
 constexpr u32 kTaskbarH = 30;
 constexpr u32 kTitleH = 26;
@@ -292,6 +296,7 @@ void s_rect(i32 x, i32 y, i32 w, i32 h, u32 c)
 
 void s_glyph(i32 px, i32 py, char ch, u32 fg, u32 bg)
 {
+    // Bitmap fallback used when no TTF face is loaded.
     if (ch < 0x20 || ch > 0x7E)
         ch = '?';
     const u8* rows = notyvos::fb::kFont8x8[static_cast<int>(ch) - 0x20];
@@ -314,8 +319,21 @@ void s_glyph(i32 px, i32 py, char ch, u32 fg, u32 bg)
     }
 }
 
+// Draw a UTF-8 string using the loaded TTF if available; otherwise fall
+// back to the 8x8 bitmap. The baseline is placed at (py + ascent) so
+// that callers who pass a top-left origin get the same visual box as the
+// old bitmap path.
 void s_text(i32 px, i32 py, const char* s, u32 fg, u32 bg)
 {
+    font::Face* face = font::default_face();
+    if (face && s)
+    {
+        const font::Metrics m = font::metrics(face, kTextPx);
+        // Baseline y: py + ascent (bitmap glyphs are 16 px tall).
+        const i32 baseline = py + m.ascent;
+        font::draw_text(g_scene, g_w, g_w, g_h, face, px, baseline, s, kTextPx, fg);
+        return;
+    }
     i32 x = px;
     while (*s)
     {
@@ -2586,6 +2604,51 @@ void Compositor::tick() noexcept
 
     // Alt-Tab switcher. `Cycle` fires each time the user presses Tab while
     // Alt is held; `Commit` fires when Alt is released.
+    // Clipboard shortcuts. Routed to the focused window's app.
+    {
+        Window* focused = nullptr;
+        for (u32 i = 0; i < g_win_count; ++i)
+            if (g_windows[i].focused && g_windows[i].visible)
+            {
+                focused = &g_windows[i];
+                break;
+            }
+
+        const bool ctrl_c = arch::x86_64::keyboard_ctrl_c_event();
+        const bool ctrl_x = arch::x86_64::keyboard_ctrl_x_event();
+        const bool ctrl_v = arch::x86_64::keyboard_ctrl_v_event();
+
+        if (focused)
+        {
+            if (focused->kind == WindowKind::Terminal)
+            {
+                // Terminal: Ctrl+C delivers SIGINT (existing behaviour).
+                if (ctrl_c)
+                    sched::scheduler_deliver_sigint();
+                // Ctrl+V pastes text into the keyboard ring buffer.
+                if (ctrl_v)
+                {
+                    const auto& c = clipboard::get();
+                    if (c.kind == clipboard::Kind::Text)
+                    {
+                        for (const char* p = c.text; *p; ++p)
+                            arch::x86_64::keyboard_inject(*p);
+                    }
+                }
+                // Ctrl+X is a no-op in the terminal.
+            }
+            else if (focused->kind == WindowKind::Explorer)
+            {
+                if (ctrl_c)
+                    apps_explorer_clipboard_copy(false);
+                if (ctrl_x)
+                    apps_explorer_clipboard_copy(true);
+                if (ctrl_v)
+                    apps_explorer_clipboard_paste();
+            }
+        }
+    }
+
     // Alt+F4 closes the focused window.
     if (arch::x86_64::keyboard_alt_f4_event())
     {
@@ -2787,6 +2850,13 @@ void Compositor::set_theme(theme::Id id) noexcept
     theme::set(id);
     apply_theme();
     g_dirty_scene = true;
+}
+
+// Non-member hook. Called by the Explorer modal loops so the desktop
+// keeps repainting while a modal dialog is open.
+extern "C" void notyvos_compositor_pump_for_modal()
+{
+    Compositor::tick();
 }
 
 } // namespace notyvos::gfx

@@ -36,6 +36,10 @@ enum class AltTabEvent : u8
 AltTabEvent keyboard_alt_tab_event() noexcept;
 // True if the user pressed Alt+F4 since the last poll.
 bool keyboard_alt_f4_event() noexcept;
+// Clipboard shortcuts. Cleared by the consumer.
+bool keyboard_ctrl_c_event() noexcept;
+bool keyboard_ctrl_x_event() noexcept;
+bool keyboard_ctrl_v_event() noexcept;
 void keyboard_inject(char c) noexcept;
 
 } // namespace notyvos::arch::x86_64

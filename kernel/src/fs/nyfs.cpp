@@ -381,4 +381,43 @@ int nyfs_unlink(const char* name)
     return -1;
 }
 
+int nyfs_rename(const char* old_name, const char* new_name)
+{
+    if (!g_dev || !old_name || !new_name)
+        return -1;
+
+    const usize old_len = libk::strlen(old_name);
+    const usize new_len = libk::strlen(new_name);
+    if (old_len == 0 || new_len == 0 || new_len > 63)
+        return -1;
+
+    // Refuse if a file with the new name already exists.
+    for (u32 i = 0; i < kMaxFiles; ++i)
+    {
+        FileEntry e{};
+        if (!read_entry(i, &e))
+            continue;
+        if (e.name_len == new_len && libk::memcmp(e.name, new_name, new_len) == 0)
+            return -1; // target exists
+    }
+
+    for (u32 i = 0; i < kMaxFiles; ++i)
+    {
+        FileEntry e{};
+        if (!read_entry(i, &e))
+            continue;
+        if (e.name_len == old_len && libk::memcmp(e.name, old_name, old_len) == 0)
+        {
+            e.name_len = static_cast<u8>(new_len);
+            libk::memset(e.name, 0, sizeof(e.name));
+            libk::memcpy(e.name, new_name, new_len);
+            if (!write_entry(i, &e))
+                return -1;
+            nyfs_rescan();
+            return 0;
+        }
+    }
+    return -1;
+}
+
 } // namespace notyvos::fs

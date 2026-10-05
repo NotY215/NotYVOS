@@ -22,11 +22,6 @@ void stdio_init(void)
     stderr_->fd = 2;
 }
 
-static int streq(const char* a, const char* b)
-{
-    return strcmp(a, b) == 0;
-}
-
 File* fopen(const char* path, const char* mode)
 {
     if (!path || !mode)

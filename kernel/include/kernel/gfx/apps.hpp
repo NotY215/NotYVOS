@@ -26,9 +26,20 @@ void apps_explorer_nav_back() noexcept;
 void apps_explorer_nav_forward() noexcept;
 void apps_explorer_nav_up() noexcept;
 void apps_explorer_nav_refresh() noexcept;
+void apps_explorer_clipboard_copy(bool cut) noexcept;
+void apps_explorer_clipboard_paste() noexcept;
 
 void apps_explorer_right_click(i32 mx, i32 my) noexcept;
 bool apps_explorer_click_ctx(i32 mx, i32 my) noexcept;
+
+// Modal prompt used by Explorer for New Folder / Rename.
+// Blocks until the user confirms (Enter) or cancels (Esc).
+// Returns true on confirm; the entered text is written to `out`.
+// `out` must be at least `cap` bytes; `cap` should be <= 63.
+bool apps_prompt_text(const char* title, const char* initial, char* out, usize cap) noexcept;
+
+// Modal confirmation used by Explorer for Delete.
+bool apps_prompt_confirm(const char* title, const char* message) noexcept;
 bool apps_click_explorer(i32 mx, i32 my, bool pressed_edge) noexcept;
 bool apps_click_settings(i32 mx, i32 my, bool pressed_edge) noexcept;
 bool apps_click_bin(i32 mx, i32 my, bool pressed_edge) noexcept;

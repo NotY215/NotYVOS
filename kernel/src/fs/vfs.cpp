@@ -1,4 +1,5 @@
 #include <kernel/fs/vfs.hpp>
+#include <kernel/fs/nyfs.hpp>
 #include <kernel/libk/string.hpp>
 
 namespace notyvos::fs
@@ -71,6 +72,61 @@ VNode* vfs_lookup(const char* path, const char* cwd)
         p = path;
     }
     return resolve_from(start, p);
+}
+
+int vfs_create(VNode* parent, const char* name) noexcept
+{
+    if (!parent || !name || !name[0])
+        return -1;
+
+    // NYFS is mounted under a vnode whose name is "disk".
+    if (libk::strcmp(parent->name, "disk") == 0 && parent->type == VType::Dir)
+    {
+        return nyfs_create(name);
+    }
+    // Initramfs is read-only.
+    return -1;
+}
+
+int vfs_unlink(VNode* node) noexcept
+{
+    if (!node)
+        return -1;
+    if (!node->parent)
+        return -1;
+    if (libk::strcmp(node->parent->name, "disk") != 0)
+        return -1;
+    return nyfs_unlink(node->name);
+}
+
+int vfs_rename(VNode* node, const char* new_name) noexcept
+{
+    if (!node || !new_name || !new_name[0])
+        return -1;
+    if (!node->parent)
+        return -1;
+    if (libk::strcmp(node->parent->name, "disk") != 0)
+        return -1;
+    return nyfs_rename(node->name, new_name);
+}
+
+namespace
+{
+const void* g_fw_data = nullptr;
+usize g_fw_size = 0;
+} // namespace
+
+void vfs_register_firmware(const void* data, usize size) noexcept
+{
+    g_fw_data = data;
+    g_fw_size = size;
+}
+
+const void* vfs_firmware(usize* out_size) noexcept
+{
+    if (out_size)
+        *out_size = g_fw_size;
+    return g_fw_data;
 }
 
 } // namespace notyvos::fs

@@ -37,6 +37,9 @@ u64 g_key_count = 0;
 bool g_alt_tab_pending = false;
 bool g_alt_release_pending = false;
 bool g_alt_f4_pending = false;
+bool g_ctrl_c_pending = false;
+bool g_ctrl_x_pending = false;
+bool g_ctrl_v_pending = false;
 
 inline void push_char(char c)
 {
@@ -191,11 +194,23 @@ void process_scancode(u8 sc)
     if (c == 0)
         return;
 
-    if (g_ctrl && (c == 'c' || c == 'C'))
+bool keyboard_ctrl_c_event() noexcept
     {
-        log::write(log::Level::Info, "kbd", "Ctrl+C");
-        sched::scheduler_deliver_sigint();
-        return;
+        bool v = g_ctrl_c_pending;
+        g_ctrl_c_pending = false;
+        return v;
+    }
+    bool keyboard_ctrl_x_event() noexcept
+    {
+        bool v = g_ctrl_x_pending;
+        g_ctrl_x_pending = false;
+        return v;
+    }
+    bool keyboard_ctrl_v_event() noexcept
+    {
+        bool v = g_ctrl_v_pending;
+        g_ctrl_v_pending = false;
+        return v;
     }
 
     if (g_key_count < 20)

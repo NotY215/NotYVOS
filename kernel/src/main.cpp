@@ -98,6 +98,7 @@ extern "C"
 #include <kernel/gfx/hal.hpp>
 #include <kernel/log.hpp>
 #include <kernel/img/self_test.hpp>
+#include <kernel/font/font.hpp>
 #include <kernel/mm/exec_page.hpp>
 #include <kernel/mm/heap.hpp>
 #include <kernel/mm/pmm.hpp>
@@ -258,6 +259,23 @@ extern "C" [[noreturn]] void kernel_main()
 
     fs::vfs_mount_root(root);
 
+    // PS3 firmware (dev build only). The ISO includes it as a Limine
+    // module when NOTYVOS_BUNDLE_PS3_FIRMWARE=ON. Public builds do not
+    // ship it. Either way the kernel must boot.
+    if (module_request.response && module_request.response->module_count >= 3)
+    {
+        auto* fw = module_request.response->modules[2];
+        log::write(log::Level::Info, "init", "PS3 firmware module: %llu bytes at 0x%llx",
+                   static_cast<unsigned long long>(fw->size),
+                   static_cast<unsigned long long>(reinterpret_cast<uptr>(fw->address)));
+        fs::vfs_register_firmware(fw->address, fw->size);
+    }
+    else
+    {
+        log::write(log::Level::Warn, "init",
+                   "no PS3 firmware bundled; PS3 runtime will report missing firmware");
+    }
+
     // ---- Graphics stack ----
     gfx::Compositor::init();
     fb::Console::switch_to_buffered();
@@ -274,6 +292,22 @@ extern "C" [[noreturn]] void kernel_main()
     ps3::rsx::Rsx::init();
     ps3::self_test();
     img::self_test();
+
+    // Load the default UI font. Absence is non-fatal — the compositor
+    // falls back to the 8x8 bitmap when the TTF is missing.
+    {
+        font::Face* inter = font::load("/Fonts/Inter-Regular.ttf");
+        if (inter)
+        {
+            font::set_default_face(inter);
+            font::self_test();
+        }
+        else
+        {
+            log::write(log::Level::Warn, "font",
+                       "Inter-Regular.ttf not loaded; using 8x8 bitmap fallback");
+        }
+    }
 
     // ---- Scheduler + init ----
     sched::scheduler_init();

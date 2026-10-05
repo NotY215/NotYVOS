@@ -23,6 +23,9 @@ int nyfs_create(const char* name);
 // Remove a file. Returns 0 on success, -1 on failure.
 int nyfs_unlink(const char* name);
 
+// Rename a file in place. Returns 0 on success, -1 on failure.
+int nyfs_rename(const char* old_name, const char* new_name);
+
 // Refresh the in-memory VNode tree from disk.
 void nyfs_rescan();
 
