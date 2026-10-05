@@ -187,3 +187,11 @@ USB, networking, Wi-Fi, Bluetooth, NYFS, firewall and firmware phases.
 
 Windows PE/Win32 compatibility and Brave/VLC validation are explicitly excluded
 from the current roadmap.
+
+## Architecture visualization sources
+
+Editable architecture mappings are maintained in `docs/diagrams/`. Markmap
+covers the roadmap mindmap, D2 covers the infrastructure topology, Ilograph
+covers multiple architecture perspectives, Excalidraw provides a sketch-style
+view, and Cytoscape.js provides an interactive dependency graph. The canonical
+architecture remains this document and `docs/roadmap.md`.
