@@ -7,7 +7,7 @@ foundation.
 NOTYVOS is currently a development-stage system. The native kernel, user process model, VFS, desktop compositor, widgets,
 storage stack, PS3 runtime foundation, RSX compatibility foundation,
 GameRunner foundation, image viewer, theme system and native GPU backend are implemented.
-Extended UI management and Windows application compatibility remain future work.
+Extended UI management now covers the delivered 10C–10F desktop interaction work; Windows application compatibility remains future work.
 
 ## Current platform
 
@@ -107,6 +107,15 @@ exec, brk, time, sleep, kill, about, and exit handling.
 - Dark, Light and macOS Dark theme system
 - Desktop shortcuts and theme integration
 - Settings Appearance controls and current desktop theme infrastructure
+- Alt-Tab window switching
+- Minimize/restore animations and Alt+F4 window closing
+- Taskbar hover feedback, grouped windows and notification toasts
+- Snap layout preview and edge snapping
+- SVG icon rasterization and icon loading diagnostics
+- Explorer disk panel, right-click context actions and navigation controls
+- Terminal overhaul with persistent scrollback and boot-log replay
+- Explorer navigation history with Back, Forward, Up and Refresh
+- Serial input/capture support across restart
 
 ## Current roadmap status
 
@@ -119,9 +128,11 @@ exec, brk, time, sleep, kill, about, and exit handling.
 - Phases 7A through 7C: completed
 - Phases 8A and 8B: completed
 - Phases 9A through 9C: completed
-- Phases 10A and 10B: completed
-- Phases 1 through 10: completed through all defined subphases
-- Later: 7D, remaining Phase 10 UI management, 11 and 12
+- Phases 10A through 10F: completed
+- Phase 10 extended UI integration: completed
+- Delivered desktop additions: terminal overhaul, SVG icons, disk panel, Explorer context actions, input persistence/serial capture, taskbar/snap/toast UX and Explorer navigation history
+- Next: 10G, 7D and 11
+- Phase 12 remains not started
 
 See docs/roadmap.md for the complete phase table.
 
