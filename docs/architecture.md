@@ -89,8 +89,7 @@ The compositor currently provides:
 
 The widget layer currently contains Button, Label and ListView primitives.
 
-The UI text path still uses the embedded 8x8 bitmap font. Inter TTF files
-are bundled but are not parsed or rasterized by the kernel yet.
+The UI text path now uses the delivered Phase 11 TrueType subsystem. Inter is parsed, rasterized and cached with anti-aliased text output. Multiple weights, kerning and complex-script shaping remain deferred.
 
 ## Native devices
 
