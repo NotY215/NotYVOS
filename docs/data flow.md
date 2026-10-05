@@ -564,7 +564,7 @@ BMP, PNG/inflate, GIF/LZW, ICO and JPEG decoding.
 
 ## Phase 10 — Theme and UI Management
 
-The completed theme and Settings path is documented below through 10A–10B.
+The completed theme and Settings path is documented below through 10A–10F.
 
 ## Phase 11 — Windows .exe Compatibility
 
