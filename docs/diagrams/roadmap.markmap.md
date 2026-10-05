@@ -1,0 +1,30 @@
+# NOTYVOS Roadmap Mindmap
+
+- NOTYVOS
+  - Delivered
+    - Phase 0–10F
+    - Phase 11 — TrueType Font Subsystem
+      - 11A Parser
+      - 11B Rasterizer
+      - 11C Glyph cache
+      - 11D Compositor integration
+      - 11E Boot self-test
+  - Next
+    - Phase 12 — Explorer 10G + Real File Operations
+      - 12A Grid + details
+      - 12B Breadcrumb
+      - 12C Open / New / Rename / Delete / Properties
+  - Queued
+    - Phase 13 — Clipboard + Dialogs
+    - Phase 14 — GameRunner Runtime Integration
+    - Phase 15 — USB + HID
+    - Phase 16 — Production Network
+    - Phase 17 — Wi-Fi + Network Manager
+    - Phase 18 — Bluetooth
+    - Phase 19 — NYFS Maturity
+    - Phase 20 — Firewall
+    - Phase 21 — NotYVFirm
+  - Explicitly excluded
+    - Windows PE / Win32 / Win64 compatibility
+    - Brave validation
+    - VLC validation
