@@ -22,6 +22,10 @@ void apps_load_image(const char* path) noexcept;
 bool apps_draw_explorer(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my, bool mouse_down) noexcept;
 bool apps_draw_settings(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my, bool mouse_down) noexcept;
 bool apps_draw_bin(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my, bool mouse_down) noexcept;
+void apps_explorer_nav_back() noexcept;
+void apps_explorer_nav_forward() noexcept;
+void apps_explorer_nav_up() noexcept;
+void apps_explorer_nav_refresh() noexcept;
 
 void apps_explorer_right_click(i32 mx, i32 my) noexcept;
 bool apps_explorer_click_ctx(i32 mx, i32 my) noexcept;

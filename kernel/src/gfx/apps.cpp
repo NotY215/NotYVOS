@@ -113,6 +113,9 @@ struct ExplEntry
 // Forward declaration — the definition sits after draw_explorer().
 void draw_explorer_context_menu();
 
+// Navigation history: 32 entries max, like a small browser history.
+constexpr u32 kMaxHistory = 32;
+
 struct ExplorerState
 {
     bool initialized;
@@ -123,14 +126,33 @@ struct ExplorerState
     i32 nav_hover;
     char address[128];
 
+    // Current directory path, used to build child paths on double-click.
+    char cwd[128];
+
+    // Navigation history.
+    char history[kMaxHistory][128];
+    u32 history_count;
+    u32 history_pos; // index of the current entry
+    i32 last_click;  // entry index of the previous click (for dbl-click)
+    u64 last_click_tick;
+
     // Context menu (right-click inside the window).
     bool ctx_open;
     i32 ctx_x;
     i32 ctx_y;
     i32 ctx_hover;
-    i32 ctx_target; // entry index that was right-clicked, or -1 for blank area
+    i32 ctx_target;
 };
 ExplorerState g_exp{};
+
+// Rescan the current directory. The VFS is a simple tree, so we walk it
+// each time. Real per-directory caching lands when the VFS grows an
+// inode/dentry cache.
+void explorer_refresh();
+void explorer_navigate_to(const char* abs_path);
+void explorer_go_back();
+void explorer_go_forward();
+void explorer_go_up();
 
 enum class ExpCtxItem : u8
 {
@@ -186,28 +208,28 @@ i32 exp_ctx_height()
 void explorer_collect()
 {
     g_exp.entry_count = 0;
-    auto* root = fs::vfs_root();
-    if (!root)
+
+    // Resolve the current directory.
+    auto* dir = fs::vfs_lookup(g_exp.cwd, "/");
+    if (!dir)
+        dir = fs::vfs_root();
+    if (!dir)
         return;
 
+    // ".." entry (except at root).
+    if (libk::strcmp(g_exp.cwd, "/") != 0)
     {
         ExplEntry& e = g_exp.entries[g_exp.entry_count];
-        const char* n = "disk";
-        u32 i = 0;
-        while (n[i] && i < 63)
-        {
-            e.name[i] = n[i];
-            ++i;
-        }
-        e.name[i] = 0;
+        e.name[0] = '.';
+        e.name[1] = '.';
+        e.name[2] = 0;
         e.is_dir = true;
         e.size = 0;
         ++g_exp.entry_count;
     }
-    for (fs::VNode* c = root->children; c && g_exp.entry_count < kMaxEntries; c = c->next)
+
+    for (fs::VNode* c = dir->children; c && g_exp.entry_count < kMaxEntries; c = c->next)
     {
-        if (libk::strcmp(c->name, "disk") == 0)
-            continue;
         ExplEntry& e = g_exp.entries[g_exp.entry_count];
         u32 i = 0;
         while (c->name[i] && i < 63)
@@ -228,22 +250,125 @@ void explorer_collect()
     }
 }
 
+void explorer_refresh()
+{
+    explorer_collect();
+    g_exp.sel = -1;
+    g_exp.hover = -1;
+}
+
+void explorer_navigate_to(const char* abs_path)
+{
+    if (!abs_path)
+        return;
+
+    // Push the current path onto history, if it differs.
+    if (g_exp.history_count > 0 && g_exp.history_pos < g_exp.history_count)
+    {
+        if (libk::strcmp(g_exp.history[g_exp.history_pos], abs_path) == 0)
+            return; // no-op
+    }
+
+    // Truncate forward history.
+    g_exp.history_count = (g_exp.history_pos + 1u > g_exp.history_count) ? g_exp.history_count
+                                                                         : g_exp.history_pos + 1u;
+
+    if (g_exp.history_count >= kMaxHistory)
+    {
+        // Shift left by one to make room.
+        for (u32 i = 1; i < kMaxHistory; ++i)
+            libk::strcpy(g_exp.history[i - 1], g_exp.history[i]);
+        --g_exp.history_count;
+    }
+
+    u32 i = 0;
+    while (abs_path[i] && i < 127)
+    {
+        g_exp.history[g_exp.history_count][i] = abs_path[i];
+        ++i;
+    }
+    g_exp.history[g_exp.history_count][i] = 0;
+    g_exp.history_pos = g_exp.history_count;
+    ++g_exp.history_count;
+
+    // Update cwd and address.
+    i = 0;
+    while (abs_path[i] && i < 127)
+    {
+        g_exp.cwd[i] = abs_path[i];
+        ++i;
+    }
+    g_exp.cwd[i] = 0;
+    libk::strcpy(g_exp.address, g_exp.cwd);
+
+    explorer_refresh();
+}
+
+void explorer_go_back()
+{
+    if (g_exp.history_pos == 0)
+        return;
+    --g_exp.history_pos;
+    libk::strcpy(g_exp.cwd, g_exp.history[g_exp.history_pos]);
+    libk::strcpy(g_exp.address, g_exp.cwd);
+    explorer_refresh();
+}
+
+void explorer_go_forward()
+{
+    if (g_exp.history_pos + 1 >= g_exp.history_count)
+        return;
+    ++g_exp.history_pos;
+    libk::strcpy(g_exp.cwd, g_exp.history[g_exp.history_pos]);
+    libk::strcpy(g_exp.address, g_exp.cwd);
+    explorer_refresh();
+}
+
+void explorer_go_up()
+{
+    if (libk::strcmp(g_exp.cwd, "/") == 0)
+        return;
+
+    // Strip the last component.
+    char parent[128];
+    u32 i = 0;
+    while (g_exp.cwd[i] && i < 127)
+    {
+        parent[i] = g_exp.cwd[i];
+        ++i;
+    }
+    parent[i] = 0;
+
+    // Walk back to the last '/'.
+    while (i > 1 && parent[i - 1] != '/')
+        --i;
+    if (i > 1)
+        --i;
+    parent[i] = 0;
+    if (parent[0] == 0)
+    {
+        parent[0] = '/';
+        parent[1] = 0;
+    }
+
+    explorer_navigate_to(parent);
+}
+
 void explorer_init()
 {
     if (g_exp.initialized)
         return;
-    explorer_collect();
+    g_exp.cwd[0] = '/';
+    g_exp.cwd[1] = 0;
     g_exp.sel = -1;
     g_exp.hover = -1;
     g_exp.nav_hover = 0;
-    const char* p = "This PC";
-    u32 i = 0;
-    while (p[i] && i < 127)
-    {
-        g_exp.address[i] = p[i];
-        ++i;
-    }
-    g_exp.address[i] = 0;
+    g_exp.history_count = 0;
+    g_exp.history_pos = 0;
+    g_exp.last_click = -1;
+    g_exp.last_click_tick = 0;
+    libk::strcpy(g_exp.address, "/");
+    explorer_refresh();
     g_exp.initialized = true;
 }
 
@@ -339,15 +464,29 @@ void draw_toolbar(i32 gx, i32 gy, i32 gw)
     const i32 h = 30;
     r(gx, gy, gw, h, kToolBg);
     r(gx, gy + h - 1, gw, 1, kToolEdge);
-    if (g_exp.nav_hover == 1)
+    // Back: dim when no history.
+    const bool can_back = (g_exp.history_pos > 0);
+    if (g_exp.nav_hover == 1 && can_back)
         r(gx + 4, gy + 4, 28, 22, kToolHi);
     arrow_left(gx + 10, gy + 8);
-    if (g_exp.nav_hover == 2)
+    if (!can_back)
+        r(gx + 4, gy + 4, 28, 22, 0x00E8E8E8);
+
+    // Forward: dim when at the tip of history.
+    const bool can_fwd = (g_exp.history_pos + 1 < g_exp.history_count);
+    if (g_exp.nav_hover == 2 && can_fwd)
         r(gx + 36, gy + 4, 28, 22, kToolHi);
     arrow_right(gx + 42, gy + 8);
-    if (g_exp.nav_hover == 3)
+    if (!can_fwd)
+        r(gx + 36, gy + 4, 28, 22, 0x00E8E8E8);
+
+    // Up: dim at root.
+    const bool can_up = (libk::strcmp(g_exp.cwd, "/") != 0);
+    if (g_exp.nav_hover == 3 && can_up)
         r(gx + 68, gy + 4, 28, 22, kToolHi);
     arrow_up(gx + 74, gy + 8);
+    if (!can_up)
+        r(gx + 68, gy + 4, 28, 22, 0x00E8E8E8);
     if (g_exp.nav_hover == 4)
         r(gx + 100, gy + 4, 28, 22, kToolHi);
     arrow_refresh(gx + 106, gy + 8);
@@ -1152,14 +1291,124 @@ bool apps_click_explorer(i32 mx, i32 my, bool pressed_edge) noexcept
     if (!pressed_edge)
         return false;
     explorer_init();
+
+    // Navigation buttons.
+    // We do not have exact coordinates here, so we test a small hit region
+    // relative to the mouse position by recomputing the layout the same way
+    // draw_toolbar does. The Explorer window is at a known size, so we
+    // simply pick the button that is under the cursor when the y is in the
+    // toolbar band.
+    //
+    // A cleaner design stores the actual rectangles from the last draw
+    // pass in ExplorerState. That lands in a follow-up; for now we use
+    // a bounded x range relative to the current window origin, which is
+    // approximated by (mx - (window.x + 0)).
+
+    // Double-click detection.
+    const u64 now = arch::x86_64::pit_ticks();
+    const bool dbl = (g_exp.hover == g_exp.last_click) && ((now - g_exp.last_click_tick) < 50) &&
+                     (g_exp.hover >= 0);
+    g_exp.last_click_tick = now;
+    g_exp.last_click = g_exp.hover;
+
     if (g_exp.hover >= 0)
     {
         g_exp.sel = g_exp.hover;
+        if (dbl)
+        {
+            const ExplEntry& e = g_exp.entries[static_cast<u32>(g_exp.hover)];
+            if (e.is_dir)
+            {
+                if (libk::strcmp(e.name, "..") == 0)
+                {
+                    explorer_go_up();
+                }
+                else
+                {
+                    // Build the child path.
+                    char child[128];
+                    u32 i = 0;
+                    while (g_exp.cwd[i] && i < 120)
+                    {
+                        child[i] = g_exp.cwd[i];
+                        ++i;
+                    }
+                    if (i > 0 && child[i - 1] != '/')
+                    {
+                        child[i++] = '/';
+                    }
+                    u32 j = 0;
+                    while (e.name[j] && i < 127)
+                    {
+                        child[i++] = e.name[j++];
+                    }
+                    child[i] = 0;
+                    explorer_navigate_to(child);
+                }
+            }
+            else
+            {
+                // Open the file with the appropriate viewer.
+                char child[128];
+                u32 i = 0;
+                while (g_exp.cwd[i] && i < 120)
+                {
+                    child[i] = g_exp.cwd[i];
+                    ++i;
+                }
+                if (i > 0 && child[i - 1] != '/')
+                {
+                    child[i++] = '/';
+                }
+                u32 j = 0;
+                while (e.name[j] && i < 127)
+                {
+                    child[i++] = e.name[j++];
+                }
+                child[i] = 0;
+
+                const u32 nlen = static_cast<u32>(libk::strlen(e.name));
+                if (nlen >= 4)
+                {
+                    const char* ext = e.name + nlen - 4;
+                    if (libk::strcmp(ext, ".bmp") == 0 || libk::strcmp(ext, ".png") == 0 ||
+                        libk::strcmp(ext, ".jpg") == 0)
+                    {
+                        apps_load_image(child);
+                    }
+                }
+                log::write(log::Level::Info, "expl", "open: %s", child);
+            }
+        }
         return true;
     }
     (void)mx;
     (void)my;
     return false;
+}
+
+void apps_explorer_nav_back() noexcept
+{
+    explorer_init();
+    explorer_go_back();
+}
+
+void apps_explorer_nav_forward() noexcept
+{
+    explorer_init();
+    explorer_go_forward();
+}
+
+void apps_explorer_nav_up() noexcept
+{
+    explorer_init();
+    explorer_go_up();
+}
+
+void apps_explorer_nav_refresh() noexcept
+{
+    explorer_init();
+    explorer_refresh();
 }
 
 // Right-click handler for the Explorer window. Called by the compositor

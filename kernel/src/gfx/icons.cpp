@@ -53,16 +53,31 @@ bool load_one(Id id) noexcept
         return false;
 
     auto* vn = fs::vfs_lookup(path, "/");
-    if (!vn || !vn->ops || !vn->ops->size || !vn->ops->read)
+    if (!vn)
+    {
+        log::write(log::Level::Warn, "icons", "%s: not found in VFS", path);
         return false;
+    }
+    if (!vn->ops || !vn->ops->size || !vn->ops->read)
+    {
+        log::write(log::Level::Warn, "icons", "%s: no read/size ops", path);
+        return false;
+    }
 
     const isize sz = vn->ops->size(vn);
     if (sz <= 0 || sz > 512 * 1024)
+    {
+        log::write(log::Level::Warn, "icons", "%s: bad size %lld", path,
+                   static_cast<long long>(sz));
         return false;
+    }
 
     auto* buf = static_cast<char*>(mm::Heap::allocate(static_cast<usize>(sz) + 1));
     if (!buf)
+    {
+        log::write(log::Level::Warn, "icons", "%s: alloc failed", path);
         return false;
+    }
 
     isize got = 0;
     while (got < sz)
@@ -75,12 +90,24 @@ bool load_one(Id id) noexcept
     }
     buf[got] = 0;
 
+    if (got != sz)
+    {
+        log::write(log::Level::Warn, "icons", "%s: short read (%lld/%lld)", path,
+                   static_cast<long long>(got), static_cast<long long>(sz));
+        mm::Heap::deallocate(buf);
+        return false;
+    }
+
     img::svg::Bitmap bmp{};
     const bool ok =
         img::svg::rasterize(buf, static_cast<usize>(got), kNativeSize, kNativeSize, bmp);
     mm::Heap::deallocate(buf);
     if (!ok)
+    {
+        log::write(log::Level::Warn, "icons", "%s: SVG parse failed (size=%lld)", path,
+                   static_cast<long long>(sz));
         return false;
+    }
 
     g_slots[static_cast<u32>(id)].pixels = bmp.pixels;
     g_slots[static_cast<u32>(id)].size = kNativeSize;

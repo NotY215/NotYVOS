@@ -2026,12 +2026,53 @@ void on_mouse_tick()
             else
             {
                 focus_window(static_cast<u32>(idx));
+
+                // Explorer toolbar hit-test. The three nav buttons live at
+                // window-relative x=4..32, 36..64, 68..96 in the 30-px
+                // toolbar band that sits below the 22-px menu bar.
+                if (w.kind == WindowKind::Explorer && just_left_pressed)
+                {
+                    const i32 rx = mx - w.x;
+                    const i32 ry = my - w.y;
+                    const bool in_toolbar = (ry >= 22 && ry < 22 + 30);
+
+                    if (in_toolbar)
+                    {
+                        if (rx >= 4 && rx < 32)
+                        {
+                            apps_explorer_nav_back();
+                            g_dirty_scene = true;
+                            goto after_explorer_click;
+                        }
+                        if (rx >= 36 && rx < 64)
+                        {
+                            apps_explorer_nav_forward();
+                            g_dirty_scene = true;
+                            goto after_explorer_click;
+                        }
+                        if (rx >= 68 && rx < 96)
+                        {
+                            apps_explorer_nav_up();
+                            g_dirty_scene = true;
+                            goto after_explorer_click;
+                        }
+                        if (rx >= 100 && rx < 128)
+                        {
+                            apps_explorer_nav_refresh();
+                            g_dirty_scene = true;
+                            goto after_explorer_click;
+                        }
+                    }
+                }
+
                 if (w.kind == WindowKind::Explorer)
                     apps_click_explorer(mx, my, just_left_pressed);
                 if (w.kind == WindowKind::Settings)
                     apps_click_settings(mx, my, just_left_pressed);
                 if (w.kind == WindowKind::Bin)
                     apps_click_bin(mx, my, just_left_pressed);
+
+            after_explorer_click:
                 g_dirty_scene = true;
             }
         }

@@ -1,1 +1,115 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>NOTYVOS Architecture Graph</title><style>html,body,#graph{width:100%;height:100%;margin:0}body{font-family:system-ui,sans-serif}#graph{background:#0b0f14}</style></head><body><div id="graph"></div><script src="https://unpkg.com/cytoscape/dist/cytoscape.min.js"></script><script>const cy=cytoscape({container:document.getElementById("graph"),layout:{name:"cose",animate:true},style:[{selector:"node",style:{label:"data(label)",color:"#fff",background:"#263241",padding:"10px",text-valign:"center",text-halign:"center"}},{selector:"edge",style:{width:2,line-color:"#718096",target-arrow-color:"#718096",target-arrow-shape:"triangle"}}],elements:{nodes:[{data:{id:"boot",label:"UEFI / Limine"}},{data:{id:"kernel",label:"Kernel"}},{data:{id:"memory",label:"Memory"}},{data:{id:"sched",label:"Scheduler"}},{data:{id:"sys",label:"Syscalls"}},{data:{id:"vfs",label:"VFS"}},{data:{id:"nyfs",label:"NYFS"}},{data:{id:"gfx",label:"Graphics"}},{data:{id:"comp",label:"Compositor"}},{data:{id:"font",label:"TrueType / Inter"}},{data:{id:"desktop",label:"Desktop"}},{data:{id:"explorer",label:"Explorer"}},{data:{id:"ps3",label:"PS3 Runtime"}},{data:{id:"ppu",label:"PPU / JIT"}},{data:{id:"spu",label:"SPU / DMA"}},{data:{id:"rsx",label:"RSX"}},{data:{id:"game",label:"GameRunner"}}],edges:[{data:{source:"boot",target:"kernel"}},{data:{source:"kernel",target:"memory"}},{data:{source:"memory",target:"sched"}},{data:{source:"sched",target:"sys"}},{data:{source:"sys",target:"vfs"}},{data:{source:"vfs",target:"nyfs"}},{data:{source:"kernel",target:"gfx"}},{data:{source:"gfx",target:"comp"}},{data:{source:"font",target:"comp"}},{data:{source:"comp",target:"desktop"}},{data:{source:"desktop",target:"explorer"}},{data:{source:"explorer",target:"vfs"}},{data:{source:"kernel",target:"ps3"}},{data:{source:"game",target:"ps3"}},{data:{source:"ps3",target:"ppu"}},{data:{source:"ppu",target:"spu"}},{data:{source:"spu",target:"rsx"}}]}});</script></body></html>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NOTYVOS Architecture Graph</title>
+    <style>
+      html, body, #graph {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+      }
+
+      body {
+        font-family: system-ui, sans-serif;
+        background: #0b0f14;
+      }
+
+      #graph {
+        background: #0b0f14;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="graph"></div>
+
+    <script src="https://unpkg.com/cytoscape/dist/cytoscape.min.js"></script>
+    <script>
+      const elements = {
+        nodes: [
+          { data: { id: "boot", label: "UEFI / Limine" } },
+          { data: { id: "kernel", label: "Kernel" } },
+          { data: { id: "memory", label: "Memory" } },
+          { data: { id: "sched", label: "Scheduler" } },
+          { data: { id: "sys", label: "Syscalls" } },
+          { data: { id: "vfs", label: "VFS" } },
+          { data: { id: "nyfs", label: "NYFS" } },
+          { data: { id: "gfx", label: "Graphics" } },
+          { data: { id: "comp", label: "Compositor" } },
+          { data: { id: "font", label: "TrueType / Inter" } },
+          { data: { id: "desktop", label: "Desktop" } },
+          { data: { id: "explorer", label: "Explorer" } },
+          { data: { id: "ps3", label: "PS3 Runtime" } },
+          { data: { id: "ppu", label: "PPU / JIT" } },
+          { data: { id: "spu", label: "SPU / DMA" } },
+          { data: { id: "rsx", label: "RSX" } },
+          { data: { id: "game", label: "GameRunner" } }
+        ],
+        edges: [
+          { data: { source: "boot", target: "kernel" } },
+          { data: { source: "kernel", target: "memory" } },
+          { data: { source: "memory", target: "sched" } },
+          { data: { source: "sched", target: "sys" } },
+          { data: { source: "sys", target: "vfs" } },
+          { data: { source: "vfs", target: "nyfs" } },
+          { data: { source: "kernel", target: "gfx" } },
+          { data: { source: "gfx", target: "comp" } },
+          { data: { source: "font", target: "comp" } },
+          { data: { source: "comp", target: "desktop" } },
+          { data: { source: "desktop", target: "explorer" } },
+          { data: { source: "explorer", target: "vfs" } },
+          { data: { source: "kernel", target: "ps3" } },
+          { data: { source: "game", target: "ps3" } },
+          { data: { source: "ps3", target: "ppu" } },
+          { data: { source: "ppu", target: "spu" } },
+          { data: { source: "spu", target: "rsx" } }
+        ]
+      };
+
+      const cy = cytoscape({
+        container: document.getElementById("graph"),
+        elements,
+        layout: {
+          name: "cose",
+          animate: true,
+          fit: true,
+          padding: 48,
+          nodeRepulsion: 16000,
+          idealEdgeLength: 220,
+          edgeElasticity: 0.6,
+          randomize: false
+        },
+        style: [
+          {
+            selector: "node",
+            style: {
+              label: "data(label)",
+              color: "#fff",
+              background: "#263241",
+              padding: "10px",
+              "text-valign": "center",
+              "text-halign": "center",
+              width: "label",
+              height: "label",
+              "font-size": "12px",
+              "text-wrap": "wrap",
+              "text-max-width": "140px"
+            }
+          },
+          {
+            selector: "edge",
+            style: {
+              width: 2,
+              "line-color": "#718096",
+              "target-arrow-color": "#718096",
+              "target-arrow-shape": "triangle",
+              "curve-style": "bezier",
+              "control-point-step-size": 20
+            }
+          }
+        ]
+      });
+    </script>
+  </body>
+</html>
