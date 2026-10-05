@@ -116,8 +116,12 @@ or desktop behavior, followed by the relevant runtime self-tests.
 
 ## Current roadmap validation
 
-The delivered boundary is now:
+The frozen delivered boundary is **Phases 0–10F**.
 
-**1A–1G → 2A–2N → 3A–3F → 4A–4E → 5A–5D → 6A–6F → 7A–7C → 8A–8B → 9A–9C → 10A–10F**
+Phase 11 validation covers Inter TTF parsing, simple glyph outlines, anti-aliased coverage rasterization, glyph caching, compositor text drawing and the boot self-test.
 
-All defined Phase 1–10 subphases are now implementation targets for regression validation; later work begins with 7D and 10G Explorer UI.
+The next active regression target is **Phase 12A**: Explorer grid view, details-view toggle and session persistence of the selected view. Phase 12B adds breadcrumb navigation and Phase 12C adds persistent real file operations.
+
+Later phases cover clipboard/dialogs, GameRunner runtime integration, USB, networking, Wi-Fi, Bluetooth, NYFS maturity, firewall and NotYVFirm.
+
+Windows PE/Win32 compatibility and Brave/VLC validation are excluded and are not test targets.
