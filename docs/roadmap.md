@@ -112,7 +112,23 @@ implemented in software.
 |---|---|---|
 | **10A — Theme system + shortcuts** | **Done** | Dark, Light and macOS Dark themes plus desktop shortcut integration |
 | **10B — Settings → Appearance tab** | **Done** | Appearance controls and theme selection through Settings |
-| 10 — Complete | **Done** | Phase 10A–10B complete |
+| **10C — Alt-Tab + snap-to-edge** | **Done** | Window switching, edge snapping and related compositor interaction |
+| **10D — Desktop integration** | **Done** | Terminal overhaul, SVG icons, disk panel, Explorer context actions, restart-safe input and serial capture |
+| **10E — Minimize/restore + Alt+F4 + taskbar hover + toasts** | **Done** | Window animations, keyboard close, taskbar feedback and notifications |
+| **10F — Snap layout preview + taskbar groups** | **Done** | Snap-layout preview, grouped taskbar buttons and group interactions |
+| **10 — Complete through 10F** | **Done** | Theme, Appearance and delivered desktop interaction stack |
+| **10G — Folder grid + details + XP-style breadcrumb** | **Next** | Explorer view modes and breadcrumb navigation UI |
+
+### Delivered desktop integration work
+
+| Area | Status | Focus |
+|---|---|---|
+| Icon loader diagnostics + CMake CONFIGURE_DEPENDS glob fix | **Delivered** | Reliable icon discovery, diagnostics and automatic source/asset reconfiguration |
+| BMP self-test fix + JPEG test vector disabled | **Delivered** | Correct BMP validation and removal of the unstable JPEG self-test vector |
+| Explorer navigation history | **Delivered** | Back, Forward, Up and Refresh navigation state |
+| SVG decoder + icons + disk panel + Explorer right-click + Game Launcher | **Delivered** | Native SVG rasterization, icon rendering and desktop applications |
+| Terminal overhaul | **Delivered** | Persistent scrollback, history state and boot-log replay |
+| Input survives restart + serial capture | **Delivered** | Restart-safe input initialization and host serial capture path |
 
 ## Phase 11 — Windows Compatibility
 
@@ -128,13 +144,15 @@ implemented in software.
 
 ## Current implementation boundary
 
-The implemented roadmap now reaches through:
+The completed implementation boundary reaches through:
 
-**1A–1G → 2A–2N → 3A–3F → 4A–4E → 5A–5D → 6A–6F → 7A–7C → 8A–8B → 9A–9C → 10A–10B**
+**1A–1G → 2A–2N → 3A–3F → 4A–4E → 5A–5D → 6A–6F → 7A–7C → 8A–8B → 9A–9C → 10A–10F**
 
 The immediate next items are:
 
-**7D, 11 and 12**
+**10G, 7D and 11**
+
+Phase 12 remains not started.
 
 A phase marked **Done** is part of the current delivered implementation
 boundary. A phase marked **Next** is planned but not yet part of that
