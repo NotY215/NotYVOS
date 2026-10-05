@@ -15,13 +15,8 @@ NOTYVOS does not own these fonts. They are redistributed under the OFL.
 
 ## Current runtime status
 
-The font files are present in the repository but are not loaded by the
-kernel. Desktop and terminal text currently use the embedded 8x8 bitmap font
-in kernel/src/fb/font8x8.hpp.
+Phase 11 delivered the native TrueType renderer. The kernel can parse the required Inter tables, rasterize simple glyph outlines with anti-aliased coverage, cache glyphs and draw text through the compositor.
 
-## Future use
-
-A future font subsystem will load Inter through the VFS, parse TrueType
-tables, rasterize glyphs and provide cached glyphs to the Graphics API.
+The default runtime face is Inter Regular. Multiple runtime weights, kerning, complex-script shaping and subpixel horizontal rendering remain deferred polish.
 
 See ../docs/fonts.md.
