@@ -1,0 +1,57 @@
+direction: right
+
+Boot: {
+  label: "Boot"
+  UEFI -> Limine: "boot"
+  Limine -> Kernel: "kernel entry"
+}
+
+Kernel: {
+  label: "Kernel"
+  CPU: "CPU + SMP"
+  Memory: "PMM / VMM / heap"
+  Scheduler: "Scheduler / tasks"
+  Syscalls: "Syscall ABI"
+  VFS: "VFS"
+  NYFS: "NYFS"
+}
+
+Desktop: {
+  label: "Desktop"
+  Graphics: "Graphics API / HAL"
+  Compositor: "Compositor"
+  UI: "Windows / widgets / taskbar"
+  Fonts: "TrueType / Inter"
+  Explorer: "Explorer"
+}
+
+PS3: {
+  label: "PS3 runtime"
+  Loader: "ELF loader"
+  PPU: "PPU interpreter"
+  JIT: "x86-64 JIT"
+  SPU: "SPU interpreter"
+  DMA: "DMA"
+  RSX: "RSX compatibility"
+  GameRunner: "GameRunner"
+}
+
+Limine -> Memory
+Memory -> Scheduler
+Scheduler -> Syscalls
+Syscalls -> VFS
+VFS -> NYFS
+Kernel -> Graphics
+Graphics -> Compositor
+Fonts -> Compositor
+Compositor -> UI
+UI -> Explorer
+Explorer -> VFS
+Kernel -> PS3
+Loader -> PPU
+Loader -> JIT
+PPU -> JIT
+PPU -> SPU
+SPU -> DMA
+JIT -> RSX
+GameRunner -> Loader
