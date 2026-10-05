@@ -30,6 +30,22 @@ The scripts populate:
     ├── limine-12.9.0/
     └── limine-binary/
 
+## Local PS3 firmware input
+
+PS3 GameRunner builds may use a developer-provided PS3 firmware package.
+Place the legally obtained firmware at:
+
+    Firmware/PS3UPDAT.PUP
+
+The file is ignored by Git and is not a repository or release asset. When the
+local ISO packaging path is enabled, the build copies the developer-provided
+firmware into the generated ISO so the ISO is self-contained for the PS3
+runtime and GameRunner. No Sony firmware is fetched, redistributed, decrypted,
+or extracted by the project.
+
+If the firmware is required by the selected PS3 runtime build and is missing,
+the build must report the missing local input clearly.
+
 ## Build data flow
 
 ```mermaid
@@ -43,6 +59,7 @@ flowchart LR
     ELF --> ISO[notyvos.iso]
     INIT --> ISO
     RAM --> ISO
+    PUP[Firmware/PS3UPDAT.PUP\\nlocal only] --> ISO
     ISO --> VBOX[VirtualBox]
 ```
 
