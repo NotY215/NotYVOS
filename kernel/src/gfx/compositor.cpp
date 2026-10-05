@@ -203,6 +203,56 @@ bool g_dirty_scene = true;
 
 // Alt-Tab window switcher.
 bool g_switcher_open = false;
+// ---------------------------------------------------------------------------
+// 10E: notification toasts. A single slot with text + birth tick.
+// ---------------------------------------------------------------------------
+constexpr usize kToastTextMax = 96;
+char g_toast_text[kToastTextMax];
+// ---------------------------------------------------------------------------
+// 10F: snap layout preview.
+//
+// A 2x3 grid of drop zones that appear when the user drags a window near
+// the top of the screen. Releasing inside a zone snaps the window to that
+// region. Zones are indexed (row, col) and define a rect in work area
+// coordinates, where the work area is the screen minus the taskbar.
+// ---------------------------------------------------------------------------
+constexpr u32 kSnapLayoutCount = 4;
+
+struct SnapZone
+{
+    i32 x_frac_num, y_frac_num, w_frac_num, h_frac_num;
+}; // fractions / 100
+
+// Layout 0: fullscreen
+// Layout 1: two side-by-side
+// Layout 2: left big + right stacked
+// Layout 3: left stacked + right big
+struct SnapLayout
+{
+    const char* name;
+    u32 zone_count;
+    SnapZone zones[4];
+};
+
+const SnapLayout g_snap_layouts[kSnapLayoutCount] = {
+    {"Full", 1, {{0, 0, 100, 100}}},
+    {"Split", 2, {{0, 0, 50, 100}, {50, 0, 50, 100}}},
+    {"Left", 2, {{0, 0, 60, 100}, {60, 0, 40, 100}}},
+    {"Right", 2, {{0, 0, 40, 100}, {40, 0, 60, 100}}},
+};
+
+bool g_snap_preview_open = false;
+i32 g_snap_layout_hover = -1;
+i32 g_snap_zone_hover = -1;
+i32 g_snap_target_win = -1;
+u64 g_snap_open_tick = 0;
+
+// (Taskbar window groups are computed on the fly in scene_draw_taskbar.)
+u64 g_toast_birth_tick = 0;
+bool g_toast_visible = false;
+
+// Taskbar hover animation state (0..1 fixed). Updated per tick.
+u32 g_taskbar_anim[kMaxWindows] = {};
 i32 g_switcher_idx = 0;
 
 inline i32 to_i32(u32 v) noexcept
@@ -667,16 +717,84 @@ void scene_draw_taskbar()
     const i32 mx = arch::x86_64::mouse_x();
     const i32 my = arch::x86_64::mouse_y();
 
+    // Group consecutive visible windows by kind. The first window of each
+    // group is drawn as the group button; a small badge to the right shows
+    // how many are grouped.
     for (u32 i = 0; i < g_win_count; ++i)
     {
         if (!g_windows[i].visible)
             continue;
-        const u32 tw = static_cast<u32>(libk::strlen(g_windows[i].title)) * kCellW + 20;
+
+        // Count how many windows share this group key (kind + a "/N" is
+        // not used — same-kind windows are grouped).
+        u32 group_size = 0;
+        for (u32 j = 0; j < g_win_count; ++j)
+        {
+            if (!g_windows[j].visible)
+                continue;
+            if (g_windows[j].kind == g_windows[i].kind)
+                ++group_size;
+        }
+
+        // If this window is not the first of its group, skip: it is drawn
+        // as part of the earlier button.
+        bool is_first_of_group = true;
+        for (u32 j = 0; j < i; ++j)
+        {
+            if (g_windows[j].visible && g_windows[j].kind == g_windows[i].kind)
+            {
+                is_first_of_group = false;
+                break;
+            }
+        }
+        if (!is_first_of_group)
+            continue;
+
+        const u32 title_len = static_cast<u32>(libk::strlen(g_windows[i].title));
+        const u32 tw = title_len * kCellW + 20 + ((group_size > 1) ? 24 : 0);
+
         const bool hover = (mx >= x && mx < x + static_cast<i32>(tw) && my >= y0 + 4 &&
                             my < y0 + static_cast<i32>(kTaskbarH) - 4);
-        const u32 color = g_windows[i].focused ? kAccent : hover ? kTaskbarHi : kTaskbarBg;
+
+        u32& anim = g_taskbar_anim[i];
+        const u32 target = hover ? 100u : 0u;
+        if (anim < target)
+        {
+            anim = (anim + 25u > target) ? target : anim + 25u;
+            g_dirty_scene = true;
+        }
+        else if (anim > target)
+        {
+            anim = (anim < 25u) ? 0u : anim - 25u;
+            g_dirty_scene = true;
+        }
+
+        auto blend = [](u32 a, u32 b, u32 t) -> u32
+        {
+            const u32 ar = (a >> 16) & 0xFFu, ag = (a >> 8) & 0xFFu, ab = a & 0xFFu;
+            const u32 br = (b >> 16) & 0xFFu, bg = (b >> 8) & 0xFFu, bb = b & 0xFFu;
+            const u32 r = (ar * (100u - t) + br * t) / 100u;
+            const u32 g = (ag * (100u - t) + bg * t) / 100u;
+            const u32 bl = (ab * (100u - t) + bb * t) / 100u;
+            return (r << 16) | (g << 8) | bl;
+        };
+
+        bool any_focused = false;
+        for (u32 j = 0; j < g_win_count; ++j)
+        {
+            if (!g_windows[j].visible)
+                continue;
+            if (g_windows[j].kind == g_windows[i].kind && g_windows[j].focused)
+            {
+                any_focused = true;
+                break;
+            }
+        }
+
+        const u32 base = any_focused ? kAccent : kTaskbarBg;
+        const u32 color = blend(base, kTaskbarHi, anim);
         s_fill(x, y0 + 4, static_cast<i32>(tw), static_cast<i32>(kTaskbarH) - 8, color);
-        if (g_windows[i].focused)
+        if (any_focused)
             s_fill(x + 8, y0 + static_cast<i32>(kTaskbarH) - 4, static_cast<i32>(tw) - 16, 2,
                    kAccent);
 
@@ -684,6 +802,19 @@ void scene_draw_taskbar()
         s_icon(icon_for_window(g_windows[i].kind), x + 6,
                y0 + (static_cast<i32>(kTaskbarH) - tb_icon) / 2, static_cast<u32>(tb_icon));
         s_text(x + 28, y0 + 8, g_windows[i].title, kTitleFg, color);
+
+        // Group badge.
+        if (group_size > 1)
+        {
+            const i32 bx = x + static_cast<i32>(tw) - 20;
+            const i32 by = y0 + 10;
+            s_fill(bx, by, 14, 14, kBorderFg);
+            char buf[3];
+            buf[0] = static_cast<char>('0' + (group_size % 10u));
+            buf[1] = 0;
+            s_text(bx + 2, by - 1, buf, kTextFg, kBorderFg);
+        }
+
         x += static_cast<i32>(tw) + 6;
     }
 
@@ -971,24 +1102,66 @@ void scene_draw_window(const Window& win_in)
 
     Window win = win_in;
 
-    // Animation: slide down + fade during open, slide up during close.
+    // Animation: slide + shrink during transitions.
     if (win.anim_state != AnimState::Settled)
     {
         const u64 now = arch::x86_64::pit_ticks();
         const u64 el = (now >= win.anim_start_tick) ? (now - win.anim_start_tick) : 0;
         const u32 pct = (el >= kAnimTicks) ? 100u : static_cast<u32>((el * 100u) / kAnimTicks);
 
-        if (win.anim_state == AnimState::Opening)
+        const i32 taskbar_h = static_cast<i32>(kTaskbarH);
+        const i32 taskbar_y = to_i32(g_h) - taskbar_h;
+        const i32 centre_y = taskbar_y + taskbar_h / 2;
+
+        switch (win.anim_state)
         {
-            // 30 -> 0
+        case AnimState::Opening:
+        {
             const i32 off = static_cast<i32>((100u - pct) * 30u / 100u);
             win.y -= off;
+            break;
         }
-        else // Closing
+        case AnimState::Closing:
         {
-            // 0 -> 30
             const i32 off = static_cast<i32>(pct * 30u / 100u);
             win.y += off;
+            break;
+        }
+        case AnimState::Minimizing:
+        {
+            // Shrink toward the taskbar. pct: 0 -> 100.
+            const i32 dy = ((centre_y - (win.y + win.h / 2)) * static_cast<i32>(pct)) / 100;
+            const i32 sx = (win.w * (100 - static_cast<i32>(pct))) / 200;
+            const i32 sy = (win.h * (100 - static_cast<i32>(pct))) / 200;
+            win.x += sx;
+            win.y += sy + dy;
+            win.w -= sx * 2;
+            win.h -= sy * 2;
+            if (win.w < 8)
+                win.w = 8;
+            if (win.h < 8)
+                win.h = 8;
+            break;
+        }
+        case AnimState::Restoring:
+        {
+            // Grows back from the taskbar.
+            const i32 inv = 100 - static_cast<i32>(pct);
+            const i32 dy = ((centre_y - (win.y + win.h / 2)) * inv) / 100;
+            const i32 sx = (win.w * inv) / 200;
+            const i32 sy = (win.h * inv) / 200;
+            win.x += sx;
+            win.y += sy + dy;
+            win.w -= sx * 2;
+            win.h -= sy * 2;
+            if (win.w < 8)
+                win.w = 8;
+            if (win.h < 8)
+                win.h = 8;
+            break;
+        }
+        default:
+            break;
         }
     }
 
@@ -1071,6 +1244,134 @@ void scene_draw_window(const Window& win_in)
                               win.h - static_cast<i32>(kTitleH));
 }
 
+// Toast popup in the bottom-right, above the taskbar. Fades out after
+// kToastTicks PIT ticks.
+constexpr u64 kToastTicks = 300; // 3 s at 100 Hz
+
+// Draw the snap layout preview. Called during scene_render() after all
+// windows, so it floats on top of everything except the toast.
+void scene_draw_snap_preview()
+{
+    if (!g_snap_preview_open)
+        return;
+
+    const i32 preview_w = 260;
+    const i32 preview_h = 160;
+    const i32 px = (to_i32(g_w) - preview_w) / 2;
+    const i32 py = 20;
+
+    // Background.
+    s_fill(px - 4, py - 4, preview_w + 8, preview_h + 8, kMenuBg);
+    s_rect(px - 4, py - 4, preview_w + 8, preview_h + 8, kAccent);
+
+    s_text(px, py + 4, "Snap layout", kTextFg, kMenuBg);
+
+    // Four layout cells, evenly spaced.
+    const i32 cell_w = 56;
+    const i32 cell_h = 80;
+    const i32 cell_gap = 8;
+    const i32 row_w = 4 * cell_w + 3 * cell_gap;
+    const i32 start_x = px + (preview_w - row_w) / 2;
+    const i32 start_y = py + 28;
+
+    for (u32 i = 0; i < kSnapLayoutCount; ++i)
+    {
+        const i32 cx = start_x + static_cast<i32>(i) * (cell_w + cell_gap);
+        const bool hover = (static_cast<i32>(i) == g_snap_layout_hover);
+        const u32 cell_bg = hover ? kAccent : kTitleOff;
+        s_fill(cx, start_y, cell_w, cell_h, cell_bg);
+        s_rect(cx, start_y, cell_w, cell_h, kBorderFg);
+
+        // Draw the zones inside the cell.
+        const SnapLayout& L = g_snap_layouts[i];
+        for (u32 z = 0; z < L.zone_count; ++z)
+        {
+            const SnapZone& sz = L.zones[z];
+            const i32 zx = cx + 6 + (sz.x_frac_num * (cell_w - 12)) / 100;
+            const i32 zy = start_y + 6 + (sz.y_frac_num * (cell_h - 12)) / 100;
+            const i32 zw = (sz.w_frac_num * (cell_w - 12)) / 100;
+            const i32 zh = (sz.h_frac_num * (cell_h - 12)) / 100;
+            const bool zone_hover = (hover && static_cast<i32>(z) == g_snap_zone_hover);
+            const u32 zone_bg = zone_hover ? 0x00A0D0FF : 0x006080A0;
+            s_fill(zx, zy, zw, zh, zone_bg);
+            s_rect(zx, zy, zw, zh, kBorderOn);
+        }
+    }
+
+    s_text(px + 12, py + preview_h - 20, "Release to snap", kTextDim, kMenuBg);
+}
+void scene_draw_toast()
+{
+    if (!g_toast_visible)
+        return;
+
+    const u64 now = arch::x86_64::pit_ticks();
+    if (now - g_toast_birth_tick >= kToastTicks)
+    {
+        g_toast_visible = false;
+        g_dirty_scene = true;
+        return;
+    }
+
+    const i32 tw = 260;
+    const i32 th = 56;
+    const i32 tx = to_i32(g_w) - tw - 16;
+    const i32 ty = to_i32(g_h) - static_cast<i32>(kTaskbarH) - th - 12;
+
+    s_fill(tx, ty, tw, th, kMenuBg);
+    s_rect(tx, ty, tw, th, kAccent);
+
+    // Small accent bar on the left.
+    s_fill(tx, ty, 4, th, kAccent);
+
+    s_text(tx + 16, ty + 12, "Notification", kTextFg, kMenuBg);
+    s_text(tx + 16, ty + 32, g_toast_text, kTextDim, kMenuBg);
+
+    // Auto-dismiss: schedule another dirty frame so the fade completes.
+    g_dirty_scene = true;
+}
+// The available work area (screen minus taskbar) in screen pixels.
+void work_area(i32& x, i32& y, i32& w, i32& h)
+{
+    x = 0;
+    y = 0;
+    w = to_i32(g_w);
+    h = to_i32(g_h) - static_cast<i32>(kTaskbarH);
+}
+
+// Snap a window to a fraction-based rectangle. Fractions are /100 of the
+// work area. The window is re-inserted as maximized if the fraction is
+// 100x100, otherwise as a "half-tiled" free-form window.
+void snap_window(u32 win_idx, i32 xf, i32 yf, i32 wf, i32 hf)
+{
+    if (win_idx >= g_win_count)
+        return;
+    Window& w = g_windows[win_idx];
+
+    i32 wx, wy, ww, wh;
+    work_area(wx, wy, ww, wh);
+
+    // Save the original geometry the first time we snap.
+    if (!w.maximized && w.saved_w == 0)
+    {
+        w.saved_x = w.x;
+        w.saved_y = w.y;
+        w.saved_w = w.w;
+        w.saved_h = w.h;
+    }
+
+    w.x = wx + (ww * xf) / 100;
+    w.y = wy + (wh * yf) / 100;
+    w.w = (ww * wf) / 100;
+    w.h = (wh * hf) / 100;
+    w.maximized = (xf == 0 && yf == 0 && wf == 100 && hf == 100);
+    w.anim_state = AnimState::Settled;
+    g_dirty_scene = true;
+
+    // Emit a toast naming the applied layout.
+    Compositor::notify("Snap applied");
+}
+
 void scene_draw_switcher()
 {
     if (!g_switcher_open || g_win_count == 0)
@@ -1118,6 +1419,8 @@ void scene_render()
     scene_draw_start_menu();
     scene_draw_context_menu();
     scene_draw_switcher();
+    scene_draw_snap_preview();
+    scene_draw_toast();
 }
 
 i32 hit_window(i32 mx, i32 my)
@@ -1287,9 +1590,13 @@ void minimize_window(u32 idx)
 {
     if (idx >= g_win_count)
         return;
-    g_windows[idx].minimized = true;
+    Window& w = g_windows[idx];
+    w.minimized = true;
+    w.anim_state = AnimState::Minimizing;
+    w.anim_start_tick = arch::x86_64::pit_ticks();
     for (u32 i = 0; i < g_win_count; ++i)
         g_windows[i].focused = false;
+    g_dirty_scene = true;
 }
 
 // ---------------------------------------------------------------------------
@@ -1306,14 +1613,15 @@ void scene_tick_animations()
     {
         Window& w = g_windows[i];
 
-        if (w.anim_state == AnimState::Opening)
+        switch (w.anim_state)
         {
+        case AnimState::Opening:
             if ((now - w.anim_start_tick) >= kAnimTicks)
                 w.anim_state = AnimState::Settled;
             g_dirty_scene = true;
-        }
-        else if (w.anim_state == AnimState::Closing)
-        {
+            break;
+
+        case AnimState::Closing:
             if ((now - w.anim_start_tick) >= kAnimTicks)
             {
                 for (u32 k = i; k + 1 < g_win_count; ++k)
@@ -1322,9 +1630,25 @@ void scene_tick_animations()
                 if (g_win_count > 0)
                     g_windows[g_win_count - 1].focused = true;
                 g_dirty_scene = true;
-                continue; // do not advance i; slot i is a different window now
+                continue;
             }
             g_dirty_scene = true;
+            break;
+
+        case AnimState::Minimizing:
+            if ((now - w.anim_start_tick) >= kAnimTicks)
+                w.anim_state = AnimState::Settled; // fully hidden
+            g_dirty_scene = true;
+            break;
+
+        case AnimState::Restoring:
+            if ((now - w.anim_start_tick) >= kAnimTicks)
+                w.anim_state = AnimState::Settled;
+            g_dirty_scene = true;
+            break;
+
+        default:
+            break;
         }
         ++i;
     }
@@ -1448,6 +1772,7 @@ void launch_shortcut(ShortcutKind kind)
     case ShortcutKind::GameLchr:
         log::write(log::Level::Info, "gfx", "launch: Game Launcher");
         open_window(WindowKind::GameLauncher, "Game Launcher", 720, 480);
+        Compositor::notify("Game Launcher opened");
         break;
     case ShortcutKind::ImageVw:
         log::write(log::Level::Info, "gfx", "launch: Image Viewer");
@@ -1736,11 +2061,94 @@ void on_mouse_tick()
                 {
                     if (!g_windows[i].visible)
                         continue;
-                    const u32 tw = static_cast<u32>(libk::strlen(g_windows[i].title)) * kCellW + 20;
+
+                    // Only the first window of each group has a button.
+                    bool is_first = true;
+                    for (u32 j = 0; j < i; ++j)
+                    {
+                        if (g_windows[j].visible && g_windows[j].kind == g_windows[i].kind)
+                        {
+                            is_first = false;
+                            break;
+                        }
+                    }
+                    if (!is_first)
+                        continue;
+
+                    u32 group_size = 0;
+                    for (u32 j = 0; j < g_win_count; ++j)
+                        if (g_windows[j].visible && g_windows[j].kind == g_windows[i].kind)
+                            ++group_size;
+
+                    const u32 title_len = static_cast<u32>(libk::strlen(g_windows[i].title));
+                    const u32 tw = title_len * kCellW + 20 + ((group_size > 1) ? 24 : 0);
+
                     if (mx >= bx && mx < bx + static_cast<i32>(tw))
                     {
-                        g_windows[i].minimized = false;
-                        focus_window(i);
+                        // If any group member is minimized, restore them.
+                        // Otherwise, cycle focus to the next group member.
+                        bool restored_any = false;
+                        for (u32 j = 0; j < g_win_count; ++j)
+                        {
+                            if (!g_windows[j].visible)
+                                continue;
+                            if (g_windows[j].kind != g_windows[i].kind)
+                                continue;
+                            if (g_windows[j].minimized)
+                            {
+                                g_windows[j].minimized = false;
+                                g_windows[j].anim_state = AnimState::Restoring;
+                                g_windows[j].anim_start_tick = arch::x86_64::pit_ticks();
+                                restored_any = true;
+                            }
+                        }
+
+                        if (restored_any)
+                        {
+                            focus_window(i);
+                        }
+                        else if (group_size == 1)
+                        {
+                            focus_window(i);
+                        }
+                        else
+                        {
+                            // Cycle to the next non-focused member.
+                            i32 cur = -1;
+                            for (u32 j = 0; j < g_win_count; ++j)
+                            {
+                                if (g_windows[j].kind == g_windows[i].kind && g_windows[j].focused)
+                                {
+                                    cur = static_cast<i32>(j);
+                                    break;
+                                }
+                            }
+                            i32 next = -1;
+                            if (cur >= 0)
+                            {
+                                for (u32 j = static_cast<u32>(cur) + 1; j < g_win_count; ++j)
+                                {
+                                    if (g_windows[j].kind == g_windows[i].kind)
+                                    {
+                                        next = static_cast<i32>(j);
+                                        break;
+                                    }
+                                }
+                                if (next < 0)
+                                {
+                                    for (u32 j = 0; j < static_cast<u32>(cur); ++j)
+                                    {
+                                        if (g_windows[j].kind == g_windows[i].kind)
+                                        {
+                                            next = static_cast<i32>(j);
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            if (next >= 0)
+                                focus_window(static_cast<u32>(next));
+                        }
                         g_dirty_scene = true;
                         break;
                     }
@@ -1761,42 +2169,52 @@ void on_mouse_tick()
     {
         if (g_drag_win >= 0)
         {
-            // Snap on release if the cursor is near a screen edge.
-            const i32 snap = 30;
-            const i32 work_h = to_i32(g_h) - static_cast<i32>(kTaskbarH);
-            Window& w = g_windows[static_cast<u32>(g_drag_win)];
+            // If the snap preview is open and the cursor is over a zone,
+            // apply that layout. Otherwise fall back to edge-snap.
+            if (g_snap_preview_open && g_snap_layout_hover >= 0 && g_snap_zone_hover >= 0)
+            {
+                const SnapLayout& L = g_snap_layouts[static_cast<u32>(g_snap_layout_hover)];
+                const SnapZone& sz = L.zones[static_cast<u32>(g_snap_zone_hover)];
+                snap_window(static_cast<u32>(g_drag_win), sz.x_frac_num, sz.y_frac_num,
+                            sz.w_frac_num, sz.h_frac_num);
+            }
+            else
+            {
+                // Edge-snap fallback.
+                const i32 snap = 30;
+                const i32 work_h = to_i32(g_h) - static_cast<i32>(kTaskbarH);
+                Window& w = g_windows[static_cast<u32>(g_drag_win)];
 
-            const bool was_maximized = w.maximized;
+                if (mx <= snap)
+                {
+                    w.x = 0;
+                    w.y = 0;
+                    w.w = to_i32(g_w) / 2;
+                    w.h = work_h;
+                    w.maximized = false;
+                }
+                else if (mx >= to_i32(g_w) - snap)
+                {
+                    w.w = to_i32(g_w) / 2;
+                    w.x = to_i32(g_w) - w.w;
+                    w.y = 0;
+                    w.h = work_h;
+                    w.maximized = false;
+                }
+                else if (my <= snap)
+                {
+                    w.x = 0;
+                    w.y = 0;
+                    w.w = to_i32(g_w);
+                    w.h = work_h;
+                    w.maximized = true;
+                }
+                g_dirty_scene = true;
+            }
 
-            if (mx <= snap)
-            {
-                w.x = 0;
-                w.y = 0;
-                w.w = to_i32(g_w) / 2;
-                w.h = work_h;
-                w.maximized = false;
-            }
-            else if (mx >= to_i32(g_w) - snap)
-            {
-                w.w = to_i32(g_w) / 2;
-                w.x = to_i32(g_w) - w.w;
-                w.y = 0;
-                w.h = work_h;
-                w.maximized = false;
-            }
-            else if (my <= snap)
-            {
-                w.x = 0;
-                w.y = 0;
-                w.w = to_i32(g_w);
-                w.h = work_h;
-                w.maximized = true;
-            }
-            else if (!was_maximized)
-            {
-                // Keep the current free-form position.
-            }
-            g_dirty_scene = true;
+            g_snap_preview_open = false;
+            g_snap_layout_hover = -1;
+            g_snap_zone_hover = -1;
         }
         g_drag_win = -1;
     }
@@ -1816,6 +2234,82 @@ void on_mouse_tick()
             w.x = to_i32(g_w) - 60;
         if (w.y > to_i32(g_h) - static_cast<i32>(kTaskbarH) - 10)
             w.y = to_i32(g_h) - static_cast<i32>(kTaskbarH) - 10;
+
+        // Near the top edge: show the snap preview.
+        const bool near_top = (my <= 12);
+        if (near_top && !g_snap_preview_open)
+        {
+            g_snap_preview_open = true;
+            g_snap_layout_hover = -1;
+            g_snap_zone_hover = -1;
+            g_snap_target_win = g_drag_win;
+            g_snap_open_tick = arch::x86_64::pit_ticks();
+            g_dirty_scene = true;
+        }
+        else if (!near_top && g_snap_preview_open)
+        {
+            g_snap_preview_open = false;
+            g_dirty_scene = true;
+        }
+
+        // Track which cell and zone the cursor is over.
+        if (g_snap_preview_open)
+        {
+            const i32 preview_w = 260;
+            const i32 ppx = (to_i32(g_w) - preview_w) / 2;
+            const i32 ppy = 20;
+
+            const i32 cell_w = 56;
+            const i32 cell_h = 80;
+            const i32 cell_gap = 8;
+            const i32 row_w = 4 * cell_w + 3 * cell_gap;
+            const i32 start_x = ppx + (preview_w - row_w) / 2;
+            const i32 start_y = ppy + 28;
+
+            i32 layout_i = -1;
+            if (mx >= start_x && mx < start_x + row_w && my >= start_y && my < start_y + cell_h)
+            {
+                layout_i = (mx - start_x) / (cell_w + cell_gap);
+                if (layout_i >= 0 && layout_i < static_cast<i32>(kSnapLayoutCount))
+                {
+                    const i32 cx = start_x + layout_i * (cell_w + cell_gap);
+                    if (mx >= cx + cell_w)
+                        layout_i = -1; // in the gap
+                }
+            }
+
+            if (layout_i != g_snap_layout_hover)
+            {
+                g_snap_layout_hover = layout_i;
+                g_dirty_scene = true;
+            }
+
+            i32 zone_i = -1;
+            if (layout_i >= 0)
+            {
+                const i32 cx = start_x + layout_i * (cell_w + cell_gap);
+                const SnapLayout& L = g_snap_layouts[static_cast<u32>(layout_i)];
+                for (u32 z = 0; z < L.zone_count; ++z)
+                {
+                    const SnapZone& sz = L.zones[z];
+                    const i32 zx = cx + 6 + (sz.x_frac_num * (cell_w - 12)) / 100;
+                    const i32 zy = start_y + 6 + (sz.y_frac_num * (cell_h - 12)) / 100;
+                    const i32 zw = (sz.w_frac_num * (cell_w - 12)) / 100;
+                    const i32 zh = (sz.h_frac_num * (cell_h - 12)) / 100;
+                    if (mx >= zx && mx < zx + zw && my >= zy && my < zy + zh)
+                    {
+                        zone_i = static_cast<i32>(z);
+                        break;
+                    }
+                }
+            }
+            if (zone_i != g_snap_zone_hover)
+            {
+                g_snap_zone_hover = zone_i;
+                g_dirty_scene = true;
+            }
+        }
+
         g_dirty_scene = true;
     }
 
@@ -1906,6 +2400,21 @@ void try_load_wallpaper()
 
 } // namespace
 
+void Compositor::notify(const char* text) noexcept
+{
+    if (!text)
+        return;
+    usize i = 0;
+    while (text[i] && i < kToastTextMax - 1)
+    {
+        g_toast_text[i] = text[i];
+        ++i;
+    }
+    g_toast_text[i] = 0;
+    g_toast_birth_tick = arch::x86_64::pit_ticks();
+    g_toast_visible = true;
+    g_dirty_scene = true;
+}
 void Compositor::machine_shutdown() noexcept
 {
     acpi::power_off();
@@ -2001,7 +2510,7 @@ void Compositor::init() noexcept
     // After the replay, reset the terminal cursor scroll position so the
     // latest line is visible.
     Compositor::term_scroll_bottom();
-
+    Compositor::notify("Welcome to NOTYVOS");
     scene_render();
     fb_blit_full();
 
@@ -2036,6 +2545,19 @@ void Compositor::tick() noexcept
 
     // Alt-Tab switcher. `Cycle` fires each time the user presses Tab while
     // Alt is held; `Commit` fires when Alt is released.
+    // Alt+F4 closes the focused window.
+    if (arch::x86_64::keyboard_alt_f4_event())
+    {
+        for (u32 i = 0; i < g_win_count; ++i)
+        {
+            if (g_windows[i].focused)
+            {
+                close_window(i);
+                break;
+            }
+        }
+    }
+
     switch (arch::x86_64::keyboard_alt_tab_event())
     {
     case arch::x86_64::AltTabEvent::Cycle:

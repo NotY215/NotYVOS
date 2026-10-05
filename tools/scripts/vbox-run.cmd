@@ -4,16 +4,10 @@ setlocal EnableExtensions
 REM ==========================================================================
 REM NOTYVOS - launch VirtualBox + attach serial console on COM1.
 REM
-REM Keyboard routing:
-REM   * Click the VM window   -> PS/2 keyboard, PS/2 mouse.
-REM   * Type in THIS terminal -> keystrokes go over COM1 as serial bytes.
-REM
-REM Important detail: the VM's serial port is exposed via VBoxManage in
-REM tcpserver mode, which means the HOST acts as a TCP server and the VM
-REM is the client. Exactly ONE host-side client is allowed at a time.
-REM Because of that, this script does NOT probe the port for readiness -
-REM doing so would disconnect the VM from the server. We start the VM,
-REM wait a fixed 5 s, then attach the console once and stay attached.
+REM Critical ordering: the serial console MUST be attached BEFORE the VM
+REM starts. VirtualBox's tcpserver mode does not buffer bytes when no
+REM client is connected, so anything the guest writes before we connect is
+REM lost. We attach first, then start the VM.
 REM ==========================================================================
 
 set "VM_NAME=NotYVOS"
@@ -36,15 +30,15 @@ if not exist "%SERIAL_SCRIPT%" (
     exit /b 1
 )
 
-echo [1/4] Powering off any running "%VM_NAME%" ...
+echo [1/5] Powering off any running "%VM_NAME%" ...
 "%VBOX_MGR%" controlvm "%VM_NAME%" poweroff >nul 2>&1
-ping 127.0.0.1 -n 2 >nul
+ping 127.0.0.1 -n 3 >nul
 
-echo [2/4] Configuring COM1 as tcpserver on port %SERIAL_PORT% ...
+echo [2/5] Configuring COM1 as tcpserver on port %SERIAL_PORT% ...
 "%VBOX_MGR%" modifyvm "%VM_NAME%" --uart1 0x3F8 4                 >nul
 "%VBOX_MGR%" modifyvm "%VM_NAME%" --uartmode1 tcpserver %SERIAL_PORT% >nul
 
-echo [3/4] Reattaching ISO ...
+echo [3/5] Reattaching ISO ...
 "%VBOX_MGR%" storageattach "%VM_NAME%" --storagectl "SATA" --port 1 --device 0 ^
         --type dvddrive --medium "%ISO%" >nul
 if errorlevel 1 (
@@ -52,7 +46,14 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [4/4] Starting VM (GUI) ...
+echo [4/5] Attaching serial console FIRST (so it captures the boot log) ...
+start "NOTYVOS serial" cmd /c ^
+    "pwsh -NoProfile -ExecutionPolicy Bypass -File ""%SERIAL_SCRIPT%"" -HostName 127.0.0.1 -Port %SERIAL_PORT%"
+
+REM Give the pwsh script a moment to open its TCP client socket.
+ping 127.0.0.1 -n 3 >nul
+
+echo [5/5] Starting VM (GUI) ...
 "%VBOX_MGR%" startvm "%VM_NAME%" --type gui
 if errorlevel 1 (
     echo ERROR: startvm failed.
@@ -61,17 +62,13 @@ if errorlevel 1 (
 
 echo.
 echo ============================================================
-echo   Waiting 5 s for the VM to reach the boot loader...
-echo   The serial console will open next.
+echo   VM running. Serial console is in the "NOTYVOS serial"
+echo   window. Boot log will appear there from line one.
 echo.
-echo   Type HERE to send keystrokes into the guest shell.
-echo   CLICK THE VM WINDOW for the PS/2 keyboard and mouse.
-echo   Ctrl+C exits the console (VM keeps running).
+echo   Click the VM window for the PS/2 keyboard and mouse.
+echo   Type in the serial window to send keystrokes over COM1.
+echo   Close the serial window to disconnect; VM keeps running.
 echo ============================================================
 echo.
-
-ping 127.0.0.1 -n 6 >nul
-
-pwsh -NoProfile -ExecutionPolicy Bypass -File "%SERIAL_SCRIPT%" -HostName 127.0.0.1 -Port %SERIAL_PORT%
 
 endlocal

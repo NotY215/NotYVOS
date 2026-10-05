@@ -9,6 +9,7 @@
 #include <kernel/img/decoder.hpp>
 #include <kernel/gfx/compositor.hpp>
 #include <kernel/gfx/theme.hpp>
+#include <kernel/fb/framebuffer.hpp>
 
 namespace notyvos::gfx
 {
@@ -108,6 +109,9 @@ struct ExplEntry
     bool is_dir;
     u32 size;
 };
+
+// Forward declaration — the definition sits after draw_explorer().
+void draw_explorer_context_menu();
 
 struct ExplorerState
 {
@@ -490,12 +494,15 @@ void draw_explorer_context_menu()
     const i32 w = 180;
     const i32 h = exp_ctx_height();
 
+    const i32 screen_w = static_cast<i32>(fb::Framebuffer::width());
+    const i32 screen_h = static_cast<i32>(fb::Framebuffer::height());
+
     i32 x = g_exp.ctx_x;
     i32 y = g_exp.ctx_y;
-    if (x + w > to_i32(g_w))
-        x = to_i32(g_w) - w;
-    if (y + h > to_i32(g_h) - 30)
-        y = to_i32(g_h) - 30 - h;
+    if (x + w > screen_w)
+        x = screen_w - w;
+    if (y + h > screen_h - 30)
+        y = screen_h - 30 - h;
     if (x < 0)
         x = 0;
     if (y < 0)

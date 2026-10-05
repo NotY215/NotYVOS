@@ -27,21 +27,16 @@ const char kMapShift[128] = {0,    27,   '!', '@', '#', '$', '%', '^', '&', '*',
 
 bool g_shift = false;
 bool g_ctrl = false;
-bool g_extended = false;
 bool g_alt = false;
+bool g_extended = false;
 volatile u8 g_buf[kBufSize];
 volatile u32 g_head = 0;
 volatile u32 g_tail = 0;
 u64 g_key_count = 0;
 
-// Set on the first keyboard_init() call. On ACPI restart this stays true
-// because the kernel reloads from scratch — but the i8042 hardware
-// survives the reset, so we must NOT touch it again.
-bool g_kbd_hardware_initialized = false;
-
-// Alt-Tab signals.
 bool g_alt_tab_pending = false;
 bool g_alt_release_pending = false;
+bool g_alt_f4_pending = false;
 
 inline void push_char(char c)
 {
@@ -79,7 +74,6 @@ void write_cmd(u8 cmd) noexcept
     if (wait_input_clear())
         outb(kCmdPort, cmd);
 }
-
 void write_data(u8 data) noexcept
 {
     if (wait_input_clear())
@@ -94,29 +88,6 @@ void flush_output() noexcept
             break;
         (void)inb(kDataPort);
     }
-}
-
-// Called on the second and subsequent boots. Does not touch the
-// controller self-test or config byte — those are preserved through an
-// ACPI restart, and re-running them corrupts the mouse clock on VBox.
-bool keyboard_reinit_impl() noexcept
-{
-    flush_output();
-
-    // Re-enable both device ports. Safe no-ops if already enabled.
-    write_cmd(0xAE); // enable kbd
-    write_cmd(0xA8); // enable aux
-
-    // Clear software state; the hardware state is already correct.
-    g_shift = false;
-    g_ctrl = false;
-    g_extended = false;
-    g_alt = false;
-    g_head = 0;
-    g_tail = 0;
-
-    log::write(log::Level::Info, "kbd", "warm re-init (ports re-enabled)");
-    return true;
 }
 
 void process_scancode(u8 sc)
@@ -167,8 +138,7 @@ void process_scancode(u8 sc)
         }
     }
 
-    // Alt handling — intercept before anything else so Alt+Tab does not
-    // produce a literal Tab into the shell.
+    // Alt press / release.
     if (sc == 0x38)
     {
         g_alt = true;
@@ -181,11 +151,16 @@ void process_scancode(u8 sc)
         return;
     }
 
-    if (g_alt && sc == 0x0F) // Tab while Alt held
+    if (g_alt && sc == 0x0F)
     {
         g_alt_tab_pending = true;
         return;
-    }
+    } // Tab
+    if (g_alt && sc == 0x3E)
+    {
+        g_alt_f4_pending = true;
+        return;
+    } // F4
 
     if (sc == 0x1D)
     {
@@ -235,76 +210,104 @@ void process_scancode(u8 sc)
 
 } // namespace
 
+// Read the config byte from the controller. Returns false on timeout.
+bool read_config(u8& out) noexcept
+{
+    write_cmd(0x20);
+    if (!wait_output_full(300000))
+        return false;
+    out = inb(kDataPort);
+    return true;
+}
+
+// Write the config byte. Returns false on timeout.
+bool write_config(u8 cfg) noexcept
+{
+    write_cmd(0x60);
+    write_data(cfg);
+    return true;
+}
+
 bool keyboard_init() noexcept
 {
-    // Warm boot path: hardware is already live, do not re-init.
-    if (g_kbd_hardware_initialized)
-        return keyboard_reinit_impl();
-
     log::write(log::Level::Info, "kbd", "init start");
 
-    // Full i8042 reset (cold boot only).
+    // Bring the controller into a safe state. This must succeed on both
+    // cold and warm (ACPI restart) boots. VBox's emulated i8042 sometimes
+    // needs a retry on warm reset before it responds to the self-test.
+    //
+    // Sequence:
+    //   1. Disable both device ports.
+    //   2. Drain any stale bytes.
+    //   3. Send self-test (0xAA); expect 0x55. Retry up to 3 times.
+    //   4. On success, force the config byte to a known-good value.
+    //   5. Re-enable both ports.
+    //   6. Send 0xF4 (enable scanning) to the keyboard.
+
     write_cmd(0xAD); // disable kbd
     write_cmd(0xA7); // disable aux
     flush_output();
 
-    write_cmd(0xAA); // self-test -> 0x55
     u8 selftest = 0;
-    if (wait_output_full(500000))
-        selftest = inb(kDataPort);
-    log::write(log::Level::Info, "kbd", "i8042 self-test -> 0x%llx",
-               static_cast<unsigned long long>(selftest));
+    bool st_ok = false;
+    for (u32 attempt = 0; attempt < 3 && !st_ok; ++attempt)
+    {
+        write_cmd(0xAA);
+        if (wait_output_full(400000))
+        {
+            selftest = inb(kDataPort);
+            if (selftest == 0x55u)
+                st_ok = true;
+        }
+    }
+    log::write(log::Level::Info, "kbd", "i8042 self-test -> 0x%llx (%s)",
+               static_cast<unsigned long long>(selftest), st_ok ? "ok" : "timeout");
 
-    write_cmd(0x20); // read config
-    u8 cfg = 0;
-    if (wait_output_full(500000))
-        cfg = inb(kDataPort);
+    u8 cfg = 0x47; // fallback
+    u8 readback = 0;
+    if (read_config(readback))
+        cfg = readback;
     log::write(log::Level::Info, "kbd", "firmware cfg = 0x%llx",
                static_cast<unsigned long long>(cfg));
 
-    // Force the config to a known-good state. Always write, even if it
-    // matches, so the mouse clock and both interrupts are guaranteed on
-    // after a warm reset.
+    // Force known-good config regardless of what we read.
     u8 target = cfg;
-    target |= 0x01;                   // kbd IRQ on IRQ1
-    target |= 0x02;                   // mouse IRQ on IRQ12
-    target |= 0x40;                   // translate scancode set 2 to set 1
+    target |= 0x01;                   // kbd IRQ1
+    target |= 0x02;                   // mouse IRQ12
+    target |= 0x40;                   // translate set 2 -> set 1
     target &= ~static_cast<u8>(0x10); // enable kbd clock
     target &= ~static_cast<u8>(0x20); // enable mouse clock
 
-    write_cmd(0x60);
-    write_data(target);
-    write_cmd(0x20);
-    u8 readback = 0;
-    if (wait_output_full(500000))
-        readback = inb(kDataPort);
-    log::write(log::Level::Info, "kbd", "wrote cfg 0x%llx, readback 0x%llx",
-               static_cast<unsigned long long>(target), static_cast<unsigned long long>(readback));
+    write_config(target);
+    readback = 0;
+    if (read_config(readback))
+    {
+        log::write(log::Level::Info, "kbd", "wrote cfg 0x%llx, readback 0x%llx",
+                   static_cast<unsigned long long>(target),
+                   static_cast<unsigned long long>(readback));
+    }
 
-    write_cmd(0xAE); // enable kbd port
-    write_cmd(0xA8); // enable aux port
+    write_cmd(0xAE); // enable kbd
+    write_cmd(0xA8); // enable aux
 
     flush_output();
     write_data(0xF6); // set defaults
-    u8 ack = 0;
-    if (wait_output_full(500000))
-        ack = inb(kDataPort);
-    (void)ack;
+    (void)wait_output_full(300000);
+    (void)inb(kDataPort);
 
     write_data(0xF4); // enable scanning
-    ack = 0;
-    if (wait_output_full(500000))
+    u8 ack = 0;
+    if (wait_output_full(300000))
         ack = inb(kDataPort);
     log::write(log::Level::Info, "kbd", "0xF4 -> 0x%llx", static_cast<unsigned long long>(ack));
 
     log::write(log::Level::Info, "kbd", "i8042 ready");
-    g_kbd_hardware_initialized = true;
     return true;
 }
 
 bool keyboard_reinit() noexcept
 {
-    return keyboard_reinit_impl();
+    return keyboard_init();
 }
 
 AltTabEvent keyboard_alt_tab_event() noexcept
@@ -320,6 +323,16 @@ AltTabEvent keyboard_alt_tab_event() noexcept
         return AltTabEvent::Commit;
     }
     return AltTabEvent::None;
+}
+
+bool keyboard_alt_f4_event() noexcept
+{
+    if (g_alt_f4_pending)
+    {
+        g_alt_f4_pending = false;
+        return true;
+    }
+    return false;
 }
 
 void keyboard_irq_handler() noexcept

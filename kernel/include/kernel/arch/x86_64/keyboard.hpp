@@ -34,6 +34,8 @@ enum class AltTabEvent : u8
     Commit
 };
 AltTabEvent keyboard_alt_tab_event() noexcept;
+// True if the user pressed Alt+F4 since the last poll.
+bool keyboard_alt_f4_event() noexcept;
 void keyboard_inject(char c) noexcept;
 
 } // namespace notyvos::arch::x86_64

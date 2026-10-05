@@ -94,8 +94,16 @@ void init() noexcept
     u32 loaded = 0;
     for (u32 i = 1; i < static_cast<u32>(Id::Count); ++i)
     {
+        const char* p = path_for(static_cast<Id>(i));
         if (load_one(static_cast<Id>(i)))
+        {
             ++loaded;
+            log::write(log::Level::Debug, "icons", "loaded %s", p);
+        }
+        else
+        {
+            log::write(log::Level::Warn, "icons", "FAILED %s", p);
+        }
     }
     log::write(log::Level::Info, "icons", "loaded %llu/%llu SVG icons from /icons",
                static_cast<unsigned long long>(loaded),

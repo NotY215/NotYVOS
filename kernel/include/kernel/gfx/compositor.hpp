@@ -25,6 +25,8 @@ enum class AnimState : u8
     Settled = 0,
     Opening = 1,
     Closing = 2,
+    Minimizing = 3,
+    Restoring = 4,
 };
 
 struct Window
@@ -48,6 +50,7 @@ struct Window
 class Compositor
 {
 public:
+    static void notify(const char* text) noexcept;
     static void init() noexcept;
     static bool ready() noexcept;
     static void tick() noexcept;

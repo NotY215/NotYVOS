@@ -16,7 +16,6 @@ constexpr u16 kCmdPort = 0x64;
 u8 g_cycle = 0;
 u8 g_packet[4] = {};
 u32 g_packet_len = 3;
-bool g_mouse_hardware_initialized = false;
 i32 g_x = 512;
 i32 g_y = 384;
 i32 g_wheel = 0;
@@ -112,15 +111,13 @@ void try_enable_wheel() noexcept
 
 bool mouse_init() noexcept
 {
-    // Warm boot path: the i8042 and mouse survive ACPI restart. Do not
-    // resend the IntelliMouse magic sequence — the mouse is already in
-    // 4-byte mode. Just clear the software packet state.
-    if (g_mouse_hardware_initialized)
-    {
-        g_cycle = 0;
-        log::write(log::Level::Info, "mouse", "warm re-init (state cleared)");
-        return true;
-    }
+    // Always re-init. The controller state cannot be relied upon across
+    // an ACPI restart, so we clear all software state and re-handshake.
+    g_cycle = 0;
+    for (u32 i = 0; i < 4; ++i)
+        g_packet[i] = 0;
+    g_intellimouse = false;
+    g_packet_len = 3;
 
     log::write(log::Level::Info, "mouse", "init");
 
@@ -147,7 +144,6 @@ bool mouse_init() noexcept
 
     log::write(log::Level::Info, "mouse", "ready at (%d, %d)", static_cast<i64>(g_x),
                static_cast<i64>(g_y));
-    g_mouse_hardware_initialized = true;
     return true;
 }
 
