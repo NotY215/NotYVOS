@@ -71,8 +71,7 @@ exec, brk, time, sleep, kill, about, and exit handling.
 - Device-independent Graphics API
 - Graphics HAL with software and VBE backends
 - GPU abstraction with software rasterization primitives
-- Inter font files bundled for future TrueType rendering; current UI text
-  still uses the embedded 8x8 bitmap font
+- TrueType Inter font subsystem with anti-aliased rendering, glyph caching and compositor integration; multiple weights, kerning and complex shaping remain deferred.
 
 ### Native hardware
 - ACPI table discovery and power/restart paths
@@ -119,22 +118,23 @@ exec, brk, time, sleep, kill, about, and exit handling.
 
 ## Current roadmap status
 
-- Phases 1A through 1G: completed
-- Phases 2A through 2N: completed
-- Phases 3A through 3F: completed
-- Phases 4A through 4E: completed
-- Phases 5A through 5D: completed
-- Phases 6A through 6F: completed
-- Phases 7A through 7C: completed
-- Phases 8A and 8B: completed
-- Phases 9A through 9C: completed
-- Phases 10A through 10F: completed
-- Phase 10 extended UI integration: completed
-- Delivered desktop additions: terminal overhaul, SVG icons, disk panel, Explorer context actions, input persistence/serial capture, taskbar/snap/toast UX and Explorer navigation history
-- Next: 10G, 7D and 11
-- Phase 12 remains not started
+**Phases 0–10F are frozen as delivered.**
 
-See docs/roadmap.md for the complete phase table.
+- **Phase 11 — TrueType Font Subsystem:** Done
+- **Phase 12 — Explorer 10G + Real File Operations:** Next
+- **Phase 13 — Desktop Clipboard + Dialogs:** Queued
+- **Phase 14 — 7D GameRunner Runtime Integration:** Queued
+- **Phase 15 — USB Stack + USB HID:** Queued
+- **Phase 16 — Production Network Stack:** Queued
+- **Phase 17 — Wi-Fi Driver + Management UI:** Queued
+- **Phase 18 — Bluetooth Framework:** Queued
+- **Phase 19 — NYFS Maturity:** Queued
+- **Phase 20 — Firewall + Network Security:** Queued
+- **Phase 21 — NotYVFirm:** Queued
+
+Windows `.exe` compatibility and Brave/VLC validation are **explicitly excluded** from the current roadmap.
+
+See docs/roadmap.md for the complete roadmap.
 
 ## Repository layout
 
