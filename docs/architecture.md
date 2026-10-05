@@ -10,7 +10,7 @@ The repository currently contains implementation through Phase 10F, including
 native kernel/userland, desktop graphics, PS3 runtime foundations, RSX
 compatibility through perspective-correct UVs and mipmaps, GameRunner,
 rendering validation, BMP/PNG/GIF/ICO/JPEG image support and the complete
-theme/Appearance settings path. All defined Phase 1–10 subphases are delivered.
+theme/Appearance settings path. All defined Phase 1–10 work through 10F is delivered.
 
 ### Windows compatibility domain
 
@@ -172,7 +172,7 @@ framebuffer
 ```
 
 Phase 10A provides Dark, Light and macOS Dark themes plus shortcut integration.
-Phase 10B exposes Appearance controls through Settings and feeds the active
+Phase 10F exposes Appearance controls through Settings and feeds the active
 theme into the desktop UI styling layer.
 
 ## Current roadmap boundary
