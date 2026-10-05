@@ -25,8 +25,8 @@ planned.
 | User programs and libc | user/ / Phase 2+ |
 | Host tools | tools/ |
 | PS3 firmware domain | Firmware/ / runtime support |
-| Native PC firmware | NotYVFirm, planned |
-| Windows compatibility | Phases 11–12, planned |
+| Native PC firmware | NotYVFirm / Phase 21, queued |
+| Windows compatibility | Phases 11–21, with Phase 11 delivered and Phase 12 next |
 
 The absence of a planned top-level directory does not mean the subsystem is
 forgotten; the roadmap is the source of truth for planned work.
