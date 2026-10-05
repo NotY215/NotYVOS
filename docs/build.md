@@ -81,7 +81,7 @@ The converter limits the generated image to a maximum width of 1920 pixels
 while preserving aspect ratio. convert-wallpaper.sh provides the matching
 host-side conversion path.
 
-The kernel image subsystem now decodes BMP, PNG, GIF, ICO and JPEG data. Wallpaper conversion remains available as an optional host-side raw-wallpaper path.
+The kernel image subsystem decodes BMP, PNG, GIF, ICO and JPEG data. The Phase 11 TrueType renderer also consumes the bundled Inter font family. Wallpaper conversion remains an optional host-side raw-wallpaper path.
 
 ## Running
 
@@ -96,6 +96,12 @@ COM1 serial console.
 
 QEMU is no longer part of the active test workflow. The remaining
 tools/qemu/ files are retained as boot configuration data.
+
+## Roadmap-aware build boundary
+
+The current build targets the delivered Phases 0–10F plus Phase 11 TrueType
+font subsystem. Phase 12 Explorer work is the next source milestone. The build
+system does not include Windows PE/Win32 compatibility or Brave/VLC validation.
 
 ## Limine
 
