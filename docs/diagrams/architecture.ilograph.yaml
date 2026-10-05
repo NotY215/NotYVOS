@@ -1,0 +1,44 @@
+# NOTYVOS architecture perspectives
+title: NOTYVOS Architecture
+views:
+  - name: System
+    perspective: system
+    graph:
+      - UEFI
+      - Limine
+      - Kernel
+      - VFS
+      - NYFS
+      - Compositor
+      - TrueType
+      - PS3 Runtime
+      - GameRunner
+  - name: Desktop
+    perspective: desktop
+    graph:
+      - Input
+      - Window Manager
+      - Compositor
+      - Widgets
+      - TrueType
+      - Explorer
+      - Settings
+      - VFS
+  - name: Storage
+    perspective: storage
+    graph:
+      - Syscalls
+      - VFS
+      - Initramfs
+      - NYFS
+      - AHCI
+  - name: PS3
+    perspective: ps3
+    graph:
+      - GameRunner
+      - PS3 ELF
+      - PPU
+      - JIT
+      - SPU
+      - DMA
+      - RSX
