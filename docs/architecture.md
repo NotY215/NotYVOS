@@ -6,7 +6,7 @@ NOTYVOS is a freestanding x86-64 kernel with user-mode processes, a VFS,
 persistent NYFS storage, a software-rendered desktop, native device drivers,
 and a PS3 runtime foundation.
 
-The repository currently contains implementation through Phase 10B, including
+The repository currently contains implementation through Phase 10F, including
 native kernel/userland, desktop graphics, PS3 runtime foundations, RSX
 compatibility through perspective-correct UVs and mipmaps, GameRunner,
 rendering validation, BMP/PNG/GIF/ICO/JPEG image support and the complete
@@ -80,6 +80,8 @@ The compositor currently provides:
 - taskbar and Start menu
 - desktop shortcuts
 - window focus and dragging
+- Alt-Tab switching, minimize/restore animation and Alt+F4 handling
+- taskbar hover feedback, grouped windows, snap layouts and notification toasts
 - minimize/maximize/close state
 - terminal, Explorer, Settings and Bin windows
 - context menu
@@ -177,7 +179,7 @@ theme into the desktop UI styling layer.
 
 Implemented:
 
-**1A–1G → 2A–2N → 3A–3F → 4A–4E → 5A–5D → 6A–6F → 7A–7C → 8A–8B → 9A–9C → 10A–10B**
+**1A–1G → 2A–2N → 3A–3F → 4A–4E → 5A–5D → 6A–6F → 7A–7C → 8A–8B → 9A–9C → 10A–10F**
 
 
 Not started later work includes the remaining GameRunner integration, full UI
