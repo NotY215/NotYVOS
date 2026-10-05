@@ -21,13 +21,15 @@ component required by the runtime.
 
 ### Native PC domain
 
-NotYVFirm is the planned native PC firmware domain. It is separate from the
+NotYVFirm is the queued Phase 21 native PC firmware domain. It is not implemented yet and remains separate from the PS3 runtime. It is separate from the
 PS3 runtime and does not use Sony PS3 firmware.
 
 ### PS3 runtime domain
 
 Sony PS3 firmware belongs only to the PS3 runtime. It must not become a
 dependency of the native NOTYVOS boot path.
+
+Phase 21 covers the firmware architecture, UEFI path, optional legacy path, boot configuration UI and signed update/rollback flow.
 
 See docs/architecture.md, docs/decisions/0005-ps3-firmware-isolation.md and
 docs/decisions/0006-no-sony-keys-embedded.md.
