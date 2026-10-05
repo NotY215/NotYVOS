@@ -11,8 +11,8 @@ repository implementation rather than future interfaces.
 > progression from input to output. They do not claim hardware acceleration
 > or runtime behavior that has not been implemented.
 >
-> Mermaid node labels that contain `()` or `::` are quoted. Unquoted
-> `font::draw_text()` is parsed as class / stadium syntax and fails.
+> Mermaid labels avoid `::` and `()`. The C++ entry point is
+> `font::draw_text()`; diagrams use the node id `draw_text`.
 
 ## System-wide flow
 
@@ -655,24 +655,25 @@ flowchart LR
 **Status: DONE.** Multiple weights, kerning, complex-script shaping and
 subpixel horizontal rendering remain deferred.
 
-Quoted Mermaid labels are required here: `font::draw_text()` contains both
-`::` (class syntax) and `()` (stadium / subroutine shape).
+The compositor entry point is `font::draw_text()`. Mermaid nodes use
+`draw_text` because `::` and `()` are Mermaid class/stadium tokens and quoted
+labels still fail type detection in some renderers.
 
 ```mermaid
 flowchart LR
-    FONT["Inter TTF"] --> PARSE["TrueType table parser"]
-    PARSE --> HEAD["head / hhea / hmtx / maxp"]
-    PARSE --> CMAP["cmap 4 / 12"]
-    PARSE --> LOCA["loca + glyf"]
-    HEAD --> GLYPH["Simple glyph outline"]
+    FONT[Inter TTF] --> PARSE[TrueType table parser]
+    PARSE --> HEAD[head hhea hmtx maxp]
+    PARSE --> CMAP[cmap 4 and 12]
+    PARSE --> LOCA[loca and glyf]
+    HEAD --> GLYPH[Simple glyph outline]
     CMAP --> GLYPH
     LOCA --> GLYPH
-    GLYPH --> FLAT["Quadratic Bezier flattening"]
-    FLAT --> RASTER["4x supersampled coverage rasterizer"]
-    RASTER --> CACHE["Per-face glyph cache"]
-    CACHE --> DRAW["font::draw_text()"]
-    DRAW --> COMP["Compositor"]
-    COMP --> FB["Framebuffer"]
+    GLYPH --> FLAT[Quadratic Bezier flattening]
+    FLAT --> RASTER[4x coverage rasterizer]
+    RASTER --> CACHE[Per-face glyph cache]
+    CACHE --> DRAW[draw_text]
+    DRAW --> COMP[Compositor]
+    COMP --> FB[Framebuffer]
 ```
 
 ```mermaid
@@ -680,7 +681,7 @@ sequenceDiagram
     participant Face as Inter Regular
     participant Parse as TTF parser
     participant Cache as Glyph cache
-    participant Draw as "font::draw_text()"
+    participant Draw as draw_text
     participant Comp as Compositor
     participant FB as Framebuffer
 

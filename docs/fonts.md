@@ -32,18 +32,18 @@ Inter is redistributed under the SIL Open Font License 1.1. See NOTICE, THIRD_PA
 
 ## Data flow
 
-Quoted Mermaid is required so `font::draw_text()` is not parsed as class /
-stadium syntax. Full pipeline: [`data flow.md`](data%20flow.md#phase-11--truetype-font-subsystem)
-and [`diagrams/truetype.d2`](diagrams/truetype.d2).
+Full pipeline: [`data flow.md`](data%20flow.md#phase-11--truetype-font-subsystem)
+and [`diagrams/truetype.d2`](diagrams/truetype.d2). The compositor API is
+`font::draw_text()`; the Mermaid node is `draw_text`.
 
 ```mermaid
 flowchart LR
-    TTF["Inter Regular TTF"] --> PARSE["TrueType parser"]
-    PARSE --> GLYPH["Simple glyph outline"]
-    GLYPH --> RASTER["4x coverage rasterizer"]
-    RASTER --> CACHE["512-entry glyph cache"]
-    CACHE --> DRAW["font::draw_text()"]
-    DRAW --> COMP["Compositor"]
+    TTF[Inter Regular TTF] --> PARSE[TrueType parser]
+    PARSE --> GLYPH[Simple glyph outline]
+    GLYPH --> RASTER[4x coverage rasterizer]
+    RASTER --> CACHE[512-entry glyph cache]
+    CACHE --> DRAW[draw_text]
+    DRAW --> COMP[Compositor]
 ```
 
 ```d2

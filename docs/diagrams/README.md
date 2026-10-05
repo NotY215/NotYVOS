@@ -42,9 +42,11 @@ Plain-text diagrams are also inlined in the docs they describe:
 
 ## Tooling policy
 
-- **Mermaid** is the GitHub-visible diagram. Node labels that contain `()` or
-  `::` must be quoted (`DRAW["font::draw_text()"]`). Unquoted `font::draw_text()`
-  is class / stadium syntax and fails to parse.
+- **Mermaid** is the GitHub-visible diagram. Do not put `::` or `()` in
+  Mermaid node labels, even quoted: some renderers then fail with
+  `No diagram type detected`. Use a plain id such as `draw_text` and keep
+  `font::draw_text()` in the surrounding prose. D2 and Ilograph may use the
+  real C++ name.
 - **Markmap** consumes native Markdown bullets and headings.
 - **D2** is the infrastructure layout language. Cross-container edges must use
   `Container.Child` paths.

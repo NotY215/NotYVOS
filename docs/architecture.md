@@ -75,7 +75,7 @@ flowchart LR
     API --> HAL[Graphics HAL]
     HAL --> SW[Software backend]
     HAL --> VBE[VBE backend]
-    TT["TrueType / font::draw_text()"] --> COMP[Compositor]
+    TT[TrueType draw_text] --> COMP[Compositor]
     SW --> COMP
     VBE --> COMP
     COMP --> FB[Framebuffer]
@@ -139,7 +139,7 @@ invalidation/self-modifying-code handling.
 ```mermaid
 flowchart TD
     UEFI[UEFI firmware] --> LIM[Limine v12.9.0]
-    LIM --> START["_start"]
+    LIM --> START[_start]
     START --> MAIN[kernel_main]
     MAIN --> FB[Framebuffer + serial]
     MAIN --> CPU[CPU + memory + heap]
