@@ -7,21 +7,20 @@ Status: Accepted
 Inter is the NOTYVOS UI font family and its bundled TTF files are stored in
 Fonts/ under the SIL Open Font License 1.1.
 
-The files are actively used by the delivered Phase 11 font renderer.
+The Phase 11 TrueType subsystem now actively uses the bundled Inter family.
 
 ## Current implementation
 
-The desktop and terminal use the delivered TrueType renderer; the embedded bitmap font remains available as legacy fallback code. Inter TTF parsing, rasterization and glyph caching
-are not currently implemented.
+The delivered renderer parses the required TrueType tables, extracts simple
+glyph outlines, flattens quadratic Bézier curves, produces anti-aliased
+coverage through 4× vertical supersampling, caches glyphs and integrates
+font::draw_text() with the compositor.
 
-## Future integration
+The default runtime face is Inter Regular.
 
-A future graphics/font phase will:
-- load Inter through the VFS or packaged resources
-- parse required TrueType tables
-- rasterize glyphs
-- cache glyphs
-- connect the renderer to the Graphics API and compositor
+## Deferred polish
 
-This ADR governs the bundled font choice without marking the renderer as
-complete.
+Multiple runtime weights, kerning, complex-script shaping and subpixel
+horizontal rendering remain deferred.
+
+This ADR governs the bundled font choice and the completed Phase 11 renderer.
