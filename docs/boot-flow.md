@@ -61,7 +61,7 @@ contains:
 - GameRunner format detection and PS3 guest launch through Phase 7C
 - Rendering validation through Phase 8B
 - BMP, PNG, GIF, ICO and JPEG image support from Phases 9A–9C
-- Dark, Light and macOS Dark theme state plus Settings Appearance controls from Phases 10A–10B
+- Dark, Light and macOS Dark theme state plus Settings Appearance controls from Phases 10A–10F
 
 These additions are runtime domains layered above the existing kernel, VFS and
 graphics infrastructure.
