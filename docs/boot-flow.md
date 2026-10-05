@@ -41,27 +41,25 @@ pre-converted raw wallpaper is present.
 
 ## Boot boundary
 
-Phases 1 through 5, including all their subphases, are delivered. Phase 3F native GPU backend and the complete Phase 5 translation work are part of the current implementation boundary. Phases 6A–10B are also delivered through all defined subphases.
+Phases **0–10F are frozen as delivered**. Phase 11 TrueType rendering is now
+delivered as part of the desktop text path. The active roadmap begins with
+Phase 12A, Explorer grid view and details toggle.
+
+The current boot path still uses Limine. Native firmware replacement is a
+separate long-term Phase 21 project and is not yet implemented.
+
+## Current runtime additions
+
+After the kernel/userland foundation, the repository contains the delivered
+RSX path through 6F, GameRunner through 7C, rendering validation through 8B,
+image support through 9C, desktop polish through 10F and the TrueType font
+subsystem through 11E.
+
+Phase 12 is the next user-visible work. It covers Explorer 10G and real file
+operations. Phase 14 later covers the 7D GameRunner session lifecycle.
 
 ## Firmware separation
 
 The native PC boot path does not depend on Sony PS3 firmware. PS3 firmware,
-when required by later runtime stages, belongs exclusively to the PS3 runtime
-domain.
-
-
-## Current runtime additions
-
-After the original kernel/userland foundation, the current repository also
-contains:
-
-- Native GPU backend from Phase 3F
-- Complete native translation path through Phase 5D
-- RSX structural, rasterization, UV, perspective and mipmap support through Phase 6F
-- GameRunner format detection and PS3 guest launch through Phase 7C
-- Rendering validation through Phase 8B
-- BMP, PNG, GIF, ICO and JPEG image support from Phases 9A–9C
-- Dark, Light and macOS Dark theme state, Settings Appearance controls and delivered desktop UI management from Phases 10A–10F
-
-These additions are runtime domains layered above the existing kernel, VFS and
-graphics infrastructure.
+when required by runtime stages, belongs exclusively to the PS3 runtime domain.
+NotYVFirm is a future native firmware project tracked as Phase 21.
