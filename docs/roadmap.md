@@ -1,169 +1,248 @@
 # NOTYVOS Roadmap
 
-This roadmap describes the current implementation state of the repository.
-A phase is marked complete only when its planned implementation is present
-in the source tree. Runtime verification items are called out separately.
+This is the canonical NOTYVOS roadmap. It supersedes the previous phase numbering.
+Phases 0–10 are frozen as delivered. Windows .exe compatibility and Brave/VLC
+validation are explicitly excluded from the current queue.
 
-## Phase 1 — Kernel Core
+## Current state
 
-| Subphase | Status | Focus |
+| Subsystem | Status | Approx. | Reality |
+|---|---|---:|---|
+| Kernel boot / GDT / IDT / TSS / SMP / syscalls | Delivered | ~92% | Missing production networking, firewall and USB |
+| Memory (PMM, VMM, heap, exec arena) | Delivered | ~95% | Solid |
+| Scheduler / tasks / fork / signals | Delivered | ~85% | Missing priorities, CPU affinity and real IPC |
+| VFS / NYFS / initramfs | Delivered | ~55% | NYFS is development-grade; no journaling or recovery |
+| Graphics (compositor, HAL, VBE, GPU API) | Delivered | ~85% | Solid for software rendering |
+| RSX compatibility | Delivered | ~65% | FIFO, methods, raster, texture, UV, mip and depth; shaders/full method coverage remain |
+| PPU / SPU / DMA / JIT | Delivered | ~70% | Working interpreter and baseline JIT; broader opcode coverage remains |
+| PS3 ABI / cellFs / GameRunner | Delivered | ~55% | Load, run and file I/O; 7D runtime integration remains |
+| Desktop UI | Delivered | ~70% | 10G Explorer, real file operations, clipboard, drag/drop and dialogs remain |
+| Image decoders | Delivered | ~90% | BMP/PNG/GIF/ICO/JPEG are solid |
+| SVG decoder + icons | Delivered | ~85% | Diagnostics added; VFS packaging confirmation remains |
+| TrueType font renderer | Delivered | ~75% | Inter rasterization and AA text delivered; shaping and kerning remain |
+| Hardware support | Partial | ~30% | ACPI, AHCI, e1000, HDA, PS/2; USB/Wi-Fi/Bluetooth remain |
+| Native firmware (NotYVFirm) | Not started | 0% | Long-term firmware domain |
+| Windows .exe compatibility | Excluded | 0% | Not on the current roadmap |
+| Brave / VLC validation | Excluded | 0% | Not on the current roadmap |
+
+## Frozen delivered boundary: Phases 0–10
+
+All previously defined Phase 0–10 work is frozen as delivered, including desktop
+polish through 10F, RSX work through 6F, rendering validation, image support,
+themes, Appearance settings, snap layouts, taskbar groups, SVG icons and
+Explorer navigation history.
+
+Intentional Phase 2 gaps **2H** and **2J** remain absent.
+
+## Phase 11 — TrueType Font Subsystem — DONE
+
+Goal: scalable anti-aliased TrueType rendering using the Inter family.
+
+| Subphase | Status | Scope |
 |---|---|---|
-| 1A | **Done** | CPU initialization, GDT, TSS, serial and framebuffer |
-| 1B | **Done** | IDT, ISR stubs, exceptions, PIC and PIT |
-| 1C | **Done** | Physical memory manager and frame allocation |
-| 1D | **Done** | Virtual memory, paging and HHDM |
-| 1E | **Done** | Kernel heap |
-| 1F | **Done** | Logging, panic and assertions |
-| 1G | **Done** | Per-CPU state, LAPIC and SMP bring-up |
+| 11A | Done | TTF parser + outline extraction |
+| 11B | Done | Coverage rasterizer |
+| 11C | Done | Per-face glyph cache |
+| 11D | Done | Compositor integration |
+| 11E | Done | Boot self-test |
 
-## Phase 2 — Processes, Syscalls, VFS and Userland
+Delivered: head, hhea, hmtx, maxp, cmap 4/12, loca and glyf parsing; simple
+glyph outlines; quadratic Bézier flattening; 4× vertical supersampling; 512-entry
+age-based per-face cache; `font::draw_text()` integration; default Inter Regular
+loading.
 
-| Subphase | Status | Focus |
+Deferred polish: multiple weights, kerning, complex-script shaping and subpixel
+horizontal rendering.
+
+## Phase 12 — Explorer 10G + Real File Operations — NEXT
+
+**Dependency:** Phase 11.
+
+| Subphase | Status | Scope | Exit criteria |
+|---|---|---|---|
+| 12A | **Next** | Grid view + details toggle | Toolbar switches modes and remembers the session |
+| 12B | Queued | XP-style breadcrumb | Clickable path segments navigate to ancestors |
+| 12C | Queued | Real file operations | Open/New/Rename/Delete/Properties persist through VFS/NYFS |
+
+12C will use/expose: `fs::vfs_create_file`, `fs::vfs_mkdir`,
+`fs::vfs_rename`, `fs::vfs_unlink`, and `fs::vfs_write`.
+
+Deferred from Phase 12: drag/drop, multi-select and Explorer search.
+
+## Phase 13 — Desktop Clipboard + Dialogs — QUEUED
+
+**Dependency:** Phase 12.
+
+| Subphase | Scope |
+|---|---|
+| 13A | Global clipboard, text/file lists, Ctrl+C/X/V routing |
+| 13B | Blocking input and confirmation dialogs |
+| 13C | Read-only Properties dialog with real metadata |
+
+Deferred: rich-text clipboard, image clipboard and multi-item paste ordering.
+
+## Phase 14 — 7D GameRunner Runtime Integration — QUEUED
+
+**Dependency:** Phase 12.
+
+| Subphase | Scope |
+|---|---|
+| 14A | Session lifecycle: start/step/pause/resume/stop and dedicated task |
+| 14B | Persistent per-game configuration |
+| 14C | cellSaveData bridge to NYFS |
+
+Universal save states remain deferred.
+
+## Phase 15 — USB Stack + USB HID — QUEUED
+
+| Subphase | Scope |
+|---|---|
+| 15A | PCI enumeration + xHCI controller |
+| 15B | USB device enumeration |
+| 15C | USB HID keyboard/mouse |
+| 15D | USB mass storage |
+
+Deferred: hubs, USB 3.x SuperSpeed and isochronous transfers.
+
+## Phase 16 — Production Network Stack — QUEUED
+
+**Dependency:** Phase 15 optional.
+
+| Subphase | Scope |
+|---|---|
+| 16A | Ethernet, ARP and IPv4 |
+| 16B | ICMP and UDP |
+| 16C | TCP |
+| 16D | DHCP and DNS |
+| 16E | User-space socket API |
+
+Deferred: IPv6, IPsec, multicast and raw sockets.
+
+## Phase 17 — Wi-Fi Driver + Management UI — QUEUED
+
+**Dependency:** Phase 16.
+
+| Subphase | Scope |
+|---|---|
+| 17A | 802.11 driver and firmware loading |
+| 17B | WPA2 supplicant |
+| 17C | Network Manager UI in Settings |
+| 17D | Roaming and power management |
+
+Deferred: WPA3, 802.1X enterprise and monitor mode.
+
+## Phase 18 — Bluetooth Framework — QUEUED
+
+**Dependency:** Phase 15 optional.
+
+| Subphase | Scope |
+|---|---|
+| 18A | HCI + USB transport |
+| 18B | L2CAP + RFCOMM |
+| 18C | Bluetooth HID |
+| 18D | Pairing UI |
+
+Deferred: BLE and audio profiles.
+
+## Phase 19 — NYFS Maturity — QUEUED
+
+| Subphase | Scope |
+|---|---|
+| 19A | Write-ahead journaling |
+| 19B | Crash recovery |
+| 19C | Dynamic directory/inode scaling |
+| 19D | CRC32 block integrity and scrub |
+
+Deferred: snapshots, deduplication, compression and ACLs.
+
+## Phase 20 — Firewall + Network Security — QUEUED
+
+**Dependency:** Phase 16.
+
+| Subphase | Scope |
+|---|---|
+| 20A | Stateful IP/TCP packet filter |
+| 20B | Per-application rules |
+| 20C | Firewall UI in Settings |
+
+Deferred: intrusion detection, deep packet inspection and VPN support.
+
+## Phase 21 — NotYVFirm — QUEUED
+
+Long-term native firmware domain replacing the Limine/UEFI boot dependency.
+
+| Subphase | Scope |
+|---|---|
+| 21A | Firmware architecture specification |
+| 21B | NotYVFirm UEFI boot path |
+| 21C | Optional BIOS/legacy path |
+| 21D | Firmware configuration UI |
+| 21E | Signed updates and rollback |
+
+Deferred indefinitely: Secure Boot integration and TPM measurements.
+
+## Honest gap list
+
+### Core OS
+1. Production IPv4/IPv6, TCP, UDP, DHCP, DNS and sockets
+2. USB host controller, USB HID and USB storage
+3. Wi-Fi driver and management
+4. Bluetooth framework
+5. Firewall and network security
+6. NYFS journaling, crash recovery and scaling
+7. NotYVFirm
+
+### Desktop / UI
+8. Explorer 10G grid/details/breadcrumb
+9. Real Explorer file operations
+10. File-operation dialogs
+11. Clipboard subsystem
+12. Drag-and-drop file management
+13. Multiple Inter font weight selection
+14. Complex-script shaping and kerning
+15. Application lifecycle management
+
+### PS3 / compatibility
+16. 7D GameRunner runtime/session integration
+17. Full PS3 system-call coverage
+18. Complete PPU opcode coverage
+19. Complete SPU ecosystem coverage
+20. Complete RSX method and shader-model coverage
+
+## Explicit exclusions
+
+- Windows PE loading, Win32/Win64 API surface, registry, COM and SEH
+- Brave browser validation
+- VLC media-player validation
+
+These are not current roadmap phases.
+
+## Delivery contract
+
+Each phase delivery documents architecture, component purpose, dependencies,
+file structure, data flow, implementation, build changes, tests, expected result,
+limitations, next milestone and roadmap status.
+
+Every subsystem gets a boot self-test. Warnings are errors, casts use
+`static_cast`, magic numbers are avoided and dead code is not retained.
+
+## Roadmap status
+
+| Phase | Name | Status |
 |---|---|---|
-| 2A — Ring 3 transition | **Done** | GDT/TSS, user entry, syscall/sysret |
-| 2B — Scheduler + threads | **Done** | Tasks, context switch, preemption |
-| 2C — Processes + ELF loader | **Done** | ELF64 PT_LOAD, per-process PML4 |
-| 2C-followup — fork / wait | **Done** | User-memory clone, process hierarchy, reaping |
-| 2D — Syscall ABI + uaccess | **Done** | Syscall dispatch, copy_from_user, copy_to_user |
-| 2D-followup — readdir / mmap | **Done** | Directory enumeration, anonymous mappings |
-| 2E — VFS | **Done** | VNode, File, FileTable, cwd/path lookup |
-| 2F — Initramfs | **Done** | ustar parser mounted at / |
-| 2G — libc + shell | **Done** | libnoty, shell, PS/2 keyboard input |
-| 2I — exec / brk | **Done** | Program replacement, heap extension |
-| 2K — Persistent FS (NYFS) | **DONE** | Superblock, file table, create, read/write, unlink |
-| 2L — Time / sleep / kill | **Done** | Uptime, blocking sleep, SIGTERM path |
-| 2M — stdio + malloc | **Done** | fopen, fread, fwrite, malloc |
-| 2N — Signals + Ctrl+C | **Done** | SIGINT delivery and task termination |
+| 0–10F | Foundation through desktop polish | **Done** |
+| 11 | TrueType Font Subsystem | **Done** |
+| 12 | Explorer 10G + Real File Operations | **Next** |
+| 13 | Desktop Clipboard + Dialogs | Queued |
+| 14 | 7D GameRunner Runtime Integration | Queued |
+| 15 | USB Stack + USB HID | Queued |
+| 16 | Production Network Stack | Queued |
+| 17 | Wi-Fi Driver + Management UI | Queued |
+| 18 | Bluetooth Framework | Queued |
+| 19 | NYFS Maturity | Queued |
+| 20 | Firewall + Network Security | Queued |
+| 21 | NotYVFirm | Queued |
+| — | Windows .exe compatibility | **Excluded** |
+| — | Brave / VLC validation | **Excluded** |
 
-Phase numbers 2H and 2J are intentionally absent from the current roadmap.
-
-## Phase 3 — Desktop, Drivers and Graphics
-
-| Subphase | Status | Focus |
-|---|---|---|
-| 3A — Compositor + mouse | Done | Desktop, taskbar, cursor, back buffer |
-| 3B — Window manager | Done | Focus, dragging, window controls and shortcuts |
-| 3C — Shell + power menu | Done | Start menu, launcher and power actions |
-| 3D — Native drivers + widgets | Done | ACPI, e1000, HDA, AHCI, PS/2 input and widgets |
-| **3E — Graphics API + HAL** | **DONE** | Graphics API, HAL, software/VBE backends, RSDP cast fix |
-| **3F — Native GPU backend** | **DONE** | VBE accelerated backend, then PCI GPU integration |
-
-Phase 3 provides the desktop graphics API, HAL, backend registration and native
-GPU backend integration. The PS3 RSX compatibility path remains separately
-implemented in software.
-
-## Phase 4 — PS3 Runtime Foundation
-
-| Subphase | Status | Focus |
-|---|---|---|
-| 4A — PS3 loader + PPC decoder | Done | PS3 ELF parsing and PowerPC instruction decoding |
-| 4B — PPU interpreter | Done | PPU register state, instruction execution and memory callbacks |
-| 4C — SPU interpreter | Done | SPU local store, registers, mailboxes and execution |
-| 4D — DMA engine + sync | Done | Tagged main-memory/local-store transfers and barriers |
-| 4E — Executable arena + emitter + translation-cache infra | Done | Executable pages, x86-64 emitter and translation cache |
-
-## Phase 5 — Native Translation
-
-| Subphase | Status | Focus |
-|---|---|---|
-| **5A — Baseline JIT + trampoline + self-test** | **Done** | Baseline PPU block translation, x86-64 emitter, executable entry, translation cache and self-tests |
-| **5B — Memory opcodes + conditional branch + block chaining** | **Done** | Broader memory operations, conditional control flow and chained translated blocks |
-| **5C — FPU + VMX translation** | **Done** | PPU floating-point and VMX/vector translation |
-| **5D — Cache invalidation + self-modifying-code detection** | **Done** | Translation invalidation and self-modifying code handling |
-
-## Phase 6 — RSX Compatibility
-
-| Subphase | Status | Focus |
-|---|---|---|
-| **6A — RSX structural** | **Done** | RSX registers, FIFO, command processing and surface state |
-| **6B — RSX rasterizer** | **Done** | Software RSX primitive rasterization and presentation path |
-| **6C — RSX vertex buffers + depth + scissor** | **Done** | Guest vertex/index buffers, depth buffer and scissor state |
-| **6D — RSX smooth shading + texture bind** | **Done** | Smooth shading and texture binding support |
-| **6E — Per-vertex UVs + wrap + perspective** | **Done** | UV attributes, texture wrapping and perspective-correct interpolation |
-| **6F — Mipmaps + LOD** | **Done** | Mipmap levels, LOD bias and mip-aware texture sampling |
-
-## Phase 7 — GameRunner + Compatibility Layer
-
-| Subphase | Status | Focus |
-|---|---|---|
-| 7A — GameRunner format detection | Done | PS3/native ELF and raw container format detection |
-| 7B — PS3 ABI syscall table + PPU guest launch | Done | Guest syscall dispatch and bounded PPU guest launch |
-| **7C — cellFs VFS bridge** | **Done** | Bridge PS3 filesystem operations into the native VFS |
-| 7D — GameRunner runtime integration | Not started | Full game-session lifecycle and broader compatibility services |
-
-## Phase 8 — Rendering Validation
-
-| Subphase | Status | Focus |
-|---|---|---|
-| 8A — Rendering validation | Done | RSX rendering validation |
-| 8B — End-to-end rendering validation | Done | Runtime-to-framebuffer rendering validation |
-
-## Phase 9 — Image Support
-
-| Subphase | Status | Focus |
-|---|---|---|
-| **9A — BMP decoder + Image Viewer app** | **Done** | BMP decoding and native Image Viewer application |
-| **9B — PNG + inflate** | **Done** | PNG decoding with the native inflate path |
-| **9C — GIF + ICO + JPEG** | **Done** | GIF LZW decoding, ICO container/DIB/PNG support and JPEG decoding |
-
-## Phase 10 — Theme and UI Management
-
-| Subphase | Status | Focus |
-|---|---|---|
-| **10A — Theme system + shortcuts** | **Done** | Dark, Light and macOS Dark themes plus desktop shortcut integration |
-| **10B — Settings → Appearance tab** | **Done** | Appearance controls and theme selection through Settings |
-| **10C — Alt-Tab + snap-to-edge** | **Done** | Window switching, edge snapping and related compositor interaction |
-| **10D — Desktop integration** | **Done** | Terminal overhaul, SVG icons, disk panel, Explorer context actions, restart-safe input and serial capture |
-| **10E — Minimize/restore + Alt+F4 + taskbar hover + toasts** | **Done** | Window animations, keyboard close, taskbar feedback and notifications |
-| **10F — Snap layout preview + taskbar groups** | **Done** | Snap-layout preview, grouped taskbar buttons and group interactions |
-| **10 — Complete through 10F** | **Done** | Theme, Appearance and delivered desktop interaction stack |
-| **10G — Folder grid + details + XP-style breadcrumb** | **Next** | Explorer view modes and breadcrumb navigation UI |
-
-### Delivered desktop integration work
-
-| Area | Status | Focus |
-|---|---|---|
-| Icon loader diagnostics + CMake CONFIGURE_DEPENDS glob fix | **Delivered** | Reliable icon discovery, diagnostics and automatic source/asset reconfiguration |
-| BMP self-test fix + JPEG test vector disabled | **Delivered** | Correct BMP validation and removal of the unstable JPEG self-test vector |
-| Explorer navigation history | **Delivered** | Back, Forward, Up and Refresh navigation state |
-| SVG decoder + icons + disk panel + Explorer right-click + Game Launcher | **Delivered** | Native SVG rasterization, icon rendering and desktop applications |
-| Terminal overhaul | **Delivered** | Persistent scrollback, history state and boot-log replay |
-| Input survives restart + serial capture | **Delivered** | Restart-safe input initialization and host serial capture path |
-
-## Phase 11 — Windows Compatibility
-
-| Phase | Status | Focus |
-|---|---|---|
-| 11 — Windows .exe compatibility | Not started | Windows executable loading and compatibility runtime |
-
-## Phase 12 — Advanced Compatibility
-
-| Phase | Status | Focus |
-|---|---|---|
-| 12 — Advanced compatibility (Brave, VLC) | Not started | Broader Windows application compatibility and application integration |
-
-## Current implementation boundary
-
-The completed implementation boundary reaches through:
-
-**1A–1G → 2A–2N → 3A–3F → 4A–4E → 5A–5D → 6A–6F → 7A–7C → 8A–8B → 9A–9C → 10A–10F**
-
-The immediate next items are:
-
-**10G, 7D and 11**
-
-Phase 12 remains not started.
-
-A phase marked **Done** is part of the current delivered implementation
-boundary. A phase marked **Next** is planned but not yet part of that
-boundary.
-
-
-
-The PS3 runtime has loader, decoder, interpreters, DMA, executable-memory, JIT,
-RSX and GameRunner foundations. Full game-session compatibility remains beyond
-the delivered Phase 7C boundary.
-
-The native desktop graphics stack includes the implemented graphics API, HAL and
-GPU abstraction. The PS3 RSX path remains a software compatibility renderer,
-while the documented roadmap through Phase 10 is complete.
+**Next delivery: Phase 12A — Explorer grid view + details toggle.**
