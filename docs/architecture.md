@@ -176,10 +176,14 @@ theme into the desktop UI styling layer.
 
 ## Current roadmap boundary
 
-Implemented:
+Implemented and frozen:
 
-**1A–1G → 2A–2N → 3A–3F → 4A–4E → 5A–5D → 6A–6F → 7A–7C → 8A–8B → 9A–9C → 10A–10F**
+**Phases 0–10F**
 
+Phase 11 TrueType rendering is delivered. The active next milestone is Phase
+12A, Explorer grid view and details toggle. Phase 12 continues with breadcrumb
+navigation and real file operations, followed by the queued desktop, GameRunner,
+USB, networking, Wi-Fi, Bluetooth, NYFS, firewall and firmware phases.
 
-Not started later work includes the remaining GameRunner integration, full UI
-management, Windows executable compatibility and advanced compatibility.
+Windows PE/Win32 compatibility and Brave/VLC validation are explicitly excluded
+from the current roadmap.
