@@ -542,53 +542,31 @@ flowchart LR
 
 ## Phase 6 — RSX Graphics Compatibility
 
-```mermaid
-flowchart LR
-    RSXCMD[PS3 RSX command stream] --> PARSE[RSX command/state parsing]
-    PARSE --> STATE[Graphics state]
-    STATE --> GAPI[NOTYVOS Graphics API]
-    GAPI --> HAL[Graphics HAL]
-    HAL --> GPU[Future native GPU backend]
-    GPU --> FRAME[Rendered frame]
-```
-
-**Status: Not started.**
+The completed RSX path is documented in the source-level flows below. It covers
+6A–6F, including command processing, rasterization, buffers, depth/scissor,
+smooth shading, texture binding, UVs, wrapping, perspective correction and
+mipmap/LOD sampling.
 
 ## Phase 7 — GameRunner + Compatibility Layer
 
-```mermaid
-flowchart LR
-    GAME[PS3 executable / game] --> GR[GameRunner]
-    GR --> ELF[PS3 loader]
-    ELF --> PPU[PPU runtime]
-    ELF --> SPU[SPU runtime]
-    PPU --> RSX[RSX compatibility]
-    SPU --> RSX
-    GR --> SERVICES[Compatibility services]
-    SERVICES --> VFS[VFS]
-    SERVICES --> INPUT[Input]
-    SERVICES --> AUDIO[Audio]
-    RSX --> FRAME[Frame output]
-```
-
-**Status: Not started.**
+The completed GameRunner path is documented below through 7C. Phase 7D remains
+the next runtime integration stage.
 
 ## Phase 8 — Rendering Validation
 
-```mermaid
-flowchart LR
-    TEST[Graphics test workload] --> DRAW[Graphics API]
-    DRAW --> HAL[Graphics HAL]
-    HAL --> BACKEND[Selected backend]
-    BACKEND --> FRAME[Frame]
-    FRAME --> CHECK[Pixel / behavior validation]
-    CHECK --> PERF[Performance measurements]
-    CHECK --> REG[Regression results]
-```
+The completed 8A/8B validation path is documented below and exercises the RSX
+rendering pipeline through framebuffer output.
 
-**Status: Not started.**
+## Phase 9 — Image Support
 
-## Phase 9 — Windows .exe Compatibility
+The completed image pipeline is documented below through 9A–9C:
+BMP, PNG/inflate, GIF/LZW, ICO and JPEG decoding.
+
+## Phase 10 — Theme and UI Management
+
+The completed theme and Settings path is documented below through 10A–10B.
+
+## Phase 11 — Windows .exe Compatibility
 
 ```mermaid
 flowchart LR
@@ -603,7 +581,7 @@ flowchart LR
 
 **Status: Not started.**
 
-## Phase 10 — Advanced Compatibility
+## Phase 12 — Advanced Compatibility
 
 ```mermaid
 flowchart LR
@@ -622,7 +600,6 @@ flowchart LR
 ```
 
 **Status: Not started.**
-
 ## End-to-end implemented data path
 
 The following combines the currently implemented native OS path with the
@@ -1841,8 +1818,7 @@ rasterization
             g_pixels[]
 ```
 
-6D is delivered. The next RSX stage expands this path with explicit
-per-vertex UV attributes, wrap modes and perspective-correct interpolation.
+6D is delivered. The following RSX stages add explicit UV attributes, wrapping, perspective-correct interpolation and mip-aware sampling.
 
 ## 6E — Per-vertex UVs + wrap + perspective
 

@@ -112,7 +112,7 @@ implemented in software.
 |---|---|---|
 | **10A — Theme system + shortcuts** | **Done** | Dark, Light and macOS Dark themes plus desktop shortcut integration |
 | **10B — Settings → Appearance tab** | **Done** | Appearance controls and theme selection through Settings |
-| 10 (rest) — Full UI management | Not started | Broader desktop appearance and UI management |
+| 10 — Complete | **Done** | Phase 10A–10B complete |
 
 ## Phase 11 — Windows Compatibility
 
@@ -134,11 +134,7 @@ The implemented roadmap now reaches through:
 
 The immediate next items are:
 
-**None within Phases 1–10**
-
-The later compatibility work remains:
-
-**7D, 10 (rest), 11 and 12**
+**7D, 11 and 12**
 
 A phase marked **Done** is part of the current delivered implementation
 boundary. A phase marked **Next** is planned but not yet part of that

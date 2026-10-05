@@ -32,7 +32,8 @@
 ## Graphics
 
 Graphics code should use the device-independent Graphics API or HAL instead
-of directly depending on a future hardware backend. The compositor owns the
+of directly depending on a backend implementation. Backend-specific code
+belongs in the appropriate graphics or GPU subsystem. The compositor owns the
 desktop scene and coordinates input, windows and presentation.
 
 ## PS3 runtime

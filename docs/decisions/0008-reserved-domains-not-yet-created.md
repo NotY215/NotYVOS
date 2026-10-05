@@ -14,19 +14,19 @@ planned.
 
 ## Current mapping
 
-| Implemented or planned area | Current location / phase |
-|---|---|
 | Native kernel and drivers | kernel/ / Phases 1–3 |
-| Graphics API, HAL, compositor and widgets | kernel/gfx/ / Phases 3A–3E |
+| Graphics API, HAL, compositor, GPU abstraction and widgets | kernel/gfx/ and kernel/gpu/ / Phases 3A–3F |
 | PS3 loader, PPU, SPU, DMA and JIT | kernel/ps3/ / Phases 4A–5D |
+| RSX compatibility | kernel/ps3/rsx/ / Phases 6A–6F |
+| GameRunner and PS3 compatibility services | kernel/src/ps3/gamerunner.cpp and related PS3 runtime code / Phases 7A–7C |
+| Rendering validation | kernel/src/ps3/rsx/self_test.cpp and related validation code / Phases 8A–8B |
+| Image decoders and Image Viewer | kernel/src/img/ and kernel/src/gfx/apps.cpp / Phases 9A–9C |
+| Themes and Appearance settings | kernel/src/gfx/theme.cpp and related graphics/app code / Phases 10A–10B |
 | User programs and libc | user/ / Phase 2+ |
 | Host tools | tools/ |
-| PS3 firmware domain | Firmware/ / later runtime stages |
+| PS3 firmware domain | Firmware/ / runtime support |
 | Native PC firmware | NotYVFirm, planned |
-| RSX compatibility | Phase 6, planned |
-| GameRunner and compatibility layer | Phase 7, planned |
-| Rendering validation | Phase 8, planned |
-| Windows compatibility | Phases 9–10, planned |
+| Windows compatibility | Phases 11–12, planned |
 
 The absence of a planned top-level directory does not mean the subsystem is
 forgotten; the roadmap is the source of truth for planned work.
