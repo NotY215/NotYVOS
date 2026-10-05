@@ -21,7 +21,7 @@ planned.
 | GameRunner and PS3 compatibility services | kernel/src/ps3/gamerunner.cpp and related PS3 runtime code / Phases 7A–7C |
 | Rendering validation | kernel/src/ps3/rsx/self_test.cpp and related validation code / Phases 8A–8B |
 | Image decoders and Image Viewer | kernel/src/img/ and kernel/src/gfx/apps.cpp / Phases 9A–9C |
-| Themes and Appearance settings | kernel/src/gfx/theme.cpp and related graphics/app code / Phases 10A–10B |
+| Themes, Appearance and desktop UI management | kernel/src/gfx/theme.cpp, compositor.cpp, apps.cpp and related graphics code / Phases 10A–10F |
 | User programs and libc | user/ / Phase 2+ |
 | Host tools | tools/ |
 | PS3 firmware domain | Firmware/ / runtime support |
