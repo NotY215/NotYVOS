@@ -40,6 +40,7 @@ third_party
 *.log
 .DS_Store
 Thumbs.db
+code.bat
 # ---- keep Fonts tracked (OFL-1.1 permits redistribution) ----
 # (nothing to ignore; entries below are placeholders for future third-party
 #  font sets that cannot be redistributed)
