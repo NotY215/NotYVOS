@@ -29,6 +29,9 @@ Look for messages covering:
 - GameRunner format detection and bounded guest launch
 - BMP/PNG/GIF/ICO/JPEG decoder and Image Viewer validation
 - Theme-state, shortcut and Settings Appearance validation
+- Alt-Tab, minimize/restore, Alt+F4, taskbar hover, toasts and snap-layout validation
+- Taskbar grouping and Explorer navigation history validation
+- SVG icon loading diagnostics and serial capture/restart input validation
 - scheduler start
 - user init
 
@@ -115,6 +118,6 @@ or desktop behavior, followed by the relevant runtime self-tests.
 
 The delivered boundary is now:
 
-**1A–1G → 2A–2N → 3A–3F → 4A–4E → 5A–5D → 6A–6F → 7A–7C → 8A–8B → 9A–9C → 10A–10B**
+**1A–1G → 2A–2N → 3A–3F → 4A–4E → 5A–5D → 6A–6F → 7A–7C → 8A–8B → 9A–9C → 10A–10F**
 
-All defined Phase 1–10 subphases are now implementation targets for regression validation; later work begins with 7D and remaining Phase 10 UI management.
+All defined Phase 1–10 subphases are now implementation targets for regression validation; later work begins with 7D and 10G Explorer UI.
