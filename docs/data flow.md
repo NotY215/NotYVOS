@@ -581,7 +581,7 @@ flowchart LR
 
 **Status: Not started.**
 
-## Phase 12 — Advanced Compatibility
+## Phase 12 — Explorer 10G + Real File Operations
 
 ```mermaid
 flowchart LR
@@ -644,7 +644,7 @@ Completed implementation currently covers:
 **1A–1G → 2A–2N → 3A–3F → 4A–4E → 5A–5D → 6A–6F → 7A–7C → 8A–8B → 9A–9C → 10A–10F**
 
 All defined Phase 1–10 work through 10F is delivered. The next roadmap item is
-10G, followed by 7D and Phase 11. Phase 12 remains not started.
+10G, followed by 7D and Phase 11. Phase 12 is the next active phase.
 
 The diagrams for later work are architecture/data-flow plans only and must not
 be read as implemented functionality.
