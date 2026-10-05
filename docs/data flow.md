@@ -641,10 +641,10 @@ sequenceDiagram
 
 Completed implementation currently covers:
 
-**1A–1G → 2A–2N → 3A–3F → 4A–4E → 5A–5D → 6A–6F → 7A–7C → 8A–8B → 9A–9C → 10A–10B**
+**1A–1G → 2A–2N → 3A–3F → 4A–4E → 5A–5D → 6A–6F → 7A–7C → 8A–8B → 9A–9C → 10A–10F**
 
-All defined Phase 1–10 subphases are delivered. The remaining roadmap work is
-7D, the remaining Phase 10 UI management scope, Phase 11 and Phase 12.
+All defined Phase 1–10 work through 10F is delivered. The next roadmap item is
+10G, followed by 7D and Phase 11. Phase 12 remains not started.
 
 The diagrams for later work are architecture/data-flow plans only and must not
 be read as implemented functionality.
@@ -2139,10 +2139,10 @@ live desktop/UI update
 9A–9C
    │
    ▼
-10A–10B
+10A–10F
    │
    ▼
-PHASES 1–10 COMPLETE
+PHASES 1–10 COMPLETE THROUGH 10F
 ```
 
 The data-flow diagrams describe the delivered implementation boundary through all defined Phase 1–10 subphases. Future flows are explicitly labelled Not started and are not claims of implemented functionality.
@@ -2161,7 +2161,9 @@ flowchart TD
     P7 --> N7D[7D NOT STARTED]
     P7 --> P8[Phase 8: 8A–8B DONE]
     P8 --> P9[Phase 9: 9A–9C DONE]
-    P9 --> P10[Phase 10: 10A–10B DONE]
+    P9 --> P10[Phase 10: 10A–10F DONE]
+    P10 --> N10G[10G NEXT]
+    P10 --> N7D[7D NOT STARTED]
 ```
 
 ## Native translation graph
