@@ -178,3 +178,16 @@ Native PC firmware and PS3 firmware are separate domains. User-supplied
 Sony PS3 firmware is used only by the PS3 runtime and is not redistributed
 by NOTYVOS. NOTYVOS does not contain Sony private keys or decryption
 bypasses.
+
+## Architecture maps
+
+The repository now keeps editable architecture sources under `docs/diagrams/`:
+
+- Markmap roadmap mindmap
+- D2 system architecture
+- Ilograph multi-perspective architecture
+- Excalidraw sketch source
+- Cytoscape.js interactive dependency graph
+
+These are visualization layers over the canonical roadmap and architecture docs.
+See `docs/diagrams/README.md`.
