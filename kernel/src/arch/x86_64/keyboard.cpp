@@ -213,9 +213,9 @@ void process_scancode(u8 sc)
         return;
     }
 
-    if (g_key_count < 20)
+        if (g_key_count < 3)
     {
-        log::write(log::Level::Warn, "kbd", "key #%llu sc=0x%llx -> '%c'",
+        log::write(log::Level::Debug, "kbd", "key #%llu sc=0x%llx -> '%c'",
                    static_cast<unsigned long long>(g_key_count),
                    static_cast<unsigned long long>(sc), c);
     }

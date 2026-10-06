@@ -121,9 +121,14 @@ bool mouse_init() noexcept
     write_cmd(0x60);
     write_data(cfg);
 
-    (void)mouse_write(0xF6);
-    try_enable_wheel();
-    (void)mouse_write(0xF4);
+    (void)mouse_write(0xF6); // set defaults
+    try_enable_wheel();      // magic sequence (leaves rate at 80 Hz)
+
+    // Set final sample rate to 200 Hz. The magic sequence leaves the
+    // device at 80 Hz, which feels sluggish.
+    mouse_set_sample(200);
+
+    (void)mouse_write(0xF4); // enable data reporting
 
     if (fb::Framebuffer::ready())
     {
@@ -132,8 +137,8 @@ bool mouse_init() noexcept
         input::mouse::set_position(input::Source::Synthetic, cx, cy);
     }
 
-    log::write(log::Level::Info, "mouse", "ready at (%d, %d)", static_cast<i64>(input::mouse::x()),
-               static_cast<i64>(input::mouse::y()));
+    log::write(log::Level::Info, "mouse", "ready at (%d, %d) @ 200 Hz",
+               static_cast<i64>(input::mouse::x()), static_cast<i64>(input::mouse::y()));
     return true;
 }
 
@@ -184,9 +189,9 @@ void mouse_irq_handler() noexcept
                 input::mouse::add_wheel(input::Source::Ps2, static_cast<i32>(z));
         }
 
-        if (g_packet_count < 20)
+        if (g_packet_count < 3)
         {
-            log::write(log::Level::Warn, "mouse", "packet #%llu flags=0x%llx dx=%d dy=%d wheel=%d",
+            log::write(log::Level::Debug, "mouse", "packet #%llu flags=0x%llx dx=%d dy=%d wheel=%d",
                        static_cast<unsigned long long>(g_packet_count),
                        static_cast<unsigned long long>(flags), static_cast<i64>(dx),
                        static_cast<i64>(dy), static_cast<i64>(input::mouse::wheel()));

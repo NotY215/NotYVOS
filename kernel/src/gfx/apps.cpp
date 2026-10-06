@@ -1,21 +1,18 @@
-// Forward declaration for the compositor's modal pump. Defined in
-// compositor.cpp with C linkage. Declared at file scope so both TUs
-// agree on the symbol.
 extern "C" void notyvos_compositor_pump_for_modal();
 
 #include <kernel/acpi/acpi.hpp>
-#include <kernel/gfx/clipboard.hpp>
+#include <kernel/arch/x86_64/keyboard.hpp>
+#include <kernel/arch/x86_64/mouse.hpp>
+#include <kernel/arch/x86_64/pit.hpp>
 #include <kernel/fb/framebuffer.hpp>
 #include <kernel/fs/vfs.hpp>
 #include <kernel/gfx/apps.hpp>
+#include <kernel/gfx/clipboard.hpp>
 #include <kernel/gfx/widget.hpp>
 #include <kernel/img/decoder.hpp>
 #include <kernel/libk/string.hpp>
 #include <kernel/log.hpp>
 #include <kernel/mm/heap.hpp>
-#include <kernel/arch/x86_64/keyboard.hpp>
-#include <kernel/arch/x86_64/mouse.hpp>
-#include <kernel/arch/x86_64/pit.hpp>
 
 namespace notyvos::gfx
 {
@@ -39,9 +36,6 @@ void t(i32 x, i32 y, const char* s, u32 fg, u32 bg)
 
 constexpr u32 kCellW = 16;
 
-// ---------------------------------------------------------------------------
-// Explorer chrome palette
-// ---------------------------------------------------------------------------
 constexpr u32 kMenuBg = 0x00F0F0F0;
 constexpr u32 kMenuFg = 0x00202020;
 constexpr u32 kToolBg = 0x00E8E8E8;
@@ -61,10 +55,14 @@ constexpr u32 kHeaderEdge = 0x00C0C0C0;
 constexpr u32 kStatusBg = 0x00F0F0F0;
 constexpr u32 kStatusFg = 0x00303030;
 constexpr u32 kIconFolder = 0x00FFB060;
+constexpr u32 kSideBg = 0x00F3F3F3;
+constexpr u32 kSideHeader = 0x00808080;
+constexpr u32 kSideHover = 0x00E5F3FB;
+constexpr u32 kSideSelect = 0x00CCE8FF;
+constexpr u32 kSideEdge = 0x00C8C8C8;
+constexpr u32 kCmdBg = 0x00F0F0F0;
+constexpr u32 kCmdEdge = 0x00C8C8C8;
 
-// ---------------------------------------------------------------------------
-// Icons (procedural — the SVG pipeline lands later)
-// ---------------------------------------------------------------------------
 void icon_folder(i32 x, i32 y, i32 s)
 {
     r(x + 1, y + 4, s - 6, s - 8, kIconFolder);
@@ -106,9 +104,9 @@ void icon_large_image(i32 x, i32 y)
     r(x + 8, y + 43, 36, 1, 0x00A0A0A0);
     r(x + 8, y + 8, 1, 36, 0x00A0A0A0);
     r(x + 43, y + 8, 1, 36, 0x00A0A0A0);
-    r(x + 14, y + 16, 8, 8, 0x00FFD060);   // sun
-    r(x + 12, y + 28, 8, 10, 0x0060A040);  // hill
-    r(x + 22, y + 24, 12, 14, 0x0060A040); // hill
+    r(x + 14, y + 16, 8, 8, 0x00FFD060);
+    r(x + 12, y + 28, 8, 10, 0x0060A040);
+    r(x + 22, y + 24, 12, 14, 0x0060A040);
 }
 
 void arrow_left(i32 x, i32 y)
@@ -143,7 +141,6 @@ void chevron_right(i32 x, i32 y)
     for (i32 i = 0; i < 6; ++i)
         r(x + (5 - i) / 2, y + i, 1, 1, 0x00606060);
 }
-// View toggle: three horizontal bars (details) vs 2x2 grid (grid).
 void icon_view_details(i32 x, i32 y)
 {
     for (i32 i = 0; i < 3; ++i)
@@ -156,19 +153,43 @@ void icon_view_grid(i32 x, i32 y)
             r(x + 2 + col * 6, y + 2 + row * 6, 5, 5, 0x00404040);
 }
 
-// ---------------------------------------------------------------------------
-// Explorer state
-// ---------------------------------------------------------------------------
-
 constexpr u32 kMaxEntries = 64;
 constexpr u32 kMaxHistory = 32;
 constexpr u32 kMaxCrumbs = 8;
+constexpr i32 kSideWidth = 180;
+constexpr i32 kSideItemH = 22;
+constexpr i32 kSideHeaderH = 26;
 
 enum class ViewMode : u8
 {
     Details = 0,
     Grid = 1,
 };
+
+enum class SideIcon : u8
+{
+    None = 0,
+    Folder,
+    Drive,
+};
+
+struct SideItem
+{
+    const char* label;
+    const char* path;
+    SideIcon icon;
+};
+
+const SideItem g_side_items[] = {
+    {"Favorites", nullptr, SideIcon::None},     {"  Desktop", "/", SideIcon::Folder},
+    {"  Downloads", "/disk", SideIcon::Folder}, {"  Recent Places", "/", SideIcon::Folder},
+    {"Libraries", nullptr, SideIcon::None},     {"  Documents", "/disk", SideIcon::Folder},
+    {"  Music", "/disk", SideIcon::Folder},     {"  Pictures", "/", SideIcon::Folder},
+    {"  Videos", "/disk", SideIcon::Folder},    {"Computer", nullptr, SideIcon::None},
+    {"  notyvos-root", "/", SideIcon::Drive},   {"  Local Disk (NYFS)", "/disk", SideIcon::Drive},
+    {"Network", nullptr, SideIcon::None},
+};
+constexpr u32 kSideItemCount = sizeof(g_side_items) / sizeof(g_side_items[0]);
 
 struct ExplEntry
 {
@@ -184,32 +205,27 @@ struct ExplorerState
     u32 entry_count;
     i32 sel;
     i32 hover;
-    i32 nav_hover; // 1..5 = toolbar buttons, 0 = none
+    i32 nav_hover;
     char address[128];
     char cwd[128];
 
-    // Navigation history.
     char history[kMaxHistory][128];
     u32 history_count;
     u32 history_pos;
     i32 last_click;
     u64 last_click_tick;
 
-    // View.
     ViewMode view_mode;
 
-    // Context menu.
     bool ctx_open;
     i32 ctx_x;
     i32 ctx_y;
     i32 ctx_hover;
-    i32 ctx_target; // index of the entry right-clicked, or -1
+    i32 ctx_target;
 
-    // Last drawn window rect (so click handlers can compute relative coords).
     i32 win_x, win_y;
     u32 win_w, win_h;
 
-    // Breadcrumb segments (rebuilt on every draw).
     u32 crumb_count;
     char crumb_text[kMaxCrumbs][32];
     char crumb_path[kMaxCrumbs][128];
@@ -218,7 +234,9 @@ struct ExplorerState
     i32 crumb_y;
     i32 crumb_hover;
 
-    // Modal result plumbing.
+    i32 side_hover;
+    i32 side_sel;
+
     bool modal_result;
     char modal_input[64];
 };
@@ -232,9 +250,71 @@ void explorer_go_up();
 void draw_explorer_context_menu();
 void draw_breadcrumb(i32 x, i32 y, i32 w);
 
-// ---------------------------------------------------------------------------
-// Directory collection
-// ---------------------------------------------------------------------------
+void side_icon_draw(SideIcon ic, i32 x, i32 y)
+{
+    if (ic == SideIcon::Folder)
+    {
+        r(x, y + 3, 14, 9, kIconFolder);
+        r(x, y + 5, 14, 7, 0x00FFC080);
+    }
+    else if (ic == SideIcon::Drive)
+    {
+        r(x, y + 2, 14, 10, 0x00D8D8D8);
+        r(x, y + 2, 14, 1, 0x00808080);
+        r(x, y + 11, 14, 1, 0x00808080);
+        r(x + 3, y + 5, 8, 3, 0x00A0A0A0);
+    }
+}
+
+void draw_sidebar(i32 x, i32 y, i32 w, i32 h)
+{
+    r(x, y, w, h, kSideBg);
+    r(x + w - 1, y, 1, h, kSideEdge);
+
+    const i32 mx = arch::x86_64::mouse_x();
+    const i32 my = arch::x86_64::mouse_y();
+
+    i32 cy = y + 6;
+    g_exp.side_hover = -1;
+
+    for (u32 i = 0; i < kSideItemCount; ++i)
+    {
+        const SideItem& it = g_side_items[i];
+
+        if (it.path == nullptr)
+        {
+            t(x + 12, cy + 6, it.label, kSideHeader, kSideBg);
+            r(x + 8, cy + 22, w - 16, 1, kSideEdge);
+            cy += kSideHeaderH;
+            continue;
+        }
+
+        const bool hover = (mx >= x && mx < x + w - 4 && my >= cy && my < cy + kSideItemH);
+        const bool sel = (static_cast<i32>(i) == g_exp.side_sel);
+        if (hover)
+            g_exp.side_hover = static_cast<i32>(i);
+
+        const u32 bg = sel ? kSideSelect : hover ? kSideHover : kSideBg;
+        if (bg != kSideBg)
+            r(x + 4, cy, w - 8, kSideItemH, bg);
+
+        side_icon_draw(it.icon, x + 8, cy + 4);
+        t(x + 28, cy + 3, it.label, 0x00202020, bg);
+        cy += kSideItemH;
+    }
+}
+
+void draw_command_bar(i32 x, i32 y, i32 w)
+{
+    const i32 h = 26;
+    r(x, y, w, h, kCmdBg);
+    r(x, y + h - 1, w, 1, kCmdEdge);
+
+    t(x + 12, y + 5, "Organize", 0x00202020, kCmdBg);
+    t(x + 92, y + 5, "Share with", 0x00202020, kCmdBg);
+    t(x + 192, y + 5, "Burn", 0x00202020, kCmdBg);
+    t(x + 242, y + 5, "New folder", 0x00202020, kCmdBg);
+}
 
 void explorer_collect()
 {
@@ -246,7 +326,6 @@ void explorer_collect()
     if (!dir)
         return;
 
-    // ".." pseudo-entry outside root.
     if (libk::strcmp(g_exp.cwd, "/") != 0)
     {
         ExplEntry& e = g_exp.entries[g_exp.entry_count];
@@ -287,11 +366,6 @@ void explorer_refresh()
     g_exp.hover = -1;
 }
 
-// ---------------------------------------------------------------------------
-// Path helpers
-// ---------------------------------------------------------------------------
-
-// Join cwd and leaf into a child path. Writes into `out`.
 void join_path(char* out, usize cap, const char* base, const char* leaf) noexcept
 {
     usize i = 0;
@@ -312,16 +386,11 @@ void join_path(char* out, usize cap, const char* base, const char* leaf) noexcep
     out[i] = 0;
 }
 
-// ---------------------------------------------------------------------------
-// Navigation
-// ---------------------------------------------------------------------------
-
 void explorer_navigate_to(const char* abs_path)
 {
     if (!abs_path)
         return;
 
-    // Truncate forward history.
     if (g_exp.history_pos + 1u < g_exp.history_count)
         g_exp.history_count = g_exp.history_pos + 1u;
 
@@ -400,10 +469,6 @@ void explorer_go_up()
     explorer_navigate_to(parent);
 }
 
-// ---------------------------------------------------------------------------
-// Init
-// ---------------------------------------------------------------------------
-
 void explorer_init()
 {
     if (g_exp.initialized)
@@ -422,18 +487,12 @@ void explorer_init()
     g_exp.ctx_hover = -1;
     g_exp.ctx_target = -1;
     g_exp.crumb_hover = -1;
+    g_exp.side_hover = -1;
+    g_exp.side_sel = -1;
     libk::strcpy(g_exp.address, "/");
     explorer_refresh();
     g_exp.initialized = true;
 }
-
-// ---------------------------------------------------------------------------
-// Modal input / confirm
-//
-// These run their own mini event loop calling the compositor tick, so the
-// window stays alive while we wait. They are only invoked from the
-// Explorer click path, which already runs on the compositor thread.
-// ---------------------------------------------------------------------------
 
 void modal_pump() noexcept;
 
@@ -443,7 +502,6 @@ bool apps_prompt_text(const char* title, const char* initial, char* out, usize c
         return false;
     out[0] = 0;
 
-    // Fill with the initial value.
     if (initial)
     {
         usize i = 0;
@@ -456,14 +514,11 @@ bool apps_prompt_text(const char* title, const char* initial, char* out, usize c
     }
     usize len = libk::strlen(out);
 
-    // Simple blocking loop with 20 Hz polling.
     u64 frames = 0;
-    const u64 max_frames = 200; // ~10 s timeout
+    const u64 max_frames = 200;
 
     for (;;)
     {
-        // Draw the modal on top of whatever the compositor has.
-        // Position: centred.
         const i32 sw = static_cast<i32>(fb::Framebuffer::width());
         const i32 sh = static_cast<i32>(fb::Framebuffer::height());
         const i32 w = 400, h = 140;
@@ -487,7 +542,6 @@ bool apps_prompt_text(const char* title, const char* initial, char* out, usize c
 
         t(x + 16, y + 90, "Enter to confirm, Esc to cancel", 0x00606060, 0x00F0F0F0);
 
-        // Poll keyboard.
         i32 c = arch::x86_64::keyboard_pop();
         while (c >= 0)
         {
@@ -568,17 +622,11 @@ bool apps_prompt_confirm(const char* title, const char* message) noexcept
 
 void modal_pump() noexcept
 {
-    // Drive one compositor frame while a modal is open, so the desktop
-    // keeps repainting. The declaration lives at file scope.
     notyvos_compositor_pump_for_modal();
 
     for (u32 i = 0; i < 400000u; ++i)
         asm volatile("pause");
 }
-
-// ---------------------------------------------------------------------------
-// Toolbar and breadcrumb
-// ---------------------------------------------------------------------------
 
 void draw_toolbar(i32 gx, i32 gy, i32 gw)
 {
@@ -590,38 +638,32 @@ void draw_toolbar(i32 gx, i32 gy, i32 gw)
     const bool can_fwd = (g_exp.history_pos + 1u < g_exp.history_count);
     const bool can_up = (libk::strcmp(g_exp.cwd, "/") != 0);
 
-    // Back
     if (g_exp.nav_hover == 1 && can_back)
         r(gx + 4, gy + 4, 28, 22, kToolHi);
     arrow_left(gx + 10, gy + 8);
     if (!can_back)
         r(gx + 4, gy + 4, 28, 22, kToolDim);
-    // Forward
     if (g_exp.nav_hover == 2 && can_fwd)
         r(gx + 36, gy + 4, 28, 22, kToolHi);
     arrow_right(gx + 42, gy + 8);
     if (!can_fwd)
         r(gx + 36, gy + 4, 28, 22, kToolDim);
-    // Up
     if (g_exp.nav_hover == 3 && can_up)
         r(gx + 68, gy + 4, 28, 22, kToolHi);
     arrow_up(gx + 74, gy + 8);
     if (!can_up)
         r(gx + 68, gy + 4, 28, 22, kToolDim);
-    // Refresh
     if (g_exp.nav_hover == 4)
         r(gx + 100, gy + 4, 28, 22, kToolHi);
     arrow_refresh(gx + 106, gy + 8);
 
-    // View toggle
     if (g_exp.nav_hover == 5)
         r(gx + 132, gy + 4, 28, 22, kToolHi);
     if (g_exp.view_mode == ViewMode::Details)
-        icon_view_grid(gx + 140, gy + 8); // clicking switches to grid
+        icon_view_grid(gx + 140, gy + 8);
     else
         icon_view_details(gx + 140, gy + 8);
 
-    // Breadcrumb bar
     draw_breadcrumb(gx + 168, gy + 5, gw - 168 - 8);
 }
 
@@ -634,7 +676,6 @@ void draw_breadcrumb(i32 x, i32 y, i32 w)
     r(x, y, 1, h, kAddressEdge);
     r(x + w - 1, y, 1, h, kAddressEdge);
 
-    // Build segments from cwd. Always start with "/".
     g_exp.crumb_count = 0;
     g_exp.crumb_y = y;
     g_exp.crumb_hover = -1;
@@ -660,10 +701,8 @@ void draw_breadcrumb(i32 x, i32 y, i32 w)
         g_exp.crumb_path[idx][i] = 0;
     };
 
-    // Root
     push_crumb("root", "/");
 
-    // Walk cwd and build cumulative paths.
     const char* p = g_exp.cwd;
     while (*p == '/')
         ++p;
@@ -681,7 +720,6 @@ void draw_breadcrumb(i32 x, i32 y, i32 w)
                 seg[k] = seg_start[k];
             seg[copy] = 0;
 
-            // Build cumulative path.
             char cum[128];
             const usize prefix = static_cast<usize>(seg_start - g_exp.cwd);
             const usize prefix_copy = (prefix < 127) ? prefix : 127;
@@ -700,7 +738,6 @@ void draw_breadcrumb(i32 x, i32 y, i32 w)
             ++p;
     }
 
-    // Render segments.
     i32 cx = x + 4;
     const i32 cy = y + 2;
     for (u32 i = 0; i < g_exp.crumb_count; ++i)
@@ -712,8 +749,6 @@ void draw_breadcrumb(i32 x, i32 y, i32 w)
         g_exp.crumb_x[i] = cx;
         g_exp.crumb_w[i] = cw;
 
-        // We compute hover against the last known mouse position; the
-        // compositor has already set the mouse state at this point.
         const i32 mx = arch::x86_64::mouse_x();
         const i32 my = arch::x86_64::mouse_y();
         const bool is_hover = (mx >= cx && mx < cend && my >= y && my < y + h);
@@ -736,10 +771,6 @@ void draw_breadcrumb(i32 x, i32 y, i32 w)
     }
     (void)w;
 }
-
-// ---------------------------------------------------------------------------
-// Explorer content
-// ---------------------------------------------------------------------------
 
 void draw_explorer_status(i32 gx, i32 gy, i32 gw)
 {
@@ -772,7 +803,6 @@ void draw_explorer_status(i32 gx, i32 gy, i32 gw)
     buf[n] = 0;
     t(gx + 8, gy + 3, buf, kStatusFg, kStatusBg);
 
-    // Selected item info on the right.
     if (g_exp.sel >= 0 && static_cast<u32>(g_exp.sel) < g_exp.entry_count)
     {
         const ExplEntry& e = g_exp.entries[static_cast<u32>(g_exp.sel)];
@@ -909,7 +939,6 @@ void draw_content_grid(i32 cx, i32 cy, i32 cw, i32 ch)
             r(x + 2, y + 2, cell_w - 4, cell_h - 4, bg);
 
         const ExplEntry& e = g_exp.entries[i];
-        // Icon centered.
         const i32 icon_w = 64;
         const i32 ix = x + (cell_w - icon_w) / 2;
         const i32 iy = y + 8;
@@ -926,7 +955,6 @@ void draw_content_grid(i32 cx, i32 cy, i32 cw, i32 ch)
             icon_large_file(ix, iy);
         }
 
-        // Label centered, truncated.
         const i32 label_y = y + 60;
         u32 name_len = static_cast<u32>(libk::strlen(e.name));
         const u32 max_chars = (cell_w - 8) / kCellW;
@@ -954,11 +982,10 @@ void draw_content_grid(i32 cx, i32 cy, i32 cw, i32 ch)
     }
 }
 
-void draw_explorer(i32 gx, i32 gy, i32 gw, i32 gh, i32 /*mx*/, i32 /*my*/, bool)
+void draw_explorer(i32 gx, i32 gy, i32 gw, i32 gh, i32, i32, bool)
 {
     explorer_init();
 
-    // Record window rect for click handlers.
     g_exp.win_x = gx;
     g_exp.win_y = gy;
     g_exp.win_w = static_cast<u32>(gw);
@@ -983,12 +1010,14 @@ void draw_explorer(i32 gx, i32 gy, i32 gw, i32 gh, i32 /*mx*/, i32 /*my*/, bool)
     gy += 30;
     gh -= 30;
 
-    // Sidebar (kept for parity with the old Explorer).
-    const i32 nav_w = 0; // hidden for now
-    (void)nav_w;
+    draw_command_bar(gx, gy, gw);
+    gy += 26;
+    gh -= 26;
 
-    const i32 cx = gx;
-    const i32 cw = gw;
+    draw_sidebar(gx, gy, kSideWidth, gh - 22);
+
+    const i32 cx = gx + kSideWidth;
+    const i32 cw = gw - kSideWidth;
     r(cx, gy, cw, gh, kContentBg);
 
     if (g_exp.view_mode == ViewMode::Details)
@@ -1003,10 +1032,6 @@ void draw_explorer(i32 gx, i32 gy, i32 gw, i32 gh, i32 /*mx*/, i32 /*my*/, bool)
     draw_explorer_status(gx, gy + gh - 22, gw);
     draw_explorer_context_menu();
 }
-
-// ---------------------------------------------------------------------------
-// Context menu
-// ---------------------------------------------------------------------------
 
 enum class ExpCtxItem : u8
 {
@@ -1109,7 +1134,6 @@ void draw_explorer_context_menu()
         if (hover)
             r(x + 2, cy + 1, w - 4, 22, bg);
 
-        // Grey out actions that require a selection.
         const bool need_sel = (it == ExpCtxItem::Open || it == ExpCtxItem::Rename ||
                                it == ExpCtxItem::Delete || it == ExpCtxItem::Properties);
         const u32 fg = (need_sel && g_exp.sel < 0) ? 0x00A0A0A0 : 0x00202020;
@@ -1118,11 +1142,6 @@ void draw_explorer_context_menu()
     }
 }
 
-// ---------------------------------------------------------------------------
-// Context menu actions
-// ---------------------------------------------------------------------------
-
-// Open the currently selected entry.
 void exp_action_open()
 {
     if (g_exp.sel < 0 || static_cast<u32>(g_exp.sel) >= g_exp.entry_count)
@@ -1144,7 +1163,6 @@ void exp_action_open()
         return;
     }
 
-    // File: launch via image viewer or log.
     char child[128];
     join_path(child, sizeof(child), g_exp.cwd, e.name);
     const u32 nlen = static_cast<u32>(libk::strlen(e.name));
@@ -1161,10 +1179,8 @@ void exp_action_open()
     log::write(log::Level::Info, "expl", "open: %s (no handler)", child);
 }
 
-// New file / New folder.
 void exp_action_new()
 {
-    // NYFS is flat — only files are supported.
     const bool is_disk = (libk::strcmp(g_exp.cwd, "/disk") == 0);
     if (!is_disk)
     {
@@ -1332,10 +1348,6 @@ void exp_ctx_invoke(ExpCtxItem it)
     }
 }
 
-// ---------------------------------------------------------------------------
-// Other apps (unchanged from previous delivery)
-// ---------------------------------------------------------------------------
-
 enum class SettingsTab : u8
 {
     System,
@@ -1485,44 +1497,13 @@ void draw_settings(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my, bool)
     {
     case SettingsTab::System:
         label_row("Operating System", "NOTYVOS 0.1.0");
-        label_row("Build", "phase 12");
         label_row("Kernel", "x86-64, C++20");
         label_row("Heap", "64 MiB");
         break;
     case SettingsTab::Display:
-    {
-        char res[24];
-        int n = 0;
-        char digs[8];
-        u32 w = fb::Framebuffer::width();
-        u32 h = fb::Framebuffer::height();
-        int m = 0;
-        if (w == 0u)
-            digs[m++] = '0';
-        while (w)
-        {
-            digs[m++] = static_cast<char>('0' + (w % 10u));
-            w /= 10u;
-        }
-        while (m)
-            res[n++] = digs[--m];
-        res[n++] = 'x';
-        m = 0;
-        if (h == 0u)
-            digs[m++] = '0';
-        while (h)
-        {
-            digs[m++] = static_cast<char>('0' + (h % 10u));
-            h /= 10u;
-        }
-        while (m)
-            res[n++] = digs[--m];
-        res[n] = 0;
-        label_row("Resolution", res);
+        label_row("Resolution", "800 x 600");
         label_row("Colour depth", "32-bit ARGB");
-        label_row("Boot target", "set in limine.conf");
         break;
-    }
     case SettingsTab::Storage:
         label_row("Device", "sda (AHCI)");
         label_row("Filesystem", "NYFS");
@@ -1530,7 +1511,7 @@ void draw_settings(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my, bool)
         break;
     case SettingsTab::Input:
         label_row("Keyboard", "PS/2 i8042, IRQ1");
-        label_row("Mouse", "PS/2, IRQ12, wheel");
+        label_row("Mouse", "PS/2, IRQ12, wheel, 200 Hz");
         break;
     case SettingsTab::Network:
         label_row("e1000 driver", "not detected");
@@ -1604,8 +1585,6 @@ void draw_imageviewer(i32 gx, i32 gy, i32 gw, i32 gh, i32, i32, bool)
         t(gx + 20, gy + bar_h + 20, "(no image)", 0x00808080, 0x00202028);
     }
 }
-
-// ---- Game launcher (kept simple) ----------------------------------------
 
 struct GameEntry
 {
@@ -1803,7 +1782,30 @@ bool apps_click_explorer(i32 mx, i32 my, bool pressed_edge) noexcept
     const i32 rx = mx - g_exp.win_x;
     const i32 ry = my - g_exp.win_y;
 
-    // ---- Toolbar buttons ----
+    const i32 side_top = 22 + 30 + 26;
+
+    if (rx >= 0 && rx < kSideWidth && ry >= side_top)
+    {
+        i32 cy = g_exp.win_y + side_top + 6;
+        for (u32 i = 0; i < kSideItemCount; ++i)
+        {
+            const SideItem& it = g_side_items[i];
+            if (it.path == nullptr)
+            {
+                cy += kSideHeaderH;
+                continue;
+            }
+            if (my >= cy && my < cy + kSideItemH)
+            {
+                g_exp.side_sel = static_cast<i32>(i);
+                explorer_navigate_to(it.path);
+                return true;
+            }
+            cy += kSideItemH;
+        }
+        return false;
+    }
+
     if (ry >= 22 && ry < 22 + 30)
     {
         if (rx >= 4 && rx < 32)
@@ -1833,7 +1835,6 @@ bool apps_click_explorer(i32 mx, i32 my, bool pressed_edge) noexcept
             return true;
         }
 
-        // Breadcrumb segments.
         for (u32 i = 0; i < g_exp.crumb_count; ++i)
         {
             if (mx >= g_exp.crumb_x[i] && mx < g_exp.crumb_x[i] + g_exp.crumb_w[i])
@@ -1844,7 +1845,6 @@ bool apps_click_explorer(i32 mx, i32 my, bool pressed_edge) noexcept
         }
     }
 
-    // ---- File list ----
     if (g_exp.hover >= 0)
     {
         const u64 now = arch::x86_64::pit_ticks();
@@ -1866,7 +1866,6 @@ bool apps_click_settings(i32 mx, i32 my, bool pressed_edge) noexcept
     if (!pressed_edge)
         return false;
 
-    // Tab strip selection. The layout is produced by draw_settings().
     const SettingsTab tabs[7] = {SettingsTab::System, SettingsTab::Display, SettingsTab::Storage,
                                  SettingsTab::Input,  SettingsTab::Network, SettingsTab::Appearance,
                                  SettingsTab::About};
@@ -1975,10 +1974,8 @@ void apps_explorer_clipboard_paste() noexcept
     if (c.kind != clipboard::Kind::File || c.text[0] == 0)
         return;
 
-    // Extract destination directory from cwd.
     const char* src = c.text;
 
-    // Split src into dir + name.
     char src_dir[128];
     char src_name[64];
     {
@@ -1989,14 +1986,12 @@ void apps_explorer_clipboard_paste() noexcept
             ++i;
         }
         src_dir[i] = 0;
-        // Walk back to last '/'.
         while (i > 1 && src_dir[i - 1] != '/')
             --i;
         if (i > 0)
         {
             src_dir[i - 1] = 0;
         }
-        // Name is everything after the last '/'.
         const char* leaf = src;
         const char* q = src;
         while (*q)
@@ -2015,14 +2010,12 @@ void apps_explorer_clipboard_paste() noexcept
     }
     (void)src_dir;
 
-    // Only support paste into /disk (NYFS).
     if (libk::strcmp(g_exp.cwd, "/disk") != 0)
     {
         log::write(log::Level::Warn, "clip", "paste: destination '%s' is read-only", g_exp.cwd);
         return;
     }
 
-    // Read the source file's bytes.
     auto* src_vn = fs::vfs_lookup(src, "/");
     if (!src_vn || !src_vn->ops || !src_vn->ops->read || !src_vn->ops->size)
     {
@@ -2051,8 +2044,6 @@ void apps_explorer_clipboard_paste() noexcept
         return;
     }
 
-    // Destination name: keep the source name. If it already exists,
-    // append "_copy" once.
     char dst_name[80];
     u32 n = 0;
     while (src_name[n] && n < 63)
@@ -2071,7 +2062,6 @@ void apps_explorer_clipboard_paste() noexcept
 
     if (fs::vnode_find_child(dest_dir, dst_name))
     {
-        // Append "_copy" before the extension.
         const u32 len = static_cast<u32>(libk::strlen(dst_name));
         u32 dot = len;
         for (u32 i = len; i > 0; --i)
@@ -2082,20 +2072,19 @@ void apps_explorer_clipboard_paste() noexcept
             }
 
         char tmp[80];
-        u32 t = 0;
-        for (u32 i = 0; i < dot && t < 60; ++i)
-            tmp[t++] = dst_name[i];
+        u32 tt = 0;
+        for (u32 i = 0; i < dot && tt < 60; ++i)
+            tmp[tt++] = dst_name[i];
         const char* suffix = "_copy";
-        while (*suffix && t < 63)
-            tmp[t++] = *suffix++;
-        for (u32 i = dot; i < len && t < 63; ++i)
-            tmp[t++] = dst_name[i];
-        tmp[t] = 0;
-        for (u32 i = 0; i <= t; ++i)
+        while (*suffix && tt < 63)
+            tmp[tt++] = *suffix++;
+        for (u32 i = dot; i < len && tt < 63; ++i)
+            tmp[tt++] = dst_name[i];
+        tmp[tt] = 0;
+        for (u32 i = 0; i <= tt; ++i)
             dst_name[i] = tmp[i];
     }
 
-    // Create on disk.
     if (fs::vfs_create(dest_dir, dst_name) != 0)
     {
         mm::Heap::deallocate(bytes);
@@ -2103,7 +2092,6 @@ void apps_explorer_clipboard_paste() noexcept
         return;
     }
 
-    // Write the bytes.
     auto* dst_vn = fs::vnode_find_child(dest_dir, dst_name);
     if (!dst_vn || !dst_vn->ops || !dst_vn->ops->write)
     {
@@ -2112,7 +2100,6 @@ void apps_explorer_clipboard_paste() noexcept
     }
     (void)dst_vn->ops->write(dst_vn, bytes, 0, static_cast<usize>(sz));
 
-    // If it was a cut, remove the source.
     if (c.cut && src_vn)
         (void)fs::vfs_unlink(src_vn);
 
@@ -2120,7 +2107,6 @@ void apps_explorer_clipboard_paste() noexcept
 
     clipboard::clear();
 
-    // Refresh the view.
     explorer_refresh();
 
     log::write(log::Level::Info, "clip", "paste: wrote '%s' (%lld bytes)%s", dst_name,

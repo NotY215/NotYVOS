@@ -41,6 +41,8 @@ const char* path_for(Id id) noexcept
         return "/icons/profile-picture.ico";
     case Id::StartButton:
         return "/icons/startbutton.ico";
+    case Id::Loading:
+        return "/icons/Loading.ico";
     default:
         return nullptr;
     }

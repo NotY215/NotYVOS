@@ -14,6 +14,7 @@ enum class Id : u8
     Bin,
     Profile,
     StartButton,
+    Loading, // spinner used for launch transitions
     Count
 };
 

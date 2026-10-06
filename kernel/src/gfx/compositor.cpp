@@ -32,6 +32,43 @@ namespace notyvos::gfx
 
 namespace
 {
+// Pending launch: window opens after a short loading animation.
+u32 g_taskbar_anim[kMaxWindows] = {};
+i32 g_switcher_idx = 0;
+enum class PendingLaunch : u8
+{
+    None = 0,
+    Terminal,
+    Explorer,
+    Settings,
+    GameLchr,
+    ImageVw,
+    Bin,
+};
+PendingLaunch g_pending_launch = PendingLaunch::None;
+u64 g_pending_launch_tick = 0;
+constexpr u64 kLoadingTicks = 90; // ~0.9 s at 100 Hz
+
+const char* pending_launch_label(PendingLaunch p) noexcept
+{
+    switch (p)
+    {
+    case PendingLaunch::Terminal:
+        return "Opening Terminal...";
+    case PendingLaunch::Explorer:
+        return "Opening Explorer...";
+    case PendingLaunch::Settings:
+        return "Opening Settings...";
+    case PendingLaunch::GameLchr:
+        return "Opening Game Launcher...";
+    case PendingLaunch::ImageVw:
+        return "Opening Image Viewer...";
+    case PendingLaunch::Bin:
+        return "Opening Recycle Bin...";
+    default:
+        return "";
+    }
+}
 
 constexpr u32 kScale = 2;
 constexpr u32 kCellW = 8 * kScale;
@@ -255,10 +292,6 @@ u64 g_snap_open_tick = 0;
 // (Taskbar window groups are computed on the fly in scene_draw_taskbar.)
 u64 g_toast_birth_tick = 0;
 bool g_toast_visible = false;
-
-// Taskbar hover animation state (0..1 fixed). Updated per tick.
-u32 g_taskbar_anim[kMaxWindows] = {};
-i32 g_switcher_idx = 0;
 
 inline i32 to_i32(u32 v) noexcept
 {
@@ -714,9 +747,7 @@ void scene_draw_taskbar()
         const bool open = g_start_open;
         const u32 bg = open ? kAccent : kTaskbarBg;
         s_fill(x, y0 + 4, 36, static_cast<i32>(kTaskbarH) - 8, bg);
-        for (i32 i = 0; i < 2; ++i)
-            for (i32 j = 0; j < 2; ++j)
-                s_fill(x + 8 + i * 10, y0 + 10 + j * 10, 8, 8, kTextFg);
+        s_icon(icons::Id::StartButton, x + 6, y0 + 6, 24);
         x += 44;
     }
     {
@@ -1256,8 +1287,9 @@ void scene_draw_window(const Window& win_in)
         s_fill(gx, gy, 11, 1, kTitleFg);
     }
 
+    const u32 client_bg = (win.kind == WindowKind::Terminal) ? 0x00101018u : kClientBg;
     s_fill(win.x, win.y + static_cast<i32>(kTitleH), win.w, win.h - static_cast<i32>(kTitleH),
-           kClientBg);
+           client_bg);
 
     scene_draw_window_content(win, win.x, win.y + static_cast<i32>(kTitleH), win.w,
                               win.h - static_cast<i32>(kTitleH));
@@ -1427,6 +1459,58 @@ void scene_draw_switcher()
     }
 }
 
+// Full-screen dimming overlay with a spinning Loading.ico. Drawn on top
+// of everything when a launch is pending. Keeps g_dirty_scene set so the
+// animation redraws every frame.
+void scene_draw_loading_overlay()
+{
+    if (g_pending_launch == PendingLaunch::None)
+        return;
+
+    const u64 now = arch::x86_64::pit_ticks();
+    const u64 elapsed = (now >= g_pending_launch_tick) ? (now - g_pending_launch_tick) : 0;
+
+    // 50% halftone dim: one dark pixel every two pixels.
+    for (i32 y = 0; y < to_i32(g_h); y += 2)
+        for (i32 x = 0; x < to_i32(g_w); x += 2)
+            s_fill(x, y, 1, 1, 0x00000000);
+
+    const i32 card_w = 260;
+    const i32 card_h = 160;
+    const i32 cx = (to_i32(g_w) - card_w) / 2;
+    const i32 cy = (to_i32(g_h) - card_h) / 2;
+    s_fill(cx, cy, card_w, card_h, kMenuBg);
+    s_rect(cx, cy, card_w, card_h, kAccent);
+
+    // Orbiting icon. angle_step goes 0..720 over kLoadingTicks, giving
+    // two full revolutions per animation.
+    const i32 icon_size = 48;
+    const i32 orbit_r = 40;
+    const i32 cx_mid = cx + card_w / 2;
+    const i32 cy_mid = cy + card_h / 2 - 12;
+
+    const u32 angle_step =
+        static_cast<u32>((elapsed * 720u) / (kLoadingTicks > 0 ? kLoadingTicks : 1));
+    const u32 angle = angle_step % 360u;
+
+    // 16-entry LUT approximating cos for 0..360 in 22.5-degree steps,
+    // scaled by 256. sin is read at (index + 4) mod 16.
+    static constexpr i32 kLut[16] = {256,  237,  181,  98,  0, -98, -181, -237,
+                                     -256, -237, -181, -98, 0, 98,  181,  237};
+    const u32 a16 = (angle * 16u) / 360u;
+    const i32 cos_v = kLut[a16 & 15u];
+    const i32 sin_v = kLut[(a16 + 4u) & 15u];
+    const i32 ix = cx_mid - icon_size / 2 + (cos_v * orbit_r) / 256;
+    const i32 iy = cy_mid - icon_size / 2 + (sin_v * orbit_r) / 256;
+
+    s_icon(icons::Id::Loading, ix, iy, static_cast<u32>(icon_size));
+
+    s_text(cx + 16, cy + card_h - 32, pending_launch_label(g_pending_launch), kMenuFg, kMenuBg);
+
+    // Keep the scene dirty while the animation runs.
+    g_dirty_scene = true;
+}
+
 void scene_render()
 {
     scene_draw_background();
@@ -1440,6 +1524,7 @@ void scene_render()
     scene_draw_switcher();
     scene_draw_snap_preview();
     scene_draw_toast();
+    scene_draw_loading_overlay();
 }
 
 i32 hit_window(i32 mx, i32 my)
@@ -1772,36 +1857,69 @@ void launch_terminal()
     create_terminal_window();
 }
 
-void launch_shortcut(ShortcutKind kind)
+// Perform the actual window creation. Called once the loading animation
+// completes.
+void execute_launch(PendingLaunch p)
 {
-    switch (kind)
+    switch (p)
     {
-    case ShortcutKind::Explorer:
+    case PendingLaunch::Explorer:
         log::write(log::Level::Info, "gfx", "launch: Explorer");
-        open_window(WindowKind::Explorer, "Explorer", 640, 440);
+        open_window(WindowKind::Explorer, "Explorer", 720, 480);
         break;
-    case ShortcutKind::Settings:
+    case PendingLaunch::Settings:
         log::write(log::Level::Info, "gfx", "launch: Settings");
-        open_window(WindowKind::Settings, "Settings", 640, 440);
+        open_window(WindowKind::Settings, "Settings", 720, 480);
         break;
-    case ShortcutKind::Terminal:
+    case PendingLaunch::Terminal:
         log::write(log::Level::Info, "gfx", "launch: Terminal");
         launch_terminal();
         break;
-    case ShortcutKind::GameLchr:
+    case PendingLaunch::GameLchr:
         log::write(log::Level::Info, "gfx", "launch: Game Launcher");
         open_window(WindowKind::GameLauncher, "Game Launcher", 720, 480);
-        Compositor::notify("Game Launcher opened");
         break;
-    case ShortcutKind::ImageVw:
+    case PendingLaunch::ImageVw:
         log::write(log::Level::Info, "gfx", "launch: Image Viewer");
-        open_window(WindowKind::ImageViewer, "Image Viewer", 640, 480);
+        open_window(WindowKind::ImageViewer, "Image Viewer", 720, 480);
         break;
-    case ShortcutKind::Bin:
+    case PendingLaunch::Bin:
         log::write(log::Level::Info, "gfx", "launch: Recycle Bin");
         open_window(WindowKind::Bin, "Recycle Bin", 620, 400);
         break;
+    default:
+        break;
     }
+}
+
+void launch_shortcut(ShortcutKind kind)
+{
+    if (g_pending_launch != PendingLaunch::None)
+        return; // already launching something else
+
+    switch (kind)
+    {
+    case ShortcutKind::Explorer:
+        g_pending_launch = PendingLaunch::Explorer;
+        break;
+    case ShortcutKind::Settings:
+        g_pending_launch = PendingLaunch::Settings;
+        break;
+    case ShortcutKind::Terminal:
+        g_pending_launch = PendingLaunch::Terminal;
+        break;
+    case ShortcutKind::GameLchr:
+        g_pending_launch = PendingLaunch::GameLchr;
+        break;
+    case ShortcutKind::ImageVw:
+        g_pending_launch = PendingLaunch::ImageVw;
+        break;
+    case ShortcutKind::Bin:
+        g_pending_launch = PendingLaunch::Bin;
+        break;
+    }
+    g_pending_launch_tick = arch::x86_64::pit_ticks();
+    g_dirty_scene = true;
 }
 
 void launch_menu_item(MenuItem m)
@@ -2602,6 +2720,19 @@ void Compositor::tick() noexcept
 {
     if (!g_ready)
         return;
+
+    // Advance the launch animation.
+    if (g_pending_launch != PendingLaunch::None)
+    {
+        const u64 now = arch::x86_64::pit_ticks();
+        if ((now - g_pending_launch_tick) >= kLoadingTicks)
+        {
+            PendingLaunch p = g_pending_launch;
+            g_pending_launch = PendingLaunch::None;
+            execute_launch(p);
+        }
+        g_dirty_scene = true;
+    }
 
     // Poll USB HID once per frame. Cheap when no USB devices are attached.
     usb::hid::poll();
