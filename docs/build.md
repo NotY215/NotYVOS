@@ -144,7 +144,7 @@ tools/qemu/ files are retained as boot configuration data.
 ## Roadmap-aware build boundary
 
 The current build targets the delivered Phases 0–10F plus Phase 11 TrueType
-font subsystem. Phase 12 Explorer work is the next source milestone. The build
+font subsystem. Init-program debugging is the next source milestone after the delivered Phase 12 Explorer/file operations, Phase 13A clipboard and Phase 15A–15E USB + unified input. The build
 system does not include Windows PE/Win32 compatibility or Brave/VLC validation.
 
 ## Limine
