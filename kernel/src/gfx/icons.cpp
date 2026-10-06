@@ -13,7 +13,7 @@ namespace notyvos::gfx::icons
 namespace
 {
 
-constexpr u32 kNativeSize = 64;
+constexpr u32 kNativeSize = 256;
 
 struct Slot
 {
@@ -104,7 +104,7 @@ bool load_one(Id id) noexcept
     mm::Heap::deallocate(buf);
     if (!ok)
     {
-        log::write(log::Level::Warn, "icons", "%s: SVG parse failed (size=%lld)", path,
+        log::write(log::Level::Warn, "icons", "%s: ICO decode failed (size=%lld)", path,
                    static_cast<long long>(sz));
         return false;
     }

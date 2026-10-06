@@ -17,7 +17,7 @@ enum class Id : u8
     Count
 };
 
-// Load all SVG icons from the initramfs at /icons/*.svg. Called from
+// Load all 256x256 ICO icons from the initramfs at /icons/*.ico. Called from
 // Compositor::init() after the VFS is mounted.
 void init() noexcept;
 
