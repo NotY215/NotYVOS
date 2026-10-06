@@ -25,6 +25,7 @@
 #include <kernel/mm/heap.hpp>
 #include <kernel/mm/pmm.hpp>
 #include <kernel/sched/scheduler.hpp>
+#include <kernel/usb/hid.hpp>
 
 namespace notyvos::gfx
 {
@@ -2601,6 +2602,9 @@ void Compositor::tick() noexcept
 {
     if (!g_ready)
         return;
+
+    // Poll USB HID once per frame. Cheap when no USB devices are attached.
+    usb::hid::poll();
 
     // Alt-Tab switcher. `Cycle` fires each time the user presses Tab while
     // Alt is held; `Commit` fires when Alt is released.

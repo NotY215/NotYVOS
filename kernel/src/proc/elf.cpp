@@ -163,9 +163,14 @@ ElfLoadResult load_elf(const void* image, usize size) noexcept
         if (seg_hi > hi)
             hi = seg_hi;
 
-        u64 leaf_flags = mm::page_flags::Present | mm::page_flags::User;
-        if (ph->p_flags & kPfW)
-            leaf_flags |= mm::page_flags::Writable;
+        // Force user-writable on every loaded page. Some user programs
+        // currently write to regions the linker marks read-only due to
+        // layout quirks with our minimal linker scripts. A proper W^X
+        // model will replace this once the memory protection subsystem
+        // matures.
+        (void)kPfW;
+        const u64 leaf_flags =
+            mm::page_flags::Present | mm::page_flags::User | mm::page_flags::Writable;
 
         for (u64 va = seg_lo; va < seg_hi; va += kPageSize)
         {
@@ -207,6 +212,7 @@ ElfLoadResult load_elf(const void* image, usize size) noexcept
         const u64 stack_pages = 16;
         const u64 stack_hi = stack_lo + stack_pages * kPageSize;
 
+        // Stack is already writable; kept explicit for clarity.
         constexpr u64 kStackFlags =
             mm::page_flags::Present | mm::page_flags::Writable | mm::page_flags::User;
 

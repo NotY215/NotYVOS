@@ -92,13 +92,14 @@ extern "C"
 #include <kernel/fs/initramfs.hpp>
 #include <kernel/fs/nyfs.hpp>
 #include <kernel/fs/vfs.hpp>
+#include <kernel/font/font.hpp>
 #include <kernel/gfx/api.hpp>
 #include <kernel/gfx/backend_vbe.hpp>
 #include <kernel/gfx/compositor.hpp>
 #include <kernel/gfx/hal.hpp>
-#include <kernel/log.hpp>
+#include <kernel/input/self_test.hpp>
 #include <kernel/img/self_test.hpp>
-#include <kernel/font/font.hpp>
+#include <kernel/log.hpp>
 #include <kernel/mm/exec_page.hpp>
 #include <kernel/mm/heap.hpp>
 #include <kernel/mm/pmm.hpp>
@@ -112,6 +113,10 @@ extern "C"
 #include <kernel/ps3/gamerunner.hpp>
 #include <kernel/sched/scheduler.hpp>
 #include <kernel/types.hpp>
+#include <kernel/usb/self_test.hpp>
+#include <kernel/usb/xhci.hpp>
+#include <kernel/usb/hid.hpp>
+#include <kernel/usb/msc.hpp>
 
 using namespace notyvos;
 
@@ -290,6 +295,13 @@ extern "C" [[noreturn]] void kernel_main()
     // ---- PS3 runtime: JIT must be ready before self-tests run. ----
     ps3::jit::init();
     ps3::rsx::Rsx::init();
+    usb::xhci::init();
+    usb::hid::init();
+    usb::msc::init();
+    usb::self_test();
+
+    input::self_test();
+
     ps3::self_test();
     img::self_test();
 

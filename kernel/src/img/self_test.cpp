@@ -15,72 +15,85 @@ namespace
 // BMP rows are stored bottom-up. After decoding, row 0 is the *top* row.
 // ---------------------------------------------------------------------------
 alignas(64) const u8 kBmp2x2[] = {
+    // ---- File header (14 bytes) ----
     'B',
     'M',
-    54 + 16,
+    70,
+    0,
+    0,
+    0, // file size = 14 + 40 + 16 = 70
     0,
     0,
     0,
-    0,
-    0,
-    0,
-    0,
+    0, // reserved
     54,
     0,
     0,
-    0,
+    0, // pixel data offset
+
+    // ---- Info header (40 bytes) ----
     40,
     0,
     0,
-    0,
+    0, // header size
     2,
     0,
     0,
-    0,
+    0, // width
     2,
     0,
     0,
-    0,
+    0, // height
     1,
-    0,
+    0, // planes
     24,
+    0, // bits per pixel
     0,
     0,
     0,
-    0,
-    0,
+    0, // compression
     16,
     0,
     0,
+    0, // image size
     0,
     0,
     0,
+    0, // x pixels per meter
     0,
     0,
     0,
+    0, // y pixels per meter
     0,
     0,
     0,
+    0, // colors used
     0,
     0,
     0,
+    0, // important colors
+
+    // ---- Pixel data (rows bottom-up in the file) ----
+    // File row 0 -> decodes to BOTTOM row of image: red, green
+    //   BGR for red   = 0,0,255
+    //   BGR for green = 0,255,0
     0,
-    // File row 0 (bottom in BMP): blue, white  -> BGR: 255,0,0 / 255,255,255
+    0,
+    255,
+    0,
+    255,
+    0,
+    0,
+    0,
+    // File row 1 -> decodes to TOP row of image: blue, white
+    //   BGR for blue  = 255,0,0
+    //   BGR for white = 255,255,255
     255,
     0,
     0,
     255,
     255,
     255,
-    0,
-    0,
-    // File row 1 (top in BMP):    red,  green  -> BGR: 0,0,255 / 0,255,0
-    0,
-    0,
-    255,
-    0,
-    255,
-    0,
     0,
     0,
 };

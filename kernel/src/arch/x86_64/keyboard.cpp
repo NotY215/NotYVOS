@@ -1,5 +1,6 @@
 #include <kernel/arch/x86_64/io.hpp>
 #include <kernel/arch/x86_64/keyboard.hpp>
+#include <kernel/input/input.hpp>
 #include <kernel/log.hpp>
 #include <kernel/sched/scheduler.hpp>
 
@@ -158,12 +159,12 @@ void process_scancode(u8 sc)
     {
         g_alt_tab_pending = true;
         return;
-    } // Tab
+    } // Alt+Tab
     if (g_alt && sc == 0x3E)
     {
         g_alt_f4_pending = true;
         return;
-    } // F4
+    } // Alt+F4
 
     if (sc == 0x1D)
     {
@@ -190,27 +191,26 @@ void process_scancode(u8 sc)
     }
     if (sc >= 128)
         return;
+
     const char c = g_shift ? kMapShift[sc] : kMap[sc];
     if (c == 0)
         return;
 
-bool keyboard_ctrl_c_event() noexcept
+    // Ctrl shortcuts are latched; the compositor routes them by focus.
+    if (g_ctrl && (c == 'c' || c == 'C'))
     {
-        bool v = g_ctrl_c_pending;
-        g_ctrl_c_pending = false;
-        return v;
+        g_ctrl_c_pending = true;
+        return;
     }
-    bool keyboard_ctrl_x_event() noexcept
+    if (g_ctrl && (c == 'x' || c == 'X'))
     {
-        bool v = g_ctrl_x_pending;
-        g_ctrl_x_pending = false;
-        return v;
+        g_ctrl_x_pending = true;
+        return;
     }
-    bool keyboard_ctrl_v_event() noexcept
+    if (g_ctrl && (c == 'v' || c == 'V'))
     {
-        bool v = g_ctrl_v_pending;
-        g_ctrl_v_pending = false;
-        return v;
+        g_ctrl_v_pending = true;
+        return;
     }
 
     if (g_key_count < 20)
@@ -220,12 +220,12 @@ bool keyboard_ctrl_c_event() noexcept
                    static_cast<unsigned long long>(sc), c);
     }
     ++g_key_count;
-    push_char(c);
+    input::keyboard::push(input::Source::Ps2, c);
 }
 
 } // namespace
 
-// Read the config byte from the controller. Returns false on timeout.
+// Read the config byte. Returns false on timeout.
 bool read_config(u8& out) noexcept
 {
     write_cmd(0x20);
@@ -235,7 +235,7 @@ bool read_config(u8& out) noexcept
     return true;
 }
 
-// Write the config byte. Returns false on timeout.
+// Write the config byte.
 bool write_config(u8 cfg) noexcept
 {
     write_cmd(0x60);
@@ -247,20 +247,8 @@ bool keyboard_init() noexcept
 {
     log::write(log::Level::Info, "kbd", "init start");
 
-    // Bring the controller into a safe state. This must succeed on both
-    // cold and warm (ACPI restart) boots. VBox's emulated i8042 sometimes
-    // needs a retry on warm reset before it responds to the self-test.
-    //
-    // Sequence:
-    //   1. Disable both device ports.
-    //   2. Drain any stale bytes.
-    //   3. Send self-test (0xAA); expect 0x55. Retry up to 3 times.
-    //   4. On success, force the config byte to a known-good value.
-    //   5. Re-enable both ports.
-    //   6. Send 0xF4 (enable scanning) to the keyboard.
-
-    write_cmd(0xAD); // disable kbd
-    write_cmd(0xA7); // disable aux
+    write_cmd(0xAD);
+    write_cmd(0xA7);
     flush_output();
 
     u8 selftest = 0;
@@ -278,20 +266,19 @@ bool keyboard_init() noexcept
     log::write(log::Level::Info, "kbd", "i8042 self-test -> 0x%llx (%s)",
                static_cast<unsigned long long>(selftest), st_ok ? "ok" : "timeout");
 
-    u8 cfg = 0x47; // fallback
+    u8 cfg = 0x47;
     u8 readback = 0;
     if (read_config(readback))
         cfg = readback;
     log::write(log::Level::Info, "kbd", "firmware cfg = 0x%llx",
                static_cast<unsigned long long>(cfg));
 
-    // Force known-good config regardless of what we read.
     u8 target = cfg;
-    target |= 0x01;                   // kbd IRQ1
-    target |= 0x02;                   // mouse IRQ12
-    target |= 0x40;                   // translate set 2 -> set 1
-    target &= ~static_cast<u8>(0x10); // enable kbd clock
-    target &= ~static_cast<u8>(0x20); // enable mouse clock
+    target |= 0x01;
+    target |= 0x02;
+    target |= 0x40;
+    target &= ~static_cast<u8>(0x10);
+    target &= ~static_cast<u8>(0x20);
 
     write_config(target);
     readback = 0;
@@ -302,15 +289,15 @@ bool keyboard_init() noexcept
                    static_cast<unsigned long long>(readback));
     }
 
-    write_cmd(0xAE); // enable kbd
-    write_cmd(0xA8); // enable aux
+    write_cmd(0xAE);
+    write_cmd(0xA8);
 
     flush_output();
-    write_data(0xF6); // set defaults
+    write_data(0xF6);
     (void)wait_output_full(300000);
     (void)inb(kDataPort);
 
-    write_data(0xF4); // enable scanning
+    write_data(0xF4);
     u8 ack = 0;
     if (wait_output_full(300000))
         ack = inb(kDataPort);
@@ -345,6 +332,36 @@ bool keyboard_alt_f4_event() noexcept
     if (g_alt_f4_pending)
     {
         g_alt_f4_pending = false;
+        return true;
+    }
+    return false;
+}
+
+bool keyboard_ctrl_c_event() noexcept
+{
+    if (g_ctrl_c_pending)
+    {
+        g_ctrl_c_pending = false;
+        return true;
+    }
+    return false;
+}
+
+bool keyboard_ctrl_x_event() noexcept
+{
+    if (g_ctrl_x_pending)
+    {
+        g_ctrl_x_pending = false;
+        return true;
+    }
+    return false;
+}
+
+bool keyboard_ctrl_v_event() noexcept
+{
+    if (g_ctrl_v_pending)
+    {
+        g_ctrl_v_pending = false;
         return true;
     }
     return false;
@@ -391,6 +408,9 @@ u64 keyboard_irq_count() noexcept
 {
     return g_key_count;
 }
+
+// Inject a character directly. Used by the serial console fallback and by
+// the unified input layer's synthetic path.
 void keyboard_inject(char c) noexcept
 {
     push_char(c);

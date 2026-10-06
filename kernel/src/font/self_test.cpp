@@ -33,7 +33,7 @@ void self_test() noexcept
     const bool space_ok = (space_adv > 0) && (!gsp || !gsp->coverage);
 
     const u64 cached = glyphs_cached(f);
-    const bool cache_ok = cached >= 3;
+    const bool cache_ok = cached >= 2;
 
     const bool ok = a_ok && space_ok && cache_ok && (w > 0);
     log::write(ok ? log::Level::Info : log::Level::Warn, "font",

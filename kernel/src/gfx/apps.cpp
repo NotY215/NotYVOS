@@ -1,3 +1,8 @@
+// Forward declaration for the compositor's modal pump. Defined in
+// compositor.cpp with C linkage. Declared at file scope so both TUs
+// agree on the symbol.
+extern "C" void notyvos_compositor_pump_for_modal();
+
 #include <kernel/acpi/acpi.hpp>
 #include <kernel/gfx/clipboard.hpp>
 #include <kernel/fb/framebuffer.hpp>
@@ -46,8 +51,6 @@ constexpr u32 kToolDim = 0x00B0B0B0;
 constexpr u32 kAddressBg = 0x00FFFFFF;
 constexpr u32 kAddressEdge = 0x00A0A0A0;
 constexpr u32 kCrumbHover = 0x00CCE4FC;
-constexpr u32 kNavBg = 0x00E8E8E8;
-constexpr u32 kNavFg = 0x00202020;
 constexpr u32 kNavHi = 0x00CCE4FC;
 constexpr u32 kContentBg = 0x00FFFFFF;
 constexpr u32 kContentFg = 0x00202020;
@@ -57,9 +60,7 @@ constexpr u32 kHeaderFg = 0x00404040;
 constexpr u32 kHeaderEdge = 0x00C0C0C0;
 constexpr u32 kStatusBg = 0x00F0F0F0;
 constexpr u32 kStatusFg = 0x00303030;
-constexpr u32 kIcon = 0x00FFB060;
 constexpr u32 kIconFolder = 0x00FFB060;
-constexpr u32 kIconFile = 0x00A0C0E0;
 
 // ---------------------------------------------------------------------------
 // Icons (procedural — the SVG pipeline lands later)
@@ -80,15 +81,6 @@ void icon_file(i32 x, i32 y, i32 s)
     r(x + 5, y + 5, s - 10, 1, 0x00C0C0C0);
     r(x + 5, y + 7, s - 10, 1, 0x00C0C0C0);
     r(x + 5, y + 9, s - 10, 1, 0x00C0C0C0);
-}
-void icon_drive(i32 x, i32 y, i32 s)
-{
-    r(x + 2, y + 3, s - 4, s - 6, 0x00D0D0D0);
-    r(x + 2, y + 3, s - 4, 1, 0x00808080);
-    r(x + 2, y + s - 4, s - 4, 1, 0x00808080);
-    r(x + 2, y + 3, 1, s - 6, 0x00808080);
-    r(x + s - 3, y + 3, 1, s - 6, 0x00808080);
-    r(x + 4, y + s - 6, s - 8, 2, 0x0060A0E8);
 }
 void icon_large_folder(i32 x, i32 y)
 {
@@ -576,11 +568,8 @@ bool apps_prompt_confirm(const char* title, const char* message) noexcept
 
 void modal_pump() noexcept
 {
-    // We forward to the compositor via a weak link: main.cpp already
-    // drives it from the shell loop. When a modal is active, the shell
-    // is not running, so the compositor would freeze. This hook pumps
-    // it manually. If the compositor is not ready, the call is a no-op.
-    extern void notyvos_compositor_pump_for_modal();
+    // Drive one compositor frame while a modal is open, so the desktop
+    // keeps repainting. The declaration lives at file scope.
     notyvos_compositor_pump_for_modal();
 
     for (u32 i = 0; i < 400000u; ++i)
@@ -1842,15 +1831,25 @@ bool apps_click_explorer(i32 mx, i32 my, bool pressed_edge) noexcept
     return false;
 }
 
-static void settings_handle_click(bool pressed_edge) noexcept
+bool apps_click_settings(i32 mx, i32 my, bool pressed_edge) noexcept
 {
     if (!pressed_edge)
-        return;
+        return false;
+
+    // Tab strip selection. The layout is produced by draw_settings().
     const SettingsTab tabs[7] = {SettingsTab::System, SettingsTab::Display, SettingsTab::Storage,
                                  SettingsTab::Input,  SettingsTab::Network, SettingsTab::Appearance,
                                  SettingsTab::About};
+
     if (g_set.hover_tab >= 0 && g_set.hover_tab < 7)
+    {
         g_set.current = tabs[static_cast<u32>(g_set.hover_tab)];
+        return true;
+    }
+
+    (void)mx;
+    (void)my;
+    return true;
 }
 
 bool apps_click_bin(i32, i32, bool) noexcept

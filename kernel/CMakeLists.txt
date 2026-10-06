@@ -8,34 +8,70 @@ add_subdirectory(${CMAKE_SOURCE_DIR}/user ${CMAKE_BINARY_DIR}/user)
 set(NOTYVOS_USER_INIT_ELF "${CMAKE_BINARY_DIR}/init.elf")
 set(NOTYVOS_INITRAMFS    "${CMAKE_BINARY_DIR}/initramfs.tar")
 
+# ---------------------------------------------------------------------------
+# ISO staging directory. Must be defined before any block that references
+# it via ${NOTYVOS_ISO_DIR}; CMake expands variables at use, not lazily.
+# ---------------------------------------------------------------------------
+set(NOTYVOS_ISO_DIR  "${CMAKE_BINARY_DIR}/iso_root")
+set(NOTYVOS_ISO_PATH "${CMAKE_BINARY_DIR}/notyvos.iso")
+set(NOTYVOS_LIMINE_CONF "${CMAKE_SOURCE_DIR}/tools/qemu/limine.conf")
+
+# ---------------------------------------------------------------------------
+# PS3 firmware (dev-only, never redistributed)
+#
+# Firmware/PS3UPDAT.PUP is proprietary Sony software and is not part of the
+# NOTYVOS source tree. When the file exists locally, the build bundles it
+# into the ISO so a single image boots a working PS3 runtime for the
+# developer. When it does not exist, the ISO builds without it and the
+# kernel logs a clear message at boot.
+#
+# Firmware/README.md explains the legal boundary.
+# ---------------------------------------------------------------------------
+if(EXISTS "${CMAKE_SOURCE_DIR}/Firmware/PS3UPDAT.PUP")
+    set(NOTYVOS_FIRMWARE_PRESENT TRUE)
+    message(STATUS "NOTYVOS: PS3 firmware found; bundling into the ISO (dev build)")
+else()
+    set(NOTYVOS_FIRMWARE_PRESENT FALSE)
+    message(STATUS "NOTYVOS: PS3 firmware not found; ISO will build without it")
+endif()
+
+# Materialise the optional firmware command and dependency lists as plain
+# CMake lists. add_custom_command cannot accept generator expressions that
+# introduce whole COMMAND clauses or items in DEPENDS, so we build the
+# lists here and splat them in below.
+set(_notyvos_firmware_commands)
+set(_notyvos_firmware_depends)
+if(NOTYVOS_FIRMWARE_PRESENT)
+    list(APPEND _notyvos_firmware_commands
+        COMMAND ${CMAKE_COMMAND} -E copy
+            "${CMAKE_SOURCE_DIR}/Firmware/PS3UPDAT.PUP"
+            "${NOTYVOS_ISO_DIR}/boot/PS3UPDAT.PUP")
+    list(APPEND _notyvos_firmware_depends
+        "${CMAKE_SOURCE_DIR}/Firmware/PS3UPDAT.PUP")
+endif()
+
 set(KERNEL_SOURCES
-    # Core
     src/main.cpp
     src/panic.cpp
     src/log.cpp
 
-    # libk
     src/libk/mem.cpp
     src/libk/string.cpp
 
-    # Framebuffer
     src/fb/framebuffer.cpp
     src/fb/console.cpp
 
-    # Memory management
     src/mm/pmm.cpp
     src/mm/vmm.cpp
     src/mm/heap.cpp
     src/mm/exec_page.cpp
 
-    # Filesystem
     src/fs/vnode.cpp
     src/fs/file.cpp
     src/fs/vfs.cpp
     src/fs/initramfs.cpp
     src/fs/nyfs.cpp
 
-    # Image decoders
     src/img/decoder.cpp
     src/img/bmp.cpp
     src/img/png.cpp
@@ -46,11 +82,9 @@ set(KERNEL_SOURCES
     src/img/inflate.cpp
     src/img/self_test.cpp
 
-    # Font
     src/font/font.cpp
     src/font/self_test.cpp
 
-    # Graphics
     src/gfx/theme.cpp
     src/gfx/icons.cpp
     src/gfx/api.cpp
@@ -60,26 +94,30 @@ set(KERNEL_SOURCES
     src/gfx/backend_vbe.cpp
     src/gfx/apps.cpp
     src/gfx/compositor.cpp
-    src/gpu/gpu.cpp
     src/gfx/clipboard.cpp
-    
-    # Scheduler
+    src/gpu/gpu.cpp
+
+    src/usb/xhci.cpp
+    src/usb/hid.cpp
+    src/usb/msc.cpp
+    src/usb/self_test.cpp
+
+    src/input/input.cpp
+    src/input/self_test.cpp
+
     src/sched/task.cpp
     src/sched/scheduler.cpp
     src/sched/context_switch.S
 
-    # Process
     src/proc/pid.cpp
     src/proc/elf.cpp
     src/proc/fork.cpp
 
-    # Syscalls
     src/syscall/syscall.cpp
     src/syscall/dispatch.cpp
     src/syscall/uaccess.cpp
     src/syscall/syscall_entry.S
 
-    # PS3 runtime
     src/ps3/loader.cpp
     src/ps3/powerpc/decode.cpp
     src/ps3/self_test.cpp
@@ -97,7 +135,6 @@ set(KERNEL_SOURCES
     src/ps3/rsx/rsx.cpp
     src/ps3/rsx/self_test.cpp
 
-    # Architecture x86_64
     src/arch/x86_64/serial.cpp
     src/arch/x86_64/gdt.cpp
     src/arch/x86_64/gdt_flush.S
@@ -120,17 +157,11 @@ set(KERNEL_SOURCES
     src/arch/x86_64/fork_entry.S
     src/arch/x86_64/entry.S
 
-    # Block devices
     src/block/block.cpp
     src/block/ahci.cpp
 
-    # Networking
     src/net/e1000.cpp
-
-    # Audio
     src/audio/hda.cpp
-
-    # ACPI
     src/acpi/acpi.cpp
 )
 
@@ -157,29 +188,13 @@ set_target_properties(notyvos-kernel PROPERTIES
     SUFFIX ".elf"
     ENABLE_EXPORTS OFF)
 
-# ---- ISO image ------------------------------------------------------------
-
-set(NOTYVOS_ISO_DIR  "${CMAKE_BINARY_DIR}/iso_root")
-set(NOTYVOS_ISO_PATH "${CMAKE_BINARY_DIR}/notyvos.iso")
-
-option(NOTYVOS_BUNDLE_PS3_FIRMWARE
-       "Bundle Firmware/PS3UPDAT.PUP into the ISO (dev-only, opt-in)"
-       OFF)
-
-if(NOTYVOS_BUNDLE_PS3_FIRMWARE)
-    if(NOT EXISTS "${CMAKE_SOURCE_DIR}/Firmware/PS3UPDAT.PUP")
-        message(FATAL_ERROR
-            "NOTYVOS_BUNDLE_PS3_FIRMWARE=ON but Firmware/PS3UPDAT.PUP is missing. "
-            "Either place the file there or turn the option OFF.")
-    endif()
-    message(STATUS "NOTYVOS: bundling PS3 firmware into the ISO (dev build)")
-else()
-    message(STATUS "NOTYVOS: PS3 firmware NOT bundled (public build)")
-endif()
-
+# ---------------------------------------------------------------------------
+# ISO image
+# ---------------------------------------------------------------------------
 add_custom_command(
     OUTPUT "${NOTYVOS_ISO_PATH}"
     COMMAND ${CMAKE_COMMAND} -E rm -rf "${NOTYVOS_ISO_DIR}"
+    COMMAND ${CMAKE_COMMAND} -E rm -f  "${NOTYVOS_ISO_PATH}"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${NOTYVOS_ISO_DIR}/EFI/BOOT"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${NOTYVOS_ISO_DIR}/boot"
     COMMAND ${CMAKE_COMMAND} -E copy
@@ -191,7 +206,7 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E copy
             "${NOTYVOS_LIMINE_UEFI_CD}"  "${NOTYVOS_ISO_DIR}/boot/limine-uefi-cd.bin"
     COMMAND ${CMAKE_COMMAND} -E copy
-            "${CMAKE_SOURCE_DIR}/tools/qemu/limine.conf"
+            "${NOTYVOS_LIMINE_CONF}"
             "${NOTYVOS_ISO_DIR}/limine.conf"
     COMMAND ${CMAKE_COMMAND} -E copy
             "$<TARGET_FILE:notyvos-kernel>"
@@ -202,10 +217,7 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E copy
             "${NOTYVOS_INITRAMFS}"
             "${NOTYVOS_ISO_DIR}/boot/initramfs.tar"
-    $<$<BOOL:${NOTYVOS_BUNDLE_PS3_FIRMWARE}>:
-        COMMAND ${CMAKE_COMMAND} -E copy
-            "${CMAKE_SOURCE_DIR}/Firmware/PS3UPDAT.PUP"
-            "${NOTYVOS_ISO_DIR}/boot/PS3UPDAT.PUP">
+    ${_notyvos_firmware_commands}
     COMMAND "${NOTYVOS_XORRISO}" -as mkisofs
             -iso-level 3
             -full-iso9660-filenames
@@ -215,7 +227,7 @@ add_custom_command(
             -boot-load-size 4
             -boot-info-table
             --efi-boot boot/limine-uefi-cd.bin
-            -efi-boot-part
+            --efi-boot-part
             --efi-boot-image
             --protective-msdos-label
             "iso_root"
@@ -227,7 +239,8 @@ add_custom_command(
         notyvos-initramfs
         "${NOTYVOS_USER_INIT_ELF}"
         "${NOTYVOS_INITRAMFS}"
-        "${CMAKE_SOURCE_DIR}/tools/qemu/limine.conf"
+        "${NOTYVOS_LIMINE_CONF}"
+        ${_notyvos_firmware_depends}
     COMMENT "Building notyvos.iso (hybrid BIOS+UEFI)"
     VERBATIM)
 

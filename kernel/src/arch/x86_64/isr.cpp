@@ -103,22 +103,41 @@ void dump_frame(const InterruptFrame* f) noexcept
     log_hex64("err ", f->error_code);
 }
 
-[[noreturn]] void handle_exception(InterruptFrame* f) noexcept
+// Called when an exception originates in ring 3. Logs the fault and
+// terminates the offending task instead of panicking the kernel.
+//
+// The CPL check is on the CS selector saved in the interrupt frame:
+// if the low 2 bits are 3, the fault happened in user mode.
+void handle_user_exception(InterruptFrame* f) noexcept
 {
     const u64 v = f->vector;
-    log::write(log::Level::Error, "exc", "vector %llu (%s) err=0x%llx rip=0x%llx",
-               static_cast<unsigned long long>(v), exception_name(v),
-               static_cast<unsigned long long>(f->error_code),
-               static_cast<unsigned long long>(f->rip));
-    if (v == 14)
+    const u64 cr2 = (v == 14) ? []() -> u64
     {
-        u64 cr2 = 0;
-        asm volatile("mov %%cr2, %0" : "=r"(cr2));
+        u64 x = 0;
+        asm volatile("mov %%cr2, %0" : "=r"(x));
+        return x;
+    }()
+        : 0;
+
+    auto* cur = sched::scheduler_current();
+    const char* tname = cur ? cur->name : "?";
+    const u64 tid = cur ? static_cast<u64>(cur->tid) : 0;
+
+    log::write(log::Level::Error, "exc", "user-mode %s in tid=%llu '%s': rip=0x%llx err=0x%llx",
+               exception_name(v), tid, tname, static_cast<unsigned long long>(f->rip),
+               static_cast<unsigned long long>(f->error_code));
+
+    if (v == 14)
         log::write(log::Level::Error, "exc", "fault address = 0x%llx",
                    static_cast<unsigned long long>(cr2));
-    }
-    dump_frame(f);
-    panic("unhandled exception");
+
+    // If this is the init task, killing it would idle the system. Log
+    // and halt the task's execution but keep the kernel alive by
+    // dropping it back to the scheduler.
+    log::write(log::Level::Warn, "exc", "terminating user task; kernel remains alive");
+
+    sched::scheduler_exit_current(static_cast<int>(v) + 128);
+    // scheduler_exit_current is [[noreturn]].
 }
 
 void handle_irq(u8 irq, InterruptFrame* /*f*/) noexcept

@@ -18,9 +18,18 @@ set(NOTYVOS_USER_C_FLAGS
     -fno-builtin
     -fno-pic
     -fno-pie
+    -fno-asynchronous-unwind-tables
+    -fno-unwind-tables
+    -fno-omit-frame-pointer
     -mno-red-zone
     -mno-sse
     -mno-sse2
+    -mno-mmx
+    -mno-3dnow
+    -mno-80387
+    -mno-avx
+    -mno-avx2
+    -mno-avx512f
     -mcmodel=large
     -Wall
     -Wextra
@@ -84,7 +93,7 @@ set(NOTYVOS_INITRAMFS_TAR "${CMAKE_BINARY_DIR}/initramfs.tar")
 add_custom_command(
     OUTPUT "${NOTYVOS_INITRAMFS_TAR}"
     COMMAND ${CMAKE_COMMAND} -E rm -f "${NOTYVOS_INITRAMFS_TAR}"
-    COMMAND ${CMAKE_COMMAND} -E tar cf "${NOTYVOS_INITRAMFS_TAR}" --format=gnu .
+    COMMAND ${CMAKE_COMMAND} -E tar cf "${NOTYVOS_INITRAMFS_TAR}" .
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/initramfs"
     DEPENDS ${NOTYVOS_INITRAMFS_INPUTS}
     COMMENT "Generating initramfs.tar"
