@@ -740,7 +740,7 @@ Inter -> Parser -> Outline -> Flat -> Raster -> Cache -> Draw -> Compositor -> F
     - Subpixel horizontal rendering
 
 
-# Phase 12 — Explorer 10G + Real File Operations
+# Phase 12 — Explorer 10G + Real File Operations - DONE
 
 ```mermaid
 flowchart LR
@@ -755,13 +755,14 @@ flowchart LR
 
 **Status: NEXT.** Delivery order: 12A grid/details, 12B breadcrumb, 12C real Open/New/Rename/Delete/Properties operations.
 
-# Queued roadmap flows
+# Current continuation and queued roadmap flows
 
 ```mermaid
 flowchart TD
-    P12[12 Explorer + file operations] --> P13[13 Clipboard + dialogs]
-    P12 --> P14[14 GameRunner runtime]
-    P13 --> P15[15 USB + HID]
+    P12[12 Explorer + file operations DONE] --> P13A[13A Clipboard DONE]
+    P12 --> P14[14 / 7D GameRunner QUEUED]
+    P13A --> INIT[Init program debugging NEXT]
+    P13A --> P15[15A-15E USB + unified input DONE]
     P15 --> P16[16 Production networking]
     P16 --> P17[17 Wi-Fi + Network Manager]
     P15 --> P18[18 Bluetooth]
@@ -770,4 +771,4 @@ flowchart TD
     P21[21 NotYVFirm]
 ```
 
-Phases 13–21 are queued according to docs/roadmap.md. Windows PE/Win32 compatibility and Brave/VLC validation are explicitly excluded.
+Init program debugging is the current milestone. Phase 14 / 7D and Phases 16–21 remain queued according to docs/roadmap.md. Windows PE/Win32 compatibility and Brave/VLC validation are explicitly excluded.
