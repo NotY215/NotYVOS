@@ -20,6 +20,28 @@ CpuInfo g_info{};
 alignas(16) u8 g_df_stack[16384];
 alignas(16) u8 g_nmi_stack[16384];
 
+// Enable CR4.OSXSAVE and set XCR0 so SSE and (if present) AVX state are
+// legal. Without this, any AVX instruction in a user program faults with
+// #UD even on CPUs that advertise AVX.
+void enable_fpu_state() noexcept
+{
+    const auto l1 = cpuid(1);
+    const bool osxsave = ((l1.ecx >> 27) & 1u) != 0;
+    if (!osxsave)
+        return;
+
+    u64 cr4 = 0;
+    asm volatile("mov %%cr4, %0" : "=r"(cr4));
+    cr4 |= (1ULL << 18); // OSXSAVE
+    asm volatile("mov %0, %%cr4" ::"r"(cr4));
+
+    const bool avx = ((l1.ecx >> 28) & 1u) != 0;
+    u32 xcr0 = 0x3u; // x87 + SSE
+    if (avx)
+        xcr0 |= 0x4u; // AVX
+    asm volatile("xsetbv" ::"a"(xcr0), "d"(0u), "c"(0u));
+}
+
 struct FeatureLine
 {
     const char* name;
@@ -59,6 +81,7 @@ const CpuInfo& cpu_info() noexcept
 
 void cpu_init() noexcept
 {
+    enable_fpu_state();
     g_info = detect_cpu_info();
 
     log::write(log::Level::Info, "cpu", "vendor: %s", g_info.vendor);

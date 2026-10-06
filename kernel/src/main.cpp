@@ -163,7 +163,6 @@ extern "C" [[noreturn]] void kernel_main()
                static_cast<unsigned long long>(info.hhdm->offset));
 
     arch::x86_64::cpu_init();
-    arch::x86_64::cpu_init();
     arch::x86_64::rtc::init();
     mm::PhysicalMemory::init(info.memmap, info.hhdm->offset);
     mm::VirtualMemory::init(info.hhdm->offset);

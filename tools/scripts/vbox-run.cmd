@@ -12,7 +12,7 @@ REM ==========================================================================
 
 set "VM_NAME=NotYVOS"
 set "VBOX_MGR=C:\Program Files\Oracle\VirtualBox\VBoxManage.exe"
-set "ISO=F:\OwnApps\NotYVOS\build\kernel-windows-clang-kernel-release\notyvos.iso"
+set "ISO=build\kernel-windows-clang-kernel-release\notyvos.iso"
 set "SERIAL_PORT=2323"
 set "SERIAL_SCRIPT=%~dp0vbox-serial.ps1"
 

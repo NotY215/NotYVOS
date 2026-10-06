@@ -454,8 +454,11 @@ void rasterize_edges(const Edge* edges, u32 edge_count,
 
     for (i32 row = 0; row < static_cast<i32>(height); ++row)
     {
-        const i32 y0 = (row << 8) + origin_y;      // top of pixel in 8.8 space
-        const i32 y1 = y0 + 256;                   // bottom
+        // Font-space Y grows up, screen-space Y grows down. Flip the row
+        // index so bitmap row 0 corresponds to y_max (top of the glyph).
+        const i32 src_row = static_cast<i32>(height) - 1 - row;
+        const i32 y0 = (src_row << 8) + origin_y; // top of pixel in 8.8 space
+        const i32 y1 = y0 + 256;                  // bottom
 
         // Vertical overlap with [y_lo, y_hi].
         if (y1 <= y_lo || y0 >= y_hi) continue;

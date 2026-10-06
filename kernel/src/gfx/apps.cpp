@@ -1490,9 +1490,39 @@ void draw_settings(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my, bool)
         label_row("Heap", "64 MiB");
         break;
     case SettingsTab::Display:
-        label_row("Resolution", "800 x 600");
+    {
+        char res[24];
+        int n = 0;
+        char digs[8];
+        u32 w = fb::Framebuffer::width();
+        u32 h = fb::Framebuffer::height();
+        int m = 0;
+        if (w == 0u)
+            digs[m++] = '0';
+        while (w)
+        {
+            digs[m++] = static_cast<char>('0' + (w % 10u));
+            w /= 10u;
+        }
+        while (m)
+            res[n++] = digs[--m];
+        res[n++] = 'x';
+        m = 0;
+        if (h == 0u)
+            digs[m++] = '0';
+        while (h)
+        {
+            digs[m++] = static_cast<char>('0' + (h % 10u));
+            h /= 10u;
+        }
+        while (m)
+            res[n++] = digs[--m];
+        res[n] = 0;
+        label_row("Resolution", res);
         label_row("Colour depth", "32-bit ARGB");
+        label_row("Boot target", "set in limine.conf");
         break;
+    }
     case SettingsTab::Storage:
         label_row("Device", "sda (AHCI)");
         label_row("Filesystem", "NYFS");

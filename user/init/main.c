@@ -165,7 +165,7 @@ static void print_help(void)
 static void print_about(void)
 {
     puts("NOTYVOS\n");
-    puts("Phase 3F — Native GPU backend\n");
+    puts("NotY215 x86_64 operating system\n");
     puts("Desktop: framebuffer compositor, back buffer, PS/2 mouse\n");
     puts("Shell: pid ");
     put_int(sys_getpid());
@@ -182,7 +182,7 @@ static void print_about(void)
 void _start(void)
 {
     stdio_init();
-    puts("\nNOTYVOS shell (phase 3F)\n");
+    puts("\nNOTYVOS shell\n");
     puts("type 'help' for commands\n");
 
     for (;;)
@@ -303,6 +303,21 @@ void _start(void)
                 continue;
             }
             i64 r = sys_exec(argv[1]);
+            if (r < 0 && argv[1][0] != '/')
+            {
+                char alt[160];
+                int i = 0;
+                const char* pfx = "/disk/";
+                while (pfx[i])
+                {
+                    alt[i] = pfx[i];
+                    ++i;
+                }
+                for (int k = 0; argv[1][k] && i < 158; ++k)
+                    alt[i++] = argv[1][k];
+                alt[i] = 0;
+                r = sys_exec(alt);
+            }
             puts("exec failed: ");
             put_int(r);
             putc('\n');

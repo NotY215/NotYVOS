@@ -2,8 +2,8 @@
 setlocal
 set VBOX=VBox
 set VM=NotYVOS
-set ISO=F:\OwnApps\NotYVOS\build\kernel-windows-clang-kernel-release\notyvos.iso
-set VDI=F:\OwnApps\NotYVOS\build\notyvos.vdi
+set ISO=build\kernel-windows-clang-kernel-release\notyvos.iso
+set VDI=build\notyvos.vdi
 
 if not exist "%ISO%" (
     echo ERROR: ISO not found at %ISO%
@@ -26,22 +26,23 @@ echo Configuring VM ...
 %VBOX% modifyvm %VM% --accelerate-3d off
 %VBOX% modifyvm %VM% --firmware efi
 %VBOX% modifyvm %VM% --chipset piix3
-%VBOX% modifyvm %VM% --ioapic off
+%VBOX% modifyvm %VM% --ioapic on
 %VBOX% modifyvm %VM% --hpet on
 %VBOX% modifyvm %VM% --longmode on
 %VBOX% modifyvm %VM% --nestedpaging on
 %VBOX% modifyvm %VM% --keyboard ps2
 %VBOX% modifyvm %VM% --mouse ps2
-%VBOX% modifyvm %VM% --usb off
-%VBOX% modifyvm %VM% --usb-xhci off
-%VBOX% modifyvm %VM% --usb-ehci off
-%VBOX% modifyvm %VM% --usb-ohci off
+%VBOX% modifyvm %VM% --usb-xhci on --usb-ehci off --usb-ohci off
 %VBOX% modifyvm %VM% --audio-enabled off
 %VBOX% modifyvm %VM% --boot1 dvd --boot2 disk --boot3 none --boot4 none
 %VBOX% modifyvm %VM% --usb-card-reader off
 %VBOX% modifyvm %VM% --vrde off
 %VBOX% modifyvm %VM% --uart1 0x3F8 4
 %VBOX% modifyvm %VM% --uartmode1 tcpserver 2323
+%VBOX% modifyvm %VM% --usb-xhci on --usb-ehci off --usb-ohci off
+%VBOX% setextradata %VM% "VBoxInternal2/EfiGraphicsResolution" "800x600"
+%VBOX% setextradata %VM% "VBoxInternal2/EfiGopMode" "1"
+%VBOX% modifyvm %VM% --recording off
 
 echo Creating hard disk ...
 if not exist "%VDI%" (

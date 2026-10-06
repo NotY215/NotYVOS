@@ -231,7 +231,7 @@ ElfLoadResult load_elf(const void* image, usize size) noexcept
                 return res;
             }
         }
-        stack_top_va = stack_hi - 16;
+        stack_top_va = stack_hi - 8;
         if (hi < stack_hi)
             hi = stack_hi;
     }

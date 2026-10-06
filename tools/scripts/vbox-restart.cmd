@@ -2,7 +2,7 @@
 setlocal
 set VBOX=VBox
 set VM=NotYVOS
-set ISO=F:\OwnApps\NotYVOS\build\kernel-windows-clang-kernel-release\notyvos.iso
+set "build\kernel-windows-clang-kernel-release\notyvos.iso"
 
 %VBOX% controlvm %VM% poweroff --force >nul 2>&1
 ping 127.0.0.1 -n 3 >nul

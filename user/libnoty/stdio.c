@@ -140,7 +140,7 @@ i64 fprintf(File* f, const char* fmt, ...)
         }
         case 'u':
         {
-            u64 v = __builtin_va_arg(ap, u64);
+            unsigned int v = __builtin_va_arg(ap, unsigned int);
             char tmp[24];
             int k = 0;
             if (v == 0)
@@ -156,7 +156,7 @@ i64 fprintf(File* f, const char* fmt, ...)
         }
         case 'd':
         {
-            i64 v = __builtin_va_arg(ap, i64);
+            int v = __builtin_va_arg(ap, int);
             if (v < 0)
             {
                 buf[n++] = '-';
