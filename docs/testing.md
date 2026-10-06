@@ -10,7 +10,9 @@ flowchart TD
     VBOX --> SHELL[Userland shell]
     VBOX --> PS3[PS3 / RSX self-tests]
     VBOX --> FONT[Phase 11 TrueType self-test]
-    FONT --> NEXT[Phase 12A Explorer regression]
+    FONT --> EXPLORER[Phase 12 Explorer regression]
+    EXPLORER --> USB[Phase 15 USB + input self-tests]
+    USB --> INIT[Init program debugging]
 ```
 
 ## Current test environment
@@ -133,8 +135,6 @@ The frozen delivered boundary is **Phases 0–10F**.
 
 Phase 11 validation covers Inter TTF parsing, simple glyph outlines, anti-aliased coverage rasterization, glyph caching, compositor text drawing and the boot self-test.
 
-The next active regression target is **Phase 12A**: Explorer grid view, details-view toggle and session persistence of the selected view. Phase 12B adds breadcrumb navigation and Phase 12C adds persistent real file operations.
-
-Later phases cover clipboard/dialogs, GameRunner runtime integration, USB, networking, Wi-Fi, Bluetooth, NYFS maturity, firewall and NotYVFirm.
+Phase 12 Explorer validation is delivered, including grid/details, breadcrumb navigation and real file operations. Phase 13A clipboard and Phase 15A–15E USB + unified input are delivered. The next active regression target is **init-program debugging**. Phase 14 / 7D and later networking, Wi-Fi, Bluetooth, NYFS, firewall and NotYVFirm work remain queued.
 
 Windows PE/Win32 compatibility and Brave/VLC validation are excluded and are not test targets.
