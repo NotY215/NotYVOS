@@ -1,8 +1,7 @@
 # NOTYVOS Roadmap
 
 This is the canonical NOTYVOS roadmap. It supersedes the previous phase numbering.
-Phases 0–10 are frozen as delivered. Windows .exe compatibility and Brave/VLC
-validation are explicitly excluded from the current queue.
+Phases 0–10F are frozen as delivered. Phase 11, Phase 12, Phase 13A and Phase 15A–15E are delivered. The active milestone is init-program debugging. Windows .exe compatibility and Brave/VLC validation are explicitly excluded from the current queue.
 
 ## Roadmap map
 
@@ -11,10 +10,11 @@ Markmap source: [`diagrams/roadmap.markmap.md`](diagrams/roadmap.markmap.md).
 ```mermaid
 flowchart TD
     D[Phases 0-10F delivered] --> P11[11 TrueType DONE]
-    P11 --> P12[12 Explorer NEXT]
-    P12 --> P13[13 Clipboard]
-    P12 --> P14[14 GameRunner 7D]
-    P13 --> P15[15 USB + HID]
+    P11 --> P12[12 Explorer DONE]
+    P12 --> P13A[13A Clipboard DONE]
+    P13A --> I[Init debugging NEXT]
+    P12 --> P14[14 / 7D GameRunner QUEUED]
+    P13A --> P15[15A-15E USB + unified input DONE]
     P15 --> P16[16 Production network]
     P16 --> P17[17 Wi-Fi]
     P15 --> P18[18 Bluetooth]
@@ -26,9 +26,9 @@ flowchart TD
 ```
 
 - NOTYVOS roadmap
-  - Delivered: 0–10F, 11 TrueType
-  - Next: 12 Explorer 10G
-  - Queued: 13–21
+  - Delivered: 0–10F, 11 TrueType, 12 Explorer, 13A clipboard, 15A–15E USB + unified input
+  - Next: Init program debugging
+  - Queued: 13B–13C, 14/7D, 16–21
   - Excluded: Windows PE, Brave, VLC
 
 ## Current state
@@ -81,28 +81,28 @@ loading.
 Deferred polish: multiple weights, kerning, complex-script shaping and subpixel
 horizontal rendering.
 
-## Phase 12 — Explorer 10G + Real File Operations — NEXT
+## Phase 12 — Explorer 10G + Real File Operations — DONE
 
 **Dependency:** Phase 11.
 
 | Subphase | Status | Scope | Exit criteria |
 |---|---|---|---|
-| 12A | **Next** | Grid view + details toggle | Toolbar switches modes and remembers the session |
-| 12B | Queued | XP-style breadcrumb | Clickable path segments navigate to ancestors |
-| 12C | Queued | Real file operations | Open/New/Rename/Delete/Properties persist through VFS/NYFS |
+| 12A | **Done** | Grid view + details toggle | Toolbar switches modes and remembers the session |
+| 12B | **Done** | XP-style breadcrumb | Clickable path segments navigate to ancestors |
+| 12C | **Done** | Real file operations | Open/New/Rename/Delete/Properties persist through VFS/NYFS |
 
 12C will use/expose: `fs::vfs_create_file`, `fs::vfs_mkdir`,
 `fs::vfs_rename`, `fs::vfs_unlink`, and `fs::vfs_write`.
 
 Deferred from Phase 12: drag/drop, multi-select and Explorer search.
 
-## Phase 13 — Desktop Clipboard + Dialogs — QUEUED
+## Phase 13 — Desktop Clipboard + Dialogs — PARTIAL
 
 **Dependency:** Phase 12.
 
 | Subphase | Scope |
 |---|---|
-| 13A | Global clipboard, text/file lists, Ctrl+C/X/V routing |
+| 13A | **Done** | Global clipboard, text/file lists, Ctrl+C/X/V routing |
 | 13B | Blocking input and confirmation dialogs |
 | 13C | Read-only Properties dialog with real metadata |
 
@@ -120,14 +120,15 @@ Deferred: rich-text clipboard, image clipboard and multi-item paste ordering.
 
 Universal save states remain deferred.
 
-## Phase 15 — USB Stack + USB HID — QUEUED
+## Phase 15 — USB Stack + USB HID — DONE
 
 | Subphase | Scope |
 |---|---|
-| 15A | PCI enumeration + xHCI controller |
-| 15B | USB device enumeration |
-| 15C | USB HID keyboard/mouse |
-| 15D | USB mass storage |
+| 15A | **Done** | PCI enumeration + xHCI controller |
+| 15B | **Done** | USB device enumeration |
+| 15C | **Done** | USB HID keyboard/mouse |
+| 15D | **Done** | USB mass storage |
+| 15E | **Done** | Unified input facade and routing |
 
 Deferred: hubs, USB 3.x SuperSpeed and isochronous transfers.
 
@@ -259,10 +260,13 @@ Every subsystem gets a boot self-test. Warnings are errors, casts use
 |---|---|---|
 | 0–10F | Foundation through desktop polish | **Done** |
 | 11 | TrueType Font Subsystem | **Done** |
-| 12 | Explorer 10G + Real File Operations | **Next** |
-| 13 | Desktop Clipboard + Dialogs | Queued |
-| 14 | 7D GameRunner Runtime Integration | Queued |
-| 15 | USB Stack + USB HID | Queued |
+| 12 | Explorer 10G + Real File Operations | **Done** |
+| 13A | Desktop Clipboard | **Done** |
+| 13B–13C | Remaining clipboard/dialog work | Queued |
+| Fix | User-fault isolation + user build flags + BMP test vector | **Delivered** |
+| Init | Init program debugging | **Next** |
+| 14 / 7D | GameRunner Runtime Integration | Queued |
+| 15A–15E | USB Stack + Unified Input | **Done** |
 | 16 | Production Network Stack | Queued |
 | 17 | Wi-Fi Driver + Management UI | Queued |
 | 18 | Bluetooth Framework | Queued |
@@ -272,4 +276,11 @@ Every subsystem gets a boot self-test. Warnings are errors, casts use
 | — | Windows .exe compatibility | **Excluded** |
 | — | Brave / VLC validation | **Excluded** |
 
-**Next delivery: Phase 12A — Explorer grid view + details toggle.**
+**Next delivery: Init program debugging in `user/init/main.c`.**
+
+
+## Current continuation milestone
+
+The next active engineering target is `user/init/main.c`. Resolve the current init-program build/runtime issue before advancing to Phase 14 / 7D unless explicitly requested otherwise.
+
+The delivered ISR exception-dispatch fix is commit `ef79fc3f31e0c6f1574cb2e29028ce4e91dcdb1b`. Kernel-mode exceptions remain fatal; user-mode exceptions are isolated to the offending task through the scheduler exit path.

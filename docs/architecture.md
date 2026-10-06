@@ -6,11 +6,7 @@ NOTYVOS is a freestanding x86-64 kernel with user-mode processes, a VFS,
 persistent NYFS storage, a software-rendered desktop, native device drivers,
 and a PS3 runtime foundation.
 
-The repository currently contains implementation through Phase 10F, including
-native kernel/userland, desktop graphics, PS3 runtime foundations, RSX
-compatibility through perspective-correct UVs and mipmaps, GameRunner,
-rendering validation, BMP/PNG/GIF/ICO/JPEG image support and the complete
-theme/Appearance settings path. All defined Phase 1–10 work through 10F is delivered.
+The repository contains the delivered Phase 0–10F foundation plus Phase 11 TrueType rendering, Phase 12 Explorer/file operations, Phase 13A clipboard and Phase 15A–15E USB + unified input. User-fault isolation and related build/test hardening are also delivered. The current engineering milestone is init-program debugging.
 
 ### Windows compatibility domain
 

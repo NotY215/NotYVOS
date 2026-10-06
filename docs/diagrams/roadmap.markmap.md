@@ -38,12 +38,12 @@ Markmap parses this native Markdown outline into an interactive mindmap
     - Phase 13 — Clipboard + Dialogs
     - Phase 14 — GameRunner Runtime Integration
     - Phase 15 — USB + HID
-    - Phase 16 — Production Network
-    - Phase 17 — Wi-Fi + Network Manager
-    - Phase 18 — Bluetooth
-    - Phase 19 — NYFS Maturity
-    - Phase 20 — Firewall
-    - Phase 21 — NotYVFirm
+    - Phase 16 — Production Network — QUEUED
+    - Phase 17 — Wi-Fi + Network Manager — QUEUED
+    - Phase 18 — Bluetooth — QUEUED
+    - Phase 19 — NYFS Maturity — QUEUED
+    - Phase 20 — Firewall — QUEUED
+    - Phase 21 — NotYVFirm — QUEUED
   - Explicitly excluded
     - Windows PE / Win32 / Win64 compatibility
     - Brave validation

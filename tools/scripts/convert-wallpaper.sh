@@ -11,10 +11,16 @@ if [ ! -f "$SRC" ]; then
 fi
 
 MAGICK="$(command -v magick || command -v convert || true)"
-[ -n "$MAGICK" ] || { echo "ImageMagick (magick or convert) is required." >&2; exit 1; }
+[ -n "$MAGICK" ] || {
+    echo "ImageMagick (magick or convert) is required." >&2
+    exit 1
+}
 
 PYTHON="$(command -v python3 || command -v python || true)"
-[ -n "$PYTHON" ] || { echo "Python is required to write the raw header." >&2; exit 1; }
+[ -n "$PYTHON" ] || {
+    echo "Python is required to write the raw header." >&2
+    exit 1
+}
 
 read -r W H <<< "$("$MAGICK" identify -format '%w %h' "$SRC")"
 
@@ -37,6 +43,7 @@ import struct
 import sys
 
 src, dst, w, h = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
+
 with open(src, "rb") as f:
     pixels = f.read()
 
