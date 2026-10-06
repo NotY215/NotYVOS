@@ -13,7 +13,7 @@ namespace notyvos::gfx::icons
 namespace
 {
 
-constexpr u32 kNativeSize = 64;
+constexpr u32 kNativeSize = 256;
 
 struct Slot
 {
@@ -72,7 +72,7 @@ bool load_one(Id id) noexcept
         return false;
     }
 
-    auto* buf = static_cast<u8*>(mm::Heap::allocate(static_cast<usize>(sz)));
+    auto* buf = static_cast<char*>(mm::Heap::allocate(static_cast<usize>(sz) + 1));
     if (!buf)
         return false;
 
@@ -85,43 +85,26 @@ bool load_one(Id id) noexcept
             break;
         got += n;
     }
+    buf[got] = 0;
+
     if (got != sz)
     {
         mm::Heap::deallocate(buf);
         return false;
     }
 
-    img::Image decoded{};
-    const bool ok = img::decode(buf, static_cast<usize>(sz), decoded);
+    img::svg::Bitmap bmp{};
+    const bool ok =
+        img::svg::rasterize(buf, static_cast<usize>(got), kNativeSize, kNativeSize, bmp);
     mm::Heap::deallocate(buf);
-    if (!ok || !decoded.pixels || decoded.width == 0 || decoded.height == 0)
+    if (!ok)
     {
-        log::write(log::Level::Warn, "icons", "%s: ICO decode failed", path);
-        img::free(decoded);
+        log::write(log::Level::Warn, "icons", "%s: ICO decode failed (size=%lld)", path,
+                   static_cast<long long>(sz));
         return false;
     }
 
-    // Resize to kNativeSize x kNativeSize (nearest-neighbour) so the
-    // compositor sees a consistent bitmap size.
-    const usize out_bytes = static_cast<usize>(kNativeSize) * kNativeSize * sizeof(u32);
-    auto* out = static_cast<u32*>(mm::Heap::allocate(out_bytes));
-    if (!out)
-    {
-        img::free(decoded);
-        return false;
-    }
-    for (u32 j = 0; j < kNativeSize; ++j)
-    {
-        const u32 sy = (j * decoded.height) / kNativeSize;
-        for (u32 i = 0; i < kNativeSize; ++i)
-        {
-            const u32 sx = (i * decoded.width) / kNativeSize;
-            out[j * kNativeSize + i] = decoded.pixels[sy * decoded.width + sx];
-        }
-    }
-    img::free(decoded);
-
-    g_slots[static_cast<u32>(id)].pixels = out;
+    g_slots[static_cast<u32>(id)].pixels = bmp.pixels;
     g_slots[static_cast<u32>(id)].size = kNativeSize;
     return true;
 }
