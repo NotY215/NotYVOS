@@ -1,7 +1,7 @@
 #include <kernel/fs/vfs.hpp>
 #include <kernel/gfx/hal.hpp>
 #include <kernel/gfx/icons.hpp>
-#include <kernel/img/svg.hpp>
+#include <kernel/img/decoder.hpp>
 #include <kernel/libk/mem.hpp>
 #include <kernel/libk/string.hpp>
 #include <kernel/log.hpp>
@@ -13,7 +13,7 @@ namespace notyvos::gfx::icons
 namespace
 {
 
-constexpr u32 kNativeSize = 256;
+constexpr u32 kIconMaxSize = 256;
 
 struct Slot
 {
@@ -28,19 +28,19 @@ const char* path_for(Id id) noexcept
     switch (id)
     {
     case Id::Explorer:
-        return "/icons/explorer.svg";
+        return "/icons/explorer.ico";
     case Id::Settings:
-        return "/icons/settings.svg";
+        return "/icons/settings.ico";
     case Id::Terminal:
-        return "/icons/terminal.svg";
+        return "/icons/terminal.ico";
     case Id::GameLauncher:
-        return "/icons/game-launcher.svg";
+        return "/icons/game-launcher.ico";
     case Id::Bin:
-        return "/icons/bin.svg";
+        return "/icons/bin.ico";
     case Id::Profile:
-        return "/icons/profile-picture.svg";
+        return "/icons/profile-picture.ico";
     case Id::StartButton:
-        return "/icons/startbutton.svg";
+        return "/icons/startbutton.ico";
     default:
         return nullptr;
     }
@@ -72,7 +72,7 @@ bool load_one(Id id) noexcept
         return false;
     }
 
-    auto* buf = static_cast<char*>(mm::Heap::allocate(static_cast<usize>(sz) + 1));
+    auto* buf = static_cast<char*>(mm::Heap::allocate(static_cast<usize>(sz)));
     if (!buf)
     {
         log::write(log::Level::Warn, "icons", "%s: alloc failed", path);
@@ -88,7 +88,6 @@ bool load_one(Id id) noexcept
             break;
         got += n;
     }
-    buf[got] = 0;
 
     if (got != sz)
     {
@@ -98,19 +97,28 @@ bool load_one(Id id) noexcept
         return false;
     }
 
-    img::svg::Bitmap bmp{};
-    const bool ok =
-        img::svg::rasterize(buf, static_cast<usize>(got), kNativeSize, kNativeSize, bmp);
+    img::Image image{};
+    const bool ok = img::decode(buf, static_cast<usize>(got), image);
     mm::Heap::deallocate(buf);
-    if (!ok)
+
+    if (!ok || !image.pixels || image.width == 0 || image.height == 0)
     {
         log::write(log::Level::Warn, "icons", "%s: ICO decode failed (size=%lld)", path,
                    static_cast<long long>(sz));
+        img::free(image);
         return false;
     }
 
-    g_slots[static_cast<u32>(id)].pixels = bmp.pixels;
-    g_slots[static_cast<u32>(id)].size = kNativeSize;
+    if (image.width != kIconMaxSize || image.height != kIconMaxSize)
+    {
+        log::write(log::Level::Warn, "icons", "%s: expected 256x256, got %ux%u", path,
+                   image.width, image.height);
+        img::free(image);
+        return false;
+    }
+
+    g_slots[static_cast<u32>(id)].pixels = image.pixels;
+    g_slots[static_cast<u32>(id)].size = image.width;
     return true;
 }
 
@@ -132,7 +140,7 @@ void init() noexcept
             log::write(log::Level::Warn, "icons", "FAILED %s", p);
         }
     }
-    log::write(log::Level::Info, "icons", "loaded %llu/%llu SVG icons from /icons",
+    log::write(log::Level::Info, "icons", "loaded %llu/%llu ICO icons from /icons",
                static_cast<unsigned long long>(loaded),
                static_cast<unsigned long long>(static_cast<u32>(Id::Count) - 1));
 }
@@ -176,7 +184,7 @@ void draw(Id id, i32 x, i32 y, u32 size) noexcept
             const u32 sx = (i * src_size) / size;
             const u32 c = src[sy * src_size + sx];
             if ((c & 0xFFFFFFu) == 0)
-                continue; // transparent black
+                continue;
             const i32 px = x + static_cast<i32>(i);
             const i32 py = y + static_cast<i32>(j);
             if (px < 0 || py < 0)
