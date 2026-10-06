@@ -140,6 +140,23 @@ void handle_user_exception(InterruptFrame* f) noexcept
     // scheduler_exit_current is [[noreturn]].
 }
 
+// Dispatch CPU exceptions according to their privilege level. User-mode
+// faults are isolated to the current task; kernel-mode faults are fatal.
+void handle_exception(InterruptFrame* f) noexcept
+{
+    if ((f->cs & 0x3ULL) == 0x3ULL)
+    {
+        handle_user_exception(f);
+        return;
+    }
+
+    log::write(log::Level::Error, "exc", "kernel-mode %s: rip=0x%llx err=0x%llx",
+               exception_name(f->vector), static_cast<unsigned long long>(f->rip),
+               static_cast<unsigned long long>(f->error_code));
+    dump_frame(f);
+    panic("fatal kernel exception");
+}
+
 void handle_irq(u8 irq, InterruptFrame* /*f*/) noexcept
 {
     if (irq == 0)
