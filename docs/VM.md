@@ -52,7 +52,7 @@ The repository setup script creates a development VM with:
 | VM disk | 256 MiB VDI |
 
 This is a development configuration. SMP and the current PS/2, storage,
-graphics and audio initialization are already implemented. USB and additional hardware models remain outside the current VM configuration. USB support is queued for Phase 15; Wi-Fi and Bluetooth follow in Phases 17 and 18.
+graphics and audio initialization are already implemented. USB support is implemented in the kernel, including xHCI, HID and MSC, but the current VM configuration keeps USB off. Wi-Fi and Bluetooth remain queued in Phases 17 and 18.
 
 ## Why I/O APIC is off
 
@@ -131,5 +131,5 @@ with:
 
     pwsh -NoProfile -ExecutionPolicy Bypass -File .\tools\scripts\vbox-serial.ps1
 
-The current active roadmap is Phase 12A after the delivered Phase 11 font subsystem. VirtualBox is a host-side testing dependency. It is not part of the NOTYVOS
+The current active roadmap milestone is init-program debugging after the delivered Phase 11, Phase 12, Phase 13A and Phase 15A–15E work. VirtualBox is a host-side testing dependency. It is not part of the NOTYVOS
 kernel or OS distribution.
