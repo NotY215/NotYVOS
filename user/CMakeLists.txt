@@ -12,6 +12,12 @@
 cmake_minimum_required(VERSION 3.25)
 
 # Compile-time flags only. Linker flags live in NOTYVOS_USER_LINK_FLAGS.
+#
+# Every user program is compiled against the strictest possible baseline:
+# no SSE, no AVX, no x87, no MMX, and all auto-vectorizers disabled. This
+# guarantees that user code can never emit an instruction whose CPU state
+# the kernel has not enabled. If a future program needs SSE, the kernel
+# must set CR4.OSFXSR / OSXSAVE first, and only then may we relax these.
 set(NOTYVOS_USER_C_FLAGS
     -ffreestanding
     -fno-stack-protector
@@ -21,9 +27,16 @@ set(NOTYVOS_USER_C_FLAGS
     -fno-asynchronous-unwind-tables
     -fno-unwind-tables
     -fno-omit-frame-pointer
+    -fno-tree-vectorize
+    -fno-slp-vectorize
+    -fno-vectorize
     -mno-red-zone
     -mno-sse
     -mno-sse2
+    -mno-sse3
+    -mno-ssse3
+    -mno-sse4.1
+    -mno-sse4.2
     -mno-mmx
     -mno-3dnow
     -mno-80387

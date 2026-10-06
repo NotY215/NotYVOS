@@ -1,10 +1,17 @@
 /* NOTYVOS user-space linker script.
  *
- * Non-PIE. Fixed load address 0x400000. All sections accounted for;
- * everything unused is discarded so the linker cannot place stray
- * sections at unexpected addresses. */
+ * Non-PIE. Fixed load address 0x400000. Every output section is page-aligned
+ * so the kernel's segment loader (which maps whole 4 KiB pages) can never
+ * leave holes between logically adjacent sections. */
 
 ENTRY(_start)
+
+PHDRS
+{
+    text   PT_LOAD FLAGS(5);   /* R + X */
+    rodata PT_LOAD FLAGS(4);   /* R     */
+    data   PT_LOAD FLAGS(6);   /* R + W */
+}
 
 SECTIONS
 {
@@ -14,29 +21,33 @@ SECTIONS
         *(.text .text.*)
         *(.init .init.*)
         *(.fini .fini.*)
-    }
+    } :text
 
-    .rodata : ALIGN(0x1000) {
+    . = ALIGN(0x1000);
+    .rodata : {
         *(.rodata .rodata.*)
         *(.rodata.cst*)
         *(.rodata.str*)
-    }
+    } :rodata
 
-    .data : ALIGN(0x1000) {
+    . = ALIGN(0x1000);
+    .data : {
         *(.data .data.*)
         *(.data.rel.ro .data.rel.ro.*)
-    }
+    } :data
 
-    .bss : ALIGN(0x1000) {
-        *(.bss .bss.*)
-        *(COMMON)
-        . = ALIGN(16);
-    }
-
-    .got : ALIGN(0x1000) {
+    . = ALIGN(0x1000);
+    .got : {
         *(.got .got.*)
         *(.got.plt .got.plt.*)
-    }
+    } :data
+
+    . = ALIGN(0x1000);
+    .bss : {
+        *(.bss .bss.*)
+        *(COMMON)
+        . = ALIGN(0x1000);
+    } :data
 
     /DISCARD/ : {
         *(.eh_frame .eh_frame_hdr)
