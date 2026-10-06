@@ -70,7 +70,7 @@ pre-converted raw wallpaper is present.
 
 Phases **0–10F are frozen as delivered**. Phase 11 TrueType rendering is now
 delivered as part of the desktop text path. The active roadmap begins with
-Phase 12A, Explorer grid view and details toggle.
+init-program debugging.
 
 The current boot path still uses Limine. Native firmware replacement is a
 separate long-term Phase 21 project and is not yet implemented.
