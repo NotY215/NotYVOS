@@ -7,7 +7,7 @@ foundation.
 NOTYVOS is currently a development-stage system. The native kernel, user process model, VFS, desktop compositor, widgets,
 storage stack, PS3 runtime foundation, RSX compatibility foundation,
 GameRunner foundation, image viewer, theme system and native GPU backend are implemented.
-Extended UI management now covers the delivered 10C–10F desktop interaction work; Windows application compatibility remains future work.
+Extended UI management now covers the delivered 10C–10F desktop interaction work, Phase 11 fonts, Phase 12 Explorer/file operations, Phase 13A clipboard and Phase 15 USB/input integration; Windows application compatibility remains excluded from the current roadmap.
 
 ## Current platform
 
@@ -99,6 +99,10 @@ exec, brk, time, sleep, kill, about, and exit handling.
 - PS3 ABI syscall table and bounded PPU guest launch
 - cellFs VFS bridge
 - Rendering validation through the current RSX path
+- USB xHCI controller, USB enumeration, HID keyboard/mouse and MSC storage
+- Unified keyboard/mouse input facade across PS/2, USB and synthetic sources
+- Desktop clipboard with text and single-file copy/cut/paste routing
+- Real Explorer file operations through VFS/NYFS
 
 ### Image and desktop UI
 - BMP, PNG, GIF, ICO and JPEG decoding
@@ -121,10 +125,12 @@ exec, brk, time, sleep, kill, about, and exit handling.
 **Phases 0–10F are frozen as delivered.**
 
 - **Phase 11 — TrueType Font Subsystem:** Done
-- **Phase 12 — Explorer 10G + Real File Operations:** Next
-- **Phase 13 — Desktop Clipboard + Dialogs:** Queued
-- **Phase 14 — 7D GameRunner Runtime Integration:** Queued
-- **Phase 15 — USB Stack + USB HID:** Queued
+- **Phase 12 — Explorer 10G + Real File Operations:** Done
+- **Phase 13A — Desktop Clipboard:** Done
+- **Phase 15A–15E — USB Stack + Unified Input:** Done
+- **User-fault isolation + user build flags + BMP test vector:** Delivered
+- **Init program debugging:** Next
+- **Phase 14 / 7D — GameRunner Runtime Integration:** Queued
 - **Phase 16 — Production Network Stack:** Queued
 - **Phase 17 — Wi-Fi Driver + Management UI:** Queued
 - **Phase 18 — Bluetooth Framework:** Queued
