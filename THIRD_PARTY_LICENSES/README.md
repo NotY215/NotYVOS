@@ -30,12 +30,17 @@ runtime test workflow.
 
 | Component | Source / status |
 |---|---|
-| PS3 firmware | User-supplied, legally obtained, Sony proprietary |\n| RTL8188EU firmware | `rtl8188eufw.bin`, locally supplied firmware blob; redistribution status must be verified before bundling |
+| PS3 firmware | User-supplied, legally obtained, Sony proprietary |
+| RTL8188EU firmware | `Firmware/rtl8188eufw.bin`, Realtek RTL8188EU firmware blob, locally supplied |
 | PS3 game software | User-supplied, respective copyright holders |
 | Windows applications | User-supplied, respective copyright holders; compatibility validation excluded from current roadmap |
 
 NOTYVOS does not redistribute Sony private keys, decryption keys, or
 decryption bypass tooling.
+
+### RTL8188EU firmware notice
+
+`Firmware/rtl8188eufw.bin` is third-party firmware used by the RTL8188EU Wi-Fi hardware path. It is not authored by NOTYVOS and is not part of the NOTYVOS AGPL-3.0-or-later source code. The file is treated as a developer-supplied firmware blob. Its copyright, license and redistribution terms belong to the applicable upstream vendor or distributor. Before bundling or redistributing this binary, verify the applicable license and redistribution permissions. NOTYVOS does not claim ownership of the firmware.
 
 ## License files
 
