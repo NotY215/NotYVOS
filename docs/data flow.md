@@ -764,7 +764,7 @@ flowchart TD
     P13A --> INIT[Init program debugging NEXT]
     P13A --> P15[15A-15E USB + unified input DONE]
     P15 --> P16[16 Production networking]
-    P16 --> P17[17 Wi-Fi + Network Manager]
+    P16 --> P17[17 RTL8188EU Wi-Fi + Network Manager]
     P15 --> P18[18 Bluetooth]
     P16 --> P20[20 Firewall]
     P19[19 NYFS maturity]
@@ -772,3 +772,17 @@ flowchart TD
 ```
 
 Init program debugging is the current milestone. Phase 14 / 7D and Phases 16–21 remain queued according to docs/roadmap.md. Windows PE/Win32 compatibility and Brave/VLC validation are explicitly excluded.
+
+
+## RTL8188EU Wi-Fi firmware input
+
+The current Wi-Fi development path uses the local firmware blob `Firmware/rtl8188eufw.bin`.
+
+```mermaid
+flowchart LR
+    FW[rtl8188eufw.bin] --> RTL[RTL8188EU driver]
+    RTL --> WIFI[Wi-Fi framework]
+    WIFI --> NET[Network stack]
+```
+
+The firmware file is a local development input and is not a repository asset unless its redistribution rights are explicitly verified. Full driver, association and Network Manager work remains in Phase 17.
