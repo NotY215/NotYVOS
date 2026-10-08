@@ -7,7 +7,7 @@ foundation.
 NOTYVOS is currently a development-stage system. The native kernel, user process model, VFS, desktop compositor, widgets,
 storage stack, PS3 runtime foundation, RSX compatibility foundation,
 GameRunner foundation, image viewer, theme system and native GPU backend are implemented.
-Extended UI management now covers the delivered 10C–10F desktop interaction work, Phase 11 fonts, Phase 12 Explorer/file operations, Phase 13A clipboard and Phase 15 USB/input integration; Windows application compatibility remains excluded from the current roadmap.
+Extended UI management now covers the delivered 10C–10F desktop interaction work and completely delivered Phases 11–16; Phase 17 RTL8188EU Wi-Fi development is now active. Windows application compatibility remains excluded from the current roadmap.
 
 ## Current platform
 
@@ -125,15 +125,13 @@ exec, brk, time, sleep, kill, about, and exit handling.
 
 **Phases 0–10F are frozen as delivered.**
 
-- **Phase 11 -- TrueType Font Subsystem:** Done
-- **Phase 12 -- Explorer 10G + Real File Operations:** Done
-- **Phase 13A -- Desktop Clipboard:** Done
-- **Phase 15A–15E -- USB Stack + Unified Input:** Done
+- **Phases 11–16:** Done
 - **User-fault isolation + user build flags + BMP test vector:** Delivered
-- **Init program debugging:** Next
-- **Phase 14 / 7D -- GameRunner Runtime Integration:** Queued
-- **Phase 16 -- Production Network Stack:** Queued
-- **Phase 17 -- Wi-Fi Driver + Management UI:** Queued
+- **Phase 17 -- RTL8188EU Wi-Fi Driver + Management UI:** Working
+- **Phase 18 -- Bluetooth Framework:** Queued
+- **Phase 19 -- NYFS Maturity:** Queued
+- **Phase 20 -- Firewall + Network Security:** Queued
+- **Phase 21 -- NotYVFirm:** Queued
 - **Phase 18 -- Bluetooth Framework:** Queued
 - **Phase 19 -- NYFS Maturity:** Queued
 - **Phase 20 -- Firewall + Network Security:** Queued
