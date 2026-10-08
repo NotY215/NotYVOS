@@ -29,18 +29,16 @@ Markmap parses this native Markdown outline into an interactive mindmap
       - 11D Compositor integration
         - font::draw_text()
       - 11E Boot self-test
-  - Next
+  - Delivered
     - Phase 12 -- Explorer 10G + Real File Operations
-      - 12A Grid + details
-      - 12B Breadcrumb
-      - 12C Open / New / Rename / Delete / Properties
-  - Queued
     - Phase 13 -- Clipboard + Dialogs
     - Phase 14 -- GameRunner Runtime Integration
     - Phase 15 -- USB + HID
-    - Phase 16 -- Production Network -- QUEUED
-    - Phase 17 -- RTL8188EU Wi-Fi + Network Manager -- QUEUED
+    - Phase 16 -- Production Network
+  - Working
+    - Phase 17 -- RTL8188EU Wi-Fi + Network Manager
       - Firmware input: Firmware/rtl8188eufw.bin
+  - Queued
     - Phase 18 -- Bluetooth -- QUEUED
     - Phase 19 -- NYFS Maturity -- QUEUED
     - Phase 20 -- Firewall -- QUEUED
