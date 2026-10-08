@@ -75,3 +75,11 @@ Kernel.Syscalls -> Desktop.Graphics
 Desktop.Explorer -> Kernel.VFS: file ops
 Desktop.Fonts -> Kernel.Memory: glyph cache
 Kernel.CPU -> PS3.Loader
+
+
+# RTL8188EU Wi-Fi development input
+RTLFW: rtl8188eufw.bin {shape: page}
+RTL: RTL8188EU Wi-Fi driver
+WiFi: Wi-Fi framework
+Network: Network stack
+RTLFW -> RTL -> WiFi -> Network
