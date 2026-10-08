@@ -110,6 +110,8 @@ extern "C"
 #include <kernel/net/wpa.hpp>
 #include <kernel/net/socket.hpp>
 #include <kernel/net/dns.hpp>
+#include <kernel/net/rtl8188eu.hpp>
+#include <kernel/net/wifi_stub.hpp>
 #include <kernel/panic.hpp>
 #include <kernel/proc/elf.hpp>
 #include <kernel/ps3/jit/jit.hpp>
@@ -230,10 +232,12 @@ extern "C" [[noreturn]] void kernel_main()
 
     // ---- Networking + Audio ----
     net::init();
-    net::sock::init();
-    net::dns::init();
     net::wifi::init();
     net::wpa::init();
+    net::rtl8188eu::init();
+    net::wifi_stub::init();  
+    net::sock::init();
+    net::dns::init();
     if (net::e1000_init())
     {
         net::Interface* eth0 = net::e1000_interface();

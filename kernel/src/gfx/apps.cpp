@@ -16,6 +16,7 @@ extern "C" void notyvos_compositor_pump_for_modal();
 #include <kernel/net/net.hpp>
 #include <kernel/net/e1000.hpp>
 #include <kernel/net/wifi.hpp>
+#include <kernel/net/wpa.hpp>
 
 namespace notyvos::gfx
 {
@@ -1358,6 +1359,7 @@ enum class SettingsTab : u8
     Storage,
     Input,
     Network,
+    Wifi,
     Appearance,
     About
 };
@@ -1384,6 +1386,8 @@ const char* tab_label(SettingsTab t)
         return "Input";
     case SettingsTab::Network:
         return "Network";
+    case SettingsTab::Wifi:
+        return "Wi-Fi";
     case SettingsTab::Appearance:
         return "Appearance";
     case SettingsTab::About:
@@ -1465,12 +1469,13 @@ void draw_settings(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my, bool)
     r(gx, gy, side_w, 40, 0x00E4E4E4);
     t(gx + 16, gy + 14, "Settings", 0x00202020, 0x00E4E4E4);
 
-    const SettingsTab tabs[7] = {SettingsTab::System, SettingsTab::Display, SettingsTab::Storage,
-                                 SettingsTab::Input,  SettingsTab::Network, SettingsTab::Appearance,
-                                 SettingsTab::About};
+    const SettingsTab tabs[8] = {
+        SettingsTab::System,  SettingsTab::Display, SettingsTab::Storage,    SettingsTab::Input,
+        SettingsTab::Network, SettingsTab::Wifi,    SettingsTab::Appearance, SettingsTab::About};
+
     i32 ty = gy + 52;
     g_set.hover_tab = -1;
-    for (u32 i = 0; i < 7; ++i)
+    for (u32 i = 0; i < 8; ++i)
     {
         const bool hover = (mx >= gx && mx < gx + side_w - 1 && my >= ty && my < ty + 34);
         if (hover)
@@ -1570,6 +1575,136 @@ void draw_settings(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my, bool)
         }
         break;
     }
+    case SettingsTab::Wifi:
+    {
+        const u32 na = net::wifi::adapter_count();
+        if (na == 0)
+        {
+            t(rx + 16, cy, "No Wi-Fi adapter detected.", 0x00606070, kContentBg);
+            cy += 22;
+            t(rx + 16, cy, "Attach a USB Wi-Fi dongle and pass it through VBox.", 0x00909090,
+              kContentBg);
+            break;
+        }
+
+        auto* adapter = net::wifi::adapter_by_index(0);
+        if (!adapter)
+            break;
+
+        char status[64];
+        int s = 0;
+        const char* name = adapter->name;
+        while (*name && s < 32)
+            status[s++] = *name++;
+        status[s++] = ':';
+        status[s++] = ' ';
+        const char* st = adapter->connected ? "connected" : "disconnected";
+        while (*st && s < 63)
+            status[s++] = *st++;
+        status[s] = 0;
+
+        t(rx + 16, cy, "Adapter", 0x00404040, kContentBg);
+        t(rx + 240, cy, status, 0x00202020, kContentBg);
+        cy += 22;
+
+        if (adapter->connected)
+        {
+            t(rx + 16, cy, "SSID", 0x00404040, kContentBg);
+            t(rx + 240, cy, adapter->current_ssid, 0x00202020, kContentBg);
+            cy += 22;
+        }
+
+        // Scan button.
+        const i32 btn_x = rx + 16;
+        const i32 btn_y = cy + 10;
+        const i32 btn_w = 120;
+        const i32 btn_h = 30;
+        r(btn_x, btn_y, btn_w, btn_h, kNavHi);
+        r(btn_x, btn_y, btn_w, 1, kHeaderEdge);
+        r(btn_x, btn_y + btn_h - 1, btn_w, 1, kHeaderEdge);
+        t(btn_x + 30, btn_y + 7, g_wifi.scanning ? "Scanning..." : "Scan networks", 0x00202020,
+          kNavHi);
+        cy += 50;
+
+        // Results.
+        const u32 n = net::wifi::scan_results(adapter->name, nullptr, 0);
+        static net::wifi::ScanResult results[net::wifi::kMaxScanResults];
+        const u32 got = net::wifi::scan_results(adapter->name, results, net::wifi::kMaxScanResults);
+        (void)n;
+
+        if (got == 0)
+        {
+            t(rx + 16, cy, "No networks. Press Scan.", 0x00909090, kContentBg);
+        }
+        else
+        {
+            t(rx + 16, cy, "SSID", 0x00606060, kContentBg);
+            t(rx + 300, cy, "Ch", 0x00606060, kContentBg);
+            t(rx + 340, cy, "Signal", 0x00606060, kContentBg);
+            t(rx + 420, cy, "Security", 0x00606060, kContentBg);
+            cy += 20;
+
+            for (u32 i = 0; i < got && i < 10; ++i)
+            {
+                const auto& r2 = results[i];
+                t(rx + 16, cy, r2.ssid, 0x00202020, kContentBg);
+
+                char chbuf[4];
+                int n2 = 0;
+                u8 ch = r2.channel;
+                if (ch == 0)
+                    chbuf[n2++] = '0';
+                else
+                {
+                    char tmp[4];
+                    int m = 0;
+                    while (ch)
+                    {
+                        tmp[m++] = static_cast<char>('0' + ch % 10);
+                        ch /= 10;
+                    }
+                    while (m)
+                        chbuf[n2++] = tmp[--m];
+                }
+                chbuf[n2] = 0;
+                t(rx + 300, cy, chbuf, 0x00202020, kContentBg);
+
+                char sig[8];
+                int n3 = 0;
+                i8 rssi = r2.signal_dbm;
+                if (rssi < 0)
+                {
+                    sig[n3++] = '-';
+                    rssi = static_cast<i8>(-rssi);
+                }
+                if (rssi >= 10)
+                    sig[n3++] = static_cast<char>('0' + (rssi / 10) % 10);
+                sig[n3++] = static_cast<char>('0' + rssi % 10);
+                sig[n3++] = ' ';
+                sig[n3++] = 'd';
+                sig[n3++] = 'B';
+                sig[n3] = 0;
+                t(rx + 340, cy, sig, 0x00202020, kContentBg);
+
+                const char* sec = "Open";
+                if (r2.security == net::wifi::Security::WPA2_PSK)
+                    sec = "WPA2";
+                else if (r2.security == net::wifi::Security::WPA)
+                    sec = "WPA";
+                else if (r2.security == net::wifi::Security::WEP)
+                    sec = "WEP";
+                t(rx + 420, cy, sec, 0x00202020, kContentBg);
+
+                // Connect button.
+                const i32 cx2 = rx + rw - 100;
+                r(cx2, cy - 2, 80, 18, 0x00D0E4F4);
+                t(cx2 + 12, cy, "Connect", 0x00202020, 0x00D0E4F4);
+
+                cy += 22;
+            }
+        }
+        break;
+    }
     case SettingsTab::Appearance:
         t(rx + 16, cy, "Appearance settings land here.", 0x00606070, kContentBg);
         break;
@@ -1654,6 +1789,17 @@ struct GameLauncherState
     i32 hover;
     i32 tab;
 };
+struct WifiUiState
+{
+    bool scanning;
+    u64 scan_started;
+    char selected_ssid[33];
+    char password[64];
+    bool connect_dialog_open;
+    bool password_focused;
+};
+WifiUiState g_wifi{};
+
 GameLauncherState g_gl{};
 
 void gamelauncher_scan()
@@ -1782,7 +1928,134 @@ void draw_gamelauncher(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my, bool)
     }
 }
 
+bool wifi_connect_clicked(i32 mx, i32 my, i32 rx, i32 rw, i32 cy_base,
+                          const net::wifi::ScanResult* results, u32 count) noexcept
+{
+    for (u32 i = 0; i < count && i < 10; ++i)
+    {
+        const i32 row_y = cy_base + 20 + static_cast<i32>(i) * 22;
+        const i32 cx2 = rx + rw - 100;
+        if (mx >= cx2 && mx < cx2 + 80 && my >= row_y - 2 && my < row_y + 18)
+        {
+            u32 n = 0;
+            while (results[i].ssid[n] && n < 32)
+            {
+                g_wifi.selected_ssid[n] = results[i].ssid[n];
+                ++n;
+            }
+            g_wifi.selected_ssid[n] = 0;
+            g_wifi.connect_dialog_open = true;
+            g_wifi.password[0] = 0;
+            return true;
+        }
+    }
+    return false;
+}
+
+void wifi_prompt_password() noexcept
+{
+    // Blocking modal loop, same pattern as the Explorer's prompt_text.
+    auto* a = net::wifi::adapter_by_index(0);
+    if (!a)
+        return;
+
+    usize plen = 0;
+    for (;;)
+    {
+        extern "C" void notyvos_compositor_pump_for_modal();
+        notyvos_compositor_pump_for_modal();
+
+        const i32 sw = static_cast<i32>(fb::Framebuffer::width());
+        const i32 sh = static_cast<i32>(fb::Framebuffer::height());
+        const i32 w = 420, h = 180;
+        const i32 x = (sw - w) / 2, y = (sh - h) / 2;
+
+        r(x - 2, y - 2, w + 4, h + 4, 0x00000000);
+        r(x, y, w, h, 0x00F0F0F0);
+        r(x, y, w, 1, 0x00606060);
+        r(x, y + h - 1, w, 1, 0x00606060);
+        r(x, y, 1, h, 0x00606060);
+        r(x + w - 1, y, 1, h, 0x00606060);
+
+        t(x + 16, y + 16, "Wi-Fi Password", 0x00202020, 0x00F0F0F0);
+        char line[80];
+        int p = 0;
+        const char* s = g_wifi.selected_ssid;
+        while (*s && p < 60)
+            line[p++] = *s++;
+        line[p++] = ' ';
+        line[p++] = '|';
+        line[p++] = ' ';
+        for (usize i = 0; i < plen && p < 78; ++i)
+            line[p++] = '*';
+        line[p] = 0;
+        t(x + 16, y + 46, line, 0x00404040, 0x00F0F0F0);
+
+        r(x + 16, y + 80, w - 32, 30, 0x00FFFFFF);
+        r(x + 16, y + 80, w - 32, 1, 0x00A0A0A0);
+        r(x + 16, y + 109, w - 32, 1, 0x00A0A0A0);
+        for (usize i = 0; i < plen; ++i)
+            t(x + 22 + static_cast<i32>(i) * 8, y + 86, "*", 0x00202020, 0x00FFFFFF);
+
+        t(x + 16, y + 126, "Enter = connect   Esc = cancel", 0x00606060, 0x00F0F0F0);
+
+        i32 c = arch::x86_64::keyboard_pop();
+        while (c >= 0)
+        {
+            const char ch = static_cast<char>(c);
+            if (ch == '\n' || ch == '\r')
+            {
+                g_wifi.password[plen] = 0;
+                g_wifi.connect_dialog_open = false;
+                (void)net::wpa::connect(a->name, g_wifi.selected_ssid, g_wifi.password);
+                return;
+            }
+            if (ch == 27)
+            {
+                g_wifi.connect_dialog_open = false;
+                return;
+            }
+            if ((ch == '\b' || ch == 127) && plen > 0)
+            {
+                --plen;
+                continue;
+            }
+            if (ch >= 0x20 && ch <= 0x7E && plen + 1 < sizeof(g_wifi.password))
+            {
+                g_wifi.password[plen++] = ch;
+            }
+            c = arch::x86_64::keyboard_pop();
+        }
+        for (u32 i = 0; i < 400000; ++i)
+            asm volatile("pause");
+    }
+}
+
 } // namespace
+
+void wifi_start_scan() noexcept
+{
+    auto* a = net::wifi::adapter_by_index(0);
+    if (!a)
+        return;
+    g_wifi.scanning = true;
+    g_wifi.scan_started = arch::x86_64::pit_ticks();
+    (void)net::wifi::scan(a->name);
+}
+
+void wifi_pump_scan() noexcept
+{
+    if (!g_wifi.scanning)
+        return;
+    auto* a = net::wifi::adapter_by_index(0);
+    if (!a)
+    {
+        g_wifi.scanning = false;
+        return;
+    }
+    if (arch::x86_64::pit_ticks() - g_wifi.scan_started > 320)
+        g_wifi.scanning = false;
+}
 
 void apps_bind_impl(AppRectFn rect_fn, AppTextFn text_fn) noexcept
 {
@@ -1922,6 +2195,29 @@ bool apps_click_settings(i32 mx, i32 my, bool pressed_edge) noexcept
     const SettingsTab tabs[7] = {SettingsTab::System, SettingsTab::Display, SettingsTab::Storage,
                                  SettingsTab::Input,  SettingsTab::Network, SettingsTab::Appearance,
                                  SettingsTab::About};
+
+        // Wi-Fi tab interactions.
+    if (g_set.current == SettingsTab::Wifi)
+    {
+        auto* a = net::wifi::adapter_by_index(0);
+        if (a)
+        {
+            // Scan button: approximate coordinates from draw_settings.
+            if (mx >= 224 && mx < 344 && my >= 200 && my < 230)
+            {
+                wifi_start_scan();
+                return true;
+            }
+
+            static net::wifi::ScanResult results[net::wifi::kMaxScanResults];
+            const u32 got = net::wifi::scan_results(a->name, results, net::wifi::kMaxScanResults);
+            if (wifi_connect_clicked(mx, my, 220, 600, 280, results, got))
+            {
+                wifi_prompt_password();
+                return true;
+            }
+        }
+    }
 
     if (g_set.hover_tab >= 0 && g_set.hover_tab < 7)
     {

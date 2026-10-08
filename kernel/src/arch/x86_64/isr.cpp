@@ -5,6 +5,7 @@
 #include <kernel/arch/x86_64/pit.hpp>
 #include <kernel/gfx/compositor.hpp>
 #include <kernel/log.hpp>
+#include <kernel/net/rtl8188eu.hpp>
 #include <kernel/panic.hpp>
 #include <kernel/sched/scheduler.hpp>
 
@@ -167,6 +168,7 @@ void handle_irq(u8 irq, InterruptFrame* /*f*/) noexcept
     {
         pit_on_tick();
         notyvos_e1000_poll();
+        net::rtl8188eu::poll();
         sched::scheduler_tick();
         net::wpa::tick();
         // Mark the clock dirty. The actual repaint happens in the idle loop.

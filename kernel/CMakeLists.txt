@@ -177,7 +177,9 @@ set(KERNEL_SOURCES
     src/net/wifi.cpp
     src/net/wpa.cpp
     src/net/e1000.cpp
-
+    src/net/rtl8188eu.cpp
+    src/net/wifi_stub.cpp
+    
     src/crypto/sha1.cpp
     src/crypto/pbkdf2.cpp
     src/crypto/aes_unwrap.cpp

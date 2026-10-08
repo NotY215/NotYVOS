@@ -43,5 +43,8 @@ bool apps_prompt_confirm(const char* title, const char* message) noexcept;
 bool apps_click_explorer(i32 mx, i32 my, bool pressed_edge) noexcept;
 bool apps_click_settings(i32 mx, i32 my, bool pressed_edge) noexcept;
 bool apps_click_bin(i32 mx, i32 my, bool pressed_edge) noexcept;
+// Wi-Fi UI helpers used by the compositor tick.
+void wifi_pump_scan() noexcept;
+void wifi_start_scan() noexcept;
 
 } // namespace notyvos::gfx

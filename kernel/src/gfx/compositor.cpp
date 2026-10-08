@@ -799,9 +799,38 @@ void scene_draw_taskbar()
         x += static_cast<i32>(tw) + 6;
     }
 
-    const i32 tray_x = to_i32(g_w) - 130;
-    for (i32 k = 0; k < 3; ++k)
-        s_fill(tray_x + k * 20, y0 + 12, 6, 6, kTextDim);
+    const i32 tray_x = to_i32(g_w) - 150;
+
+    // Wi-Fi indicator: coloured square if any adapter is connected.
+    {
+        u32 wifi_color = kTextDim;
+        bool any = false;
+        const u32 n = net::wifi::adapter_count();
+        for (u32 i = 0; i < n; ++i)
+        {
+            auto* a = net::wifi::adapter_by_index(i);
+            if (a && a->connected)
+            {
+                wifi_color = 0x0060C060u;
+                any = true;
+                break;
+            }
+        }
+        if (!any && n > 0)
+            wifi_color = 0x00C0A040u;
+        s_fill(tray_x + 0, y0 + 12, 8, 8, wifi_color);
+        s_fill(tray_x + 2, y0 + 18, 4, 2, wifi_color);
+    }
+
+    // Ethernet indicator.
+    {
+        const bool eth_up = net::e1000_present();
+        const u32 eth_color = eth_up ? 0x0060C060u : kTextDim;
+        s_fill(tray_x + 16, y0 + 12, 8, 8, eth_color);
+    }
+
+    // Volume (placeholder).
+    s_fill(tray_x + 32, y0 + 12, 6, 6, kTextDim);
 
     {
         u32 yy = 0, mo = 0, dy = 0, hh = 0, mi = 0;
@@ -2700,6 +2729,9 @@ void Compositor::tick() noexcept
             g_dirty_scene = true;
         }
     }
+
+    // Advance any pending Wi-Fi scan (cooperative, ~3 s timeout).
+    wifi_pump_scan();
 
     usb::hid::poll();
 
