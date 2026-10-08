@@ -47,7 +47,7 @@ flowchart TD
 | Image decoders | Delivered | ~90% | BMP/PNG/GIF/ICO/JPEG are solid |
 | SVG decoder + icons | Delivered | ~85% | Diagnostics added; VFS packaging confirmation remains |
 | TrueType font renderer | Delivered | ~75% | Inter rasterization and AA text delivered; shaping and kerning remain |
-| Hardware support | Partial | ~30% | ACPI, AHCI, e1000, HDA, PS/2; USB/Wi-Fi/Bluetooth remain |
+| Hardware support | Partial | ~35% | ACPI, AHCI, e1000, HDA, PS/2, USB; RTL8188EU Wi-Fi firmware input is now defined, but full Wi-Fi integration remains |
 | Native firmware (NotYVFirm) | Not started | 0% | Long-term firmware domain |
 | Windows .exe compatibility | Excluded | 0% | Not on the current roadmap |
 | Brave / VLC validation | Excluded | 0% | Not on the current roadmap |
@@ -152,7 +152,7 @@ Deferred: IPv6, IPsec, multicast and raw sockets.
 
 | Subphase | Scope |
 |---|---|
-| 17A | 802.11 driver and firmware loading |
+| 17A | RTL8188EU 802.11 driver and `Firmware/rtl8188eufw.bin` firmware loading |
 | 17B | WPA2 supplicant |
 | 17C | Network Manager UI in Settings |
 | 17D | Roaming and power management |
@@ -214,7 +214,7 @@ Deferred indefinitely: Secure Boot integration and TPM measurements.
 ### Core OS
 1. Production IPv4/IPv6, TCP, UDP, DHCP, DNS and sockets
 2. USB host controller, USB HID and USB storage
-3. Wi-Fi driver and management
+3. Wi-Fi driver and management, including RTL8188EU firmware loading
 4. Bluetooth framework
 5. Firewall and network security
 6. NYFS journaling, crash recovery and scaling

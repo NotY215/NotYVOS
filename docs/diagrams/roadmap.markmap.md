@@ -39,7 +39,8 @@ Markmap parses this native Markdown outline into an interactive mindmap
     - Phase 14 -- GameRunner Runtime Integration
     - Phase 15 -- USB + HID
     - Phase 16 -- Production Network -- QUEUED
-    - Phase 17 -- Wi-Fi + Network Manager -- QUEUED
+    - Phase 17 -- RTL8188EU Wi-Fi + Network Manager -- QUEUED
+      - Firmware input: Firmware/rtl8188eufw.bin
     - Phase 18 -- Bluetooth -- QUEUED
     - Phase 19 -- NYFS Maturity -- QUEUED
     - Phase 20 -- Firewall -- QUEUED

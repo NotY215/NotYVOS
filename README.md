@@ -77,6 +77,7 @@ exec, brk, time, sleep, kill, about, and exit handling.
 - ACPI table discovery and power/restart paths
 - AHCI storage
 - Intel e1000 network driver
+- RTL8188EU Wi-Fi firmware input via `Firmware/rtl8188eufw.bin`; full Wi-Fi driver and management remain in Phase 17
 - HDA audio driver
 - PS/2 keyboard and mouse
 - VBE/framebuffer presentation path
