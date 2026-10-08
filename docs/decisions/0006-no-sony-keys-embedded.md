@@ -1,4 +1,4 @@
-# ADR 0006 — No Sony keys, no decryption bypass
+# ADR 0006 -- No Sony keys, no decryption bypass
 
 Status: Accepted
 

@@ -1,8 +1,10 @@
+#include <kernel/gfx/compositor.hpp>
+#include <kernel/mm/heap.hpp>
+#include <kernel/ps3/rsx/rsx.hpp>
 #include <kernel/fs/vfs.hpp>
 #include <kernel/libk/mem.hpp>
 #include <kernel/libk/string.hpp>
 #include <kernel/log.hpp>
-#include <kernel/mm/heap.hpp>
 #include <kernel/proc/elf.hpp>
 #include <kernel/ps3/abi/syscalls.hpp>
 #include <kernel/ps3/gamerunner.hpp>
@@ -16,6 +18,9 @@ namespace
 {
 
 constexpr u8 kElfMagic[4] = {0x7F, 'E', 'L', 'F'};
+constexpr u32 kGameSceneW = 800;
+constexpr u32 kGameSceneH = 600;
+u32* g_game_scene = nullptr;
 
 void print_elf_warning(const char* name) noexcept
 {
@@ -178,6 +183,24 @@ Format detect(const void* data, usize size) noexcept
     return Format::Unknown;
 }
 
+// Guarantee an RSX scene buffer exists and is bound. Called before the
+// PPU starts running so any writes the guest makes to the RSX hit a live
+// surface.
+void ensure_rsx_surface() noexcept
+{
+    if (!g_game_scene)
+    {
+        const usize bytes = static_cast<usize>(kGameSceneW) * kGameSceneH * 4;
+        g_game_scene = static_cast<u32*>(mm::Heap::allocate(bytes));
+        if (!g_game_scene)
+            return;
+        for (usize i = 0; i < bytes / 4; ++i)
+            g_game_scene[i] = 0x00101018u;
+    }
+    rsx::Rsx::bind_surface_memory(g_game_scene, kGameSceneW, kGameSceneH, kGameSceneW);
+    gfx::Compositor::game_attach(g_game_scene, kGameSceneW, kGameSceneH, kGameSceneW);
+}
+
 LaunchResult launch_from_memory(const void* data, usize size, const char* name) noexcept
 {
     LaunchResult r{};
@@ -223,9 +246,31 @@ LaunchResult launch_from_memory(const void* data, usize size, const char* name) 
         ctx.pc = entry;
         abi::install(&ctx);
 
+        // Bring the RSX up and present it as a window before the guest
+        // runs. Without this, RSX writes go nowhere.
+        ensure_rsx_surface();
+        rsx::Rsx::set_guest_read32(
+            [](void* user, u64 addr, u32* out) -> bool
+            {
+                // Guest read callback into the 16 MiB flat guest buffer.
+                if (!user || !out)
+                    return false;
+                const auto* base = static_cast<const u8*>(user);
+                if (addr + 4 > kGuestSize)
+                    return false;
+                *out = (static_cast<u32>(base[addr]) << 24) |
+                       (static_cast<u32>(base[addr + 1]) << 16) |
+                       (static_cast<u32>(base[addr + 2]) << 8) | static_cast<u32>(base[addr + 3]);
+                return true;
+            },
+            g_guest);
+
         // Bound the run: this is a Phase 7B smoke run, not a game session.
         constexpr u64 kMaxSteps = 100000;
         r.ppu_steps = ppu::run(&ctx, kMaxSteps);
+        // Drain any RSX FIFO commands the guest enqueued and present.
+        (void)rsx::Rsx::process(4096);
+        gfx::Compositor::game_present();
         r.ppu_ran = true;
         r.entry = entry;
 

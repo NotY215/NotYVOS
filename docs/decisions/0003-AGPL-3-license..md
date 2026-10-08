@@ -1,4 +1,4 @@
-# ADR 0003 — AGPL-3.0-or-later license for NOTYVOS
+# ADR 0003 -- AGPL-3.0-or-later license for NOTYVOS
 
 Status: Accepted
 Date: 2025

@@ -21,6 +21,7 @@ extern SyscallFrame* g_current_frame;
 
 namespace nr
 {
+constexpr u64 kGameRun = 18;
 constexpr u64 kExit = 0;
 constexpr u64 kWrite = 1;
 constexpr u64 kYield = 2;

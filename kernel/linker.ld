@@ -1,4 +1,4 @@
-/* NOTYVOS kernel linker script — Limine protocol, higher-half. */
+/* NOTYVOS kernel linker script -- Limine protocol, higher-half. */
 
 OUTPUT_FORMAT(elf64-x86-64)
 OUTPUT_ARCH(i386:x86-64)

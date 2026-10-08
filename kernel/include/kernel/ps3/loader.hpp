@@ -9,7 +9,7 @@ namespace notyvos::ps3
 // mapping anything into memory yet. Phase 4B will map and start executing.
 struct Ps3Program
 {
-    u64 entry;     // e_entry — virtual address of the entry point
+    u64 entry;     // e_entry -- virtual address of the entry point
     u64 phoff;     // offset of the program header table
     u16 phentsize; // size of one program header entry
     u16 phnum;     // number of program header entries

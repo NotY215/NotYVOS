@@ -1,4 +1,4 @@
-Limine Bootloader — BSD 2-Clause License
+Limine Bootloader -- BSD 2-Clause License
 
 Copyright (C) 2019-2026 Mintsuki and contributors.
 All rights reserved.

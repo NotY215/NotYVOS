@@ -130,7 +130,7 @@ bool wait_tag(Engine* eng, u32 tag, u32 max_drain_rounds) noexcept {
         }
         const u32 done = drain(eng, 1);
         if (done == 0) {
-            // Nothing left in the queue and tag is not yet set — give up.
+            // Nothing left in the queue and tag is not yet set -- give up.
             return tag_completed(eng, tag);
         }
     }

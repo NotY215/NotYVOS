@@ -1,4 +1,4 @@
-# ADR 0004 — C++ primary, C secondary, ASM only where required
+# ADR 0004 -- C++ primary, C secondary, ASM only where required
 
 Status: Accepted
 

@@ -1,4 +1,4 @@
-VLC Media Player — GPLv2-or-later / LGPLv2-or-later
+VLC Media Player -- GPLv2-or-later / LGPLv2-or-later
 
 VLC media player is released under the GNU General Public License
 version 2 or later (GPLv2+).

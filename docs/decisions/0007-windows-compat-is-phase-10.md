@@ -1,4 +1,4 @@
-# ADR 0007 — Windows compatibility is a late-phase subsystem
+# ADR 0007 -- Windows compatibility is a late-phase subsystem
 
 Status: Accepted
 

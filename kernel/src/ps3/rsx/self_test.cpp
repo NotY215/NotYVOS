@@ -504,7 +504,7 @@ void test_smooth_shading() noexcept
 // 6D/6E: texture bind with per-vertex UVs (strict)
 //
 // 2x2 texture: (0,0)=red (1,0)=green (0,1)=blue (1,1)=white.
-// Triangle corners receive UV (0,0), (32,0), (0,32) — the full texture.
+// Triangle corners receive UV (0,0), (32,0), (0,32) -- the full texture.
 // Sample near corner a => red; near corner b => green.
 // ---------------------------------------------------------------------------
 

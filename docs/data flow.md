@@ -44,9 +44,9 @@ flowchart LR
     JIT --> EXEC[Executable arena]
 ```
 
-## Phase 1 — Kernel Core
+## Phase 1 -- Kernel Core
 
-### 1A — CPU initialization, GDT, TSS, serial and framebuffer
+### 1A -- CPU initialization, GDT, TSS, serial and framebuffer
 
 ```mermaid
 sequenceDiagram
@@ -64,7 +64,7 @@ sequenceDiagram
     IO-->>Entry: Kernel can log and present output
 ```
 
-### 1B — IDT, ISR stubs, exceptions, PIC and PIT
+### 1B -- IDT, ISR stubs, exceptions, PIC and PIT
 
 ```mermaid
 flowchart LR
@@ -76,7 +76,7 @@ flowchart LR
     HANDLER --> RESUME[Return to interrupted context]
 ```
 
-### 1C — Physical memory manager
+### 1C -- Physical memory manager
 
 ```mermaid
 flowchart LR
@@ -86,7 +86,7 @@ flowchart LR
     ALLOC --> PAGE[Page-table / heap consumers]
 ```
 
-### 1D — Virtual memory and HHDM
+### 1D -- Virtual memory and HHDM
 
 ```mermaid
 flowchart LR
@@ -97,7 +97,7 @@ flowchart LR
     VIRT --> USER[User mappings]
 ```
 
-### 1E — Kernel heap
+### 1E -- Kernel heap
 
 ```mermaid
 flowchart LR
@@ -108,7 +108,7 @@ flowchart LR
     FREE --> HEAP
 ```
 
-### 1F — Logging, panic and assertions
+### 1F -- Logging, panic and assertions
 
 ```mermaid
 flowchart LR
@@ -119,7 +119,7 @@ flowchart LR
     PANIC --> LOG
 ```
 
-### 1G — Per-CPU state, LAPIC and SMP bring-up
+### 1G -- Per-CPU state, LAPIC and SMP bring-up
 
 ```mermaid
 flowchart LR
@@ -130,9 +130,9 @@ flowchart LR
     CPU1 --> LAPIC
 ```
 
-## Phase 2 — Processes, Syscalls, VFS and Userland
+## Phase 2 -- Processes, Syscalls, VFS and Userland
 
-### 2A — Ring 3 transition
+### 2A -- Ring 3 transition
 
 ```mermaid
 sequenceDiagram
@@ -148,7 +148,7 @@ sequenceDiagram
     S-->>U: sysret
 ```
 
-### 2B — Scheduler + threads
+### 2B -- Scheduler + threads
 
 ```mermaid
 flowchart LR
@@ -160,7 +160,7 @@ flowchart LR
     NEXT --> RUN[CPU execution]
 ```
 
-### 2C — Processes + ELF loader
+### 2C -- Processes + ELF loader
 
 ```mermaid
 flowchart LR
@@ -172,7 +172,7 @@ flowchart LR
     ENTRY --> RUN[User process]
 ```
 
-### 2C-followup — fork / wait
+### 2C-followup -- fork / wait
 
 ```mermaid
 sequenceDiagram
@@ -191,7 +191,7 @@ sequenceDiagram
     K-->>P: Child status
 ```
 
-### 2D — Syscall ABI + uaccess
+### 2D -- Syscall ABI + uaccess
 
 ```mermaid
 flowchart LR
@@ -203,7 +203,7 @@ flowchart LR
     UACCESS --> RET[Validated return to user]
 ```
 
-### 2D-followup — readdir / mmap
+### 2D-followup -- readdir / mmap
 
 ```mermaid
 flowchart LR
@@ -218,7 +218,7 @@ flowchart LR
     MAP --> APP
 ```
 
-### 2E — VFS
+### 2E -- VFS
 
 ```mermaid
 flowchart LR
@@ -230,7 +230,7 @@ flowchart LR
     FD --> READWRITE[Read / write / seek]
 ```
 
-### 2F — Initramfs
+### 2F -- Initramfs
 
 ```mermaid
 flowchart LR
@@ -240,7 +240,7 @@ flowchart LR
     FILES --> USER[User processes]
 ```
 
-### 2G — libc + shell
+### 2G -- libc + shell
 
 ```mermaid
 sequenceDiagram
@@ -260,7 +260,7 @@ sequenceDiagram
     SH-->>KB: Prompt / output path
 ```
 
-### 2I — exec / brk
+### 2I -- exec / brk
 
 ```mermaid
 flowchart LR
@@ -274,7 +274,7 @@ flowchart LR
     HEAP --> PAGES[Mapped heap pages]
 ```
 
-### 2K — Persistent FS (NYFS)
+### 2K -- Persistent FS (NYFS)
 
 ```mermaid
 flowchart LR
@@ -287,7 +287,7 @@ flowchart LR
     DISK --> NYFS
 ```
 
-### 2L — Time / sleep / kill
+### 2L -- Time / sleep / kill
 
 ```mermaid
 sequenceDiagram
@@ -306,7 +306,7 @@ sequenceDiagram
     K-->>U: Return status
 ```
 
-### 2M — stdio + malloc
+### 2M -- stdio + malloc
 
 ```mermaid
 flowchart LR
@@ -318,7 +318,7 @@ flowchart LR
     HEAP --> BRK[brk / memory mapping]
 ```
 
-### 2N — Signals + Ctrl+C
+### 2N -- Signals + Ctrl+C
 
 ```mermaid
 sequenceDiagram
@@ -334,9 +334,9 @@ sequenceDiagram
     K-->>SH: Scheduler continues
 ```
 
-## Phase 3 — Desktop, Drivers and Graphics
+## Phase 3 -- Desktop, Drivers and Graphics
 
-### 3A — Compositor + mouse
+### 3A -- Compositor + mouse
 
 ```mermaid
 flowchart LR
@@ -348,7 +348,7 @@ flowchart LR
     FB --> SCREEN[Display]
 ```
 
-### 3B — Window manager
+### 3B -- Window manager
 
 ```mermaid
 flowchart LR
@@ -361,7 +361,7 @@ flowchart LR
     CTRL --> COMP
 ```
 
-### 3C — Shell + power menu
+### 3C -- Shell + power menu
 
 ```mermaid
 flowchart LR
@@ -372,7 +372,7 @@ flowchart LR
     POWER --> ACPI[ACPI power/restart]
 ```
 
-### 3D — Native drivers + widgets
+### 3D -- Native drivers + widgets
 
 ```mermaid
 flowchart LR
@@ -386,7 +386,7 @@ flowchart LR
     STORAGE --> VFS[VFS]
 ```
 
-### 3E — Graphics API + HAL
+### 3E -- Graphics API + HAL
 
 ```mermaid
 flowchart LR
@@ -400,9 +400,9 @@ flowchart LR
     FB --> DISPLAY[Display]
 ```
 
-## Phase 4 — PS3 Runtime Foundation
+## Phase 4 -- PS3 Runtime Foundation
 
-### 4A — PS3 loader + PPC decoder
+### 4A -- PS3 loader + PPC decoder
 
 ```mermaid
 flowchart LR
@@ -413,7 +413,7 @@ flowchart LR
     DEC --> INST[Decoded instruction]
 ```
 
-### 4B — PPU interpreter
+### 4B -- PPU interpreter
 
 ```mermaid
 flowchart LR
@@ -426,7 +426,7 @@ flowchart LR
     MEM --> NEXT
 ```
 
-### 4C — SPU interpreter
+### 4C -- SPU interpreter
 
 ```mermaid
 flowchart LR
@@ -437,7 +437,7 @@ flowchart LR
     MB --> HOST[PPU/runtime interaction]
 ```
 
-### 4D — DMA engine + sync
+### 4D -- DMA engine + sync
 
 ```mermaid
 flowchart LR
@@ -448,7 +448,7 @@ flowchart LR
     TAG --> SYNC[Wait / barrier / synchronization]
 ```
 
-### 4E — Executable arena + emitter + translation-cache infrastructure
+### 4E -- Executable arena + emitter + translation-cache infrastructure
 
 ```mermaid
 flowchart LR
@@ -462,11 +462,11 @@ flowchart LR
     TRAMP --> CPU[x86-64 execution]
 ```
 
-## Phase 5 — Native Translation
+## Phase 5 -- Native Translation
 
 All Phase 5 subphases are delivered: **5A, 5B, 5C and 5D**.
 
-### 5A — Baseline JIT + trampoline + self-test
+### 5A -- Baseline JIT + trampoline + self-test
 
 **Status: DONE.**
 
@@ -496,7 +496,7 @@ sequenceDiagram
     X-->>P: Update PPU context / continue
 ```
 
-### 5B — Memory opcodes + conditional branch + block chaining
+### 5B -- Memory opcodes + conditional branch + block chaining
 
 **Status: DONE.**
 
@@ -516,7 +516,7 @@ flowchart LR
 
 The translated memory and control-flow path feeds the completed translation cache and native execution path.
 
-### 5C — FPU + VMX translation
+### 5C -- FPU + VMX translation
 
 ```mermaid
 flowchart LR
@@ -531,7 +531,7 @@ flowchart LR
 
 **Status: DONE.**
 
-### 5D — Cache invalidation + self-modifying-code detection
+### 5D -- Cache invalidation + self-modifying-code detection
 
 ```mermaid
 flowchart LR
@@ -544,7 +544,7 @@ flowchart LR
 
 **Status: DONE.**
 
-## Phase 6 — RSX Graphics Compatibility
+## Phase 6 -- RSX Graphics Compatibility
 
 The completed RSX path covers 6A–6F: command processing, rasterization,
 buffers, depth/scissor, smooth shading, texture binding, UVs, wrapping,
@@ -581,7 +581,7 @@ Decode -> Tex -> Raster
 Raster -> FB
 ```
 
-## Phase 7 — GameRunner + Compatibility Layer
+## Phase 7 -- GameRunner + Compatibility Layer
 
 The completed GameRunner path is documented through 7C. Phase 7D remains
 the next runtime integration stage.
@@ -598,7 +598,7 @@ flowchart LR
     PPU --> RSX[RSX path]
 ```
 
-## Phase 8 — Rendering Validation
+## Phase 8 -- Rendering Validation
 
 The completed 8A/8B validation path exercises the RSX rendering pipeline
 through framebuffer output.
@@ -611,7 +611,7 @@ flowchart LR
     CHECK --> LOG[Self-test log]
 ```
 
-## Phase 9 — Image Support
+## Phase 9 -- Image Support
 
 The completed image pipeline through 9A–9C: BMP, PNG/inflate, GIF/LZW, ICO
 and JPEG decoding.
@@ -634,7 +634,7 @@ flowchart LR
     GFX --> COMP[Compositor]
 ```
 
-## Phase 10 — Theme and UI Management
+## Phase 10 -- Theme and UI Management
 
 The completed theme and Settings path through 10A–10F.
 
@@ -650,7 +650,7 @@ flowchart LR
     COMP --> FB[Framebuffer]
 ```
 
-## Phase 11 — TrueType Font Subsystem
+## Phase 11 -- TrueType Font Subsystem
 
 **Status: DONE.** Multiple weights, kerning, complex-script shaping and
 subpixel horizontal rendering remain deferred.
@@ -740,7 +740,7 @@ Inter -> Parser -> Outline -> Flat -> Raster -> Cache -> Draw -> Compositor -> F
     - Subpixel horizontal rendering
 
 
-# Phase 12 — Explorer 10G + Real File Operations - DONE
+# Phase 12 -- Explorer 10G + Real File Operations - DONE
 
 ```mermaid
 flowchart LR

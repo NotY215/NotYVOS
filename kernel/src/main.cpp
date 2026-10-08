@@ -105,6 +105,7 @@ extern "C"
 #include <kernel/mm/pmm.hpp>
 #include <kernel/mm/vmm.hpp>
 #include <kernel/net/e1000.hpp>
+#include <kernel/net/dhcp.hpp>
 #include <kernel/panic.hpp>
 #include <kernel/proc/elf.hpp>
 #include <kernel/ps3/jit/jit.hpp>
@@ -224,7 +225,15 @@ extern "C" [[noreturn]] void kernel_main()
     }
 
     // ---- Networking + Audio ----
-    net::e1000_init();
+    net::init();
+    if (net::e1000_init())
+    {
+        net::Interface* eth0 = net::e1000_interface();
+        if (eth0)
+        {
+            (void)net::dhcp::acquire(eth0, 3000);
+        }
+    }
     audio::hda_init();
 
     // ---- SMP, per-CPU, LAPIC ----
@@ -265,7 +274,9 @@ extern "C" [[noreturn]] void kernel_main()
 
     // PS3 firmware (dev build only). The ISO includes it as a Limine
     // module when NOTYVOS_BUNDLE_PS3_FIRMWARE=ON. Public builds do not
-    // ship it. Either way the kernel must boot.
+    // ship it. Either way the kernel must boot. When present, the
+    // firmware is registered both as the raw blob and as a VFS file at
+    // /dev/ps3.pup so guest code can open and read it.
     if (module_request.response && module_request.response->module_count >= 3)
     {
         auto* fw = module_request.response->modules[2];
@@ -273,6 +284,16 @@ extern "C" [[noreturn]] void kernel_main()
                    static_cast<unsigned long long>(fw->size),
                    static_cast<unsigned long long>(reinterpret_cast<uptr>(fw->address)));
         fs::vfs_register_firmware(fw->address, fw->size);
+
+        auto* dev_dir = fs::vnode_alloc(0, fs::VType::Dir, "dev");
+        auto* fw_file = fs::vnode_alloc(0, fs::VType::File, "ps3.pup");
+        if (dev_dir && fw_file)
+        {
+            fw_file->ops = fs::firmware_ops();
+            fs::vnode_attach(dev_dir, fw_file);
+            fs::vnode_attach(root, dev_dir);
+            log::write(log::Level::Info, "init", "firmware exposed at /dev/ps3.pup");
+        }
     }
     else
     {
@@ -282,6 +303,7 @@ extern "C" [[noreturn]] void kernel_main()
 
     // ---- Graphics stack ----
     gfx::Compositor::init();
+    gfx::Compositor::boot_splash_begin();
     fb::Console::switch_to_buffered();
     log::init();
     log::write(log::Level::Info, "boot", "NOTYVOS %s (%s)", NOTYVOS_VERSION, NOTYVOS_GIT_REV);
@@ -304,7 +326,7 @@ extern "C" [[noreturn]] void kernel_main()
     ps3::self_test();
     img::self_test();
 
-    // Load the default UI font. Absence is non-fatal — the compositor
+    // Load the default UI font. Absence is non-fatal -- the compositor
     // falls back to the 8x8 bitmap when the TTF is missing.
     {
         font::Face* inter = font::load("/Fonts/Inter-Regular.ttf");

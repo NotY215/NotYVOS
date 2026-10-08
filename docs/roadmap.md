@@ -61,7 +61,7 @@ Explorer navigation history.
 
 Intentional Phase 2 gaps **2H** and **2J** remain absent.
 
-## Phase 11 — TrueType Font Subsystem — DONE
+## Phase 11 -- TrueType Font Subsystem -- DONE
 
 Goal: scalable anti-aliased TrueType rendering using the Inter family.
 
@@ -81,7 +81,7 @@ loading.
 Deferred polish: multiple weights, kerning, complex-script shaping and subpixel
 horizontal rendering.
 
-## Phase 12 — Explorer 10G + Real File Operations — DONE
+## Phase 12 -- Explorer 10G + Real File Operations -- DONE
 
 **Dependency:** Phase 11.
 
@@ -96,7 +96,7 @@ horizontal rendering.
 
 Deferred from Phase 12: drag/drop, multi-select and Explorer search.
 
-## Phase 13 — Desktop Clipboard + Dialogs — PARTIAL
+## Phase 13 -- Desktop Clipboard + Dialogs -- PARTIAL
 
 **Dependency:** Phase 12.
 
@@ -108,7 +108,7 @@ Deferred from Phase 12: drag/drop, multi-select and Explorer search.
 
 Deferred: rich-text clipboard, image clipboard and multi-item paste ordering.
 
-## Phase 14 — 7D GameRunner Runtime Integration — QUEUED
+## Phase 14 -- 7D GameRunner Runtime Integration -- QUEUED
 
 **Dependency:** Phase 12.
 
@@ -120,7 +120,7 @@ Deferred: rich-text clipboard, image clipboard and multi-item paste ordering.
 
 Universal save states remain deferred.
 
-## Phase 15 — USB Stack + USB HID — DONE
+## Phase 15 -- USB Stack + USB HID -- DONE
 
 | Subphase | Scope |
 |---|---|
@@ -132,7 +132,7 @@ Universal save states remain deferred.
 
 Deferred: hubs, USB 3.x SuperSpeed and isochronous transfers.
 
-## Phase 16 — Production Network Stack — QUEUED
+## Phase 16 -- Production Network Stack -- QUEUED
 
 **Dependency:** Phase 15 optional.
 
@@ -146,7 +146,7 @@ Deferred: hubs, USB 3.x SuperSpeed and isochronous transfers.
 
 Deferred: IPv6, IPsec, multicast and raw sockets.
 
-## Phase 17 — Wi-Fi Driver + Management UI — QUEUED
+## Phase 17 -- Wi-Fi Driver + Management UI -- QUEUED
 
 **Dependency:** Phase 16.
 
@@ -159,7 +159,7 @@ Deferred: IPv6, IPsec, multicast and raw sockets.
 
 Deferred: WPA3, 802.1X enterprise and monitor mode.
 
-## Phase 18 — Bluetooth Framework — QUEUED
+## Phase 18 -- Bluetooth Framework -- QUEUED
 
 **Dependency:** Phase 15 optional.
 
@@ -172,7 +172,7 @@ Deferred: WPA3, 802.1X enterprise and monitor mode.
 
 Deferred: BLE and audio profiles.
 
-## Phase 19 — NYFS Maturity — QUEUED
+## Phase 19 -- NYFS Maturity -- QUEUED
 
 | Subphase | Scope |
 |---|---|
@@ -183,7 +183,7 @@ Deferred: BLE and audio profiles.
 
 Deferred: snapshots, deduplication, compression and ACLs.
 
-## Phase 20 — Firewall + Network Security — QUEUED
+## Phase 20 -- Firewall + Network Security -- QUEUED
 
 **Dependency:** Phase 16.
 
@@ -195,7 +195,7 @@ Deferred: snapshots, deduplication, compression and ACLs.
 
 Deferred: intrusion detection, deep packet inspection and VPN support.
 
-## Phase 21 — NotYVFirm — QUEUED
+## Phase 21 -- NotYVFirm -- QUEUED
 
 Long-term native firmware domain replacing the Limine/UEFI boot dependency.
 
@@ -273,8 +273,8 @@ Every subsystem gets a boot self-test. Warnings are errors, casts use
 | 19 | NYFS Maturity | Queued |
 | 20 | Firewall + Network Security | Queued |
 | 21 | NotYVFirm | Queued |
-| — | Windows .exe compatibility | **Excluded** |
-| — | Brave / VLC validation | **Excluded** |
+| -- | Windows .exe compatibility | **Excluded** |
+| -- | Brave / VLC validation | **Excluded** |
 
 **Next delivery: Init program debugging in `user/init/main.c`.**
 

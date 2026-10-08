@@ -36,7 +36,7 @@ void draw_triangle(const Triangle& t) noexcept;
 void draw_quad(const Vertex& v0, const Vertex& v1, const Vertex& v2, const Vertex& v3) noexcept;
 void draw_line_f(i32 x0, i32 y0, i32 x1, i32 y1, u32 color) noexcept;
 
-// Filled 2D rectangle — direct path, no rasterizer.
+// Filled 2D rectangle -- direct path, no rasterizer.
 void draw_rect(i32 x, i32 y, i32 w, i32 h, u32 color) noexcept;
 
 // Backend info.

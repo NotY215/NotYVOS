@@ -1,4 +1,4 @@
-# ADR 0008 — Keep future domains separate from implemented code
+# ADR 0008 -- Keep future domains separate from implemented code
 
 Status: Accepted
 

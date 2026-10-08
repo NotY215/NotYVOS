@@ -28,6 +28,7 @@ typedef u64 usize;
 #define SYS_KILL 15
 #define SYS_CREATE 16
 #define SYS_UNLINK 17
+#define SYS_GAME_RUN 18
 
 static inline i64 __sc1(i64 n, i64 a1)
 {
@@ -110,6 +111,10 @@ static inline i64 sys_unlink(const char* path)
 {
     return __sc1(SYS_UNLINK, (i64)path);
 }
+static inline i64 sys_game_run(const char* path)
+{
+    return __sc1(SYS_GAME_RUN, (i64)path);
+}
 
 static inline i64 sys_mmap(void* hint, u64 len, i64 flags)
 {
@@ -146,21 +151,18 @@ void put_int(i64 v);
 void put_hex(u64 v);
 void printf(const char* fmt, ...);
 
-/* Heap. Allocated via sys_brk. */
 void* malloc(u64 size);
 void free(void* p);
 void* calloc(u64 count, u64 size);
 void* realloc(void* p, u64 new_size);
 
-/* stdio-like API. `FILE` is opaque to callers. */
 typedef struct File File;
-File* fopen(const char* path, const char* mode); /* mode: "r", "w", "a" */
+File* fopen(const char* path, const char* mode);
 i64 fread(void* buf, u64 size, u64 count, File* f);
 i64 fwrite(const void* buf, u64 size, u64 count, File* f);
 i64 fclose(File* f);
 i64 fprintf(File* f, const char* fmt, ...);
 
-/* Standard streams. Only valid after `stdio_init()`. */
 extern File* stdin_;
 extern File* stdout_;
 extern File* stderr_;

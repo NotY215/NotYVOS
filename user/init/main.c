@@ -4,21 +4,38 @@
 #define ARG_MAX 16
 
 static char line[LINE_MAX];
-
 static char s_path[160];
 static char s_text[256];
 
 static void read_line(void)
 {
-    i64 n = sys_read(0, line, LINE_MAX - 1);
-    if (n <= 0)
+    for (int i = 0; i < LINE_MAX; ++i)
+        line[i] = 0;
+
+    int pos = 0;
+    for (;;)
     {
-        line[0] = 0;
-        return;
+        char c = 0;
+        i64 n = sys_read(0, &c, 1);
+        if (n <= 0)
+        {
+            line[pos] = 0;
+            return;
+        }
+        if (c == '\n' || c == '\r')
+        {
+            line[pos] = 0;
+            return;
+        }
+        if (c == '\b' || c == 127)
+        {
+            if (pos > 0)
+                --pos;
+            continue;
+        }
+        if (pos < LINE_MAX - 1)
+            line[pos++] = c;
     }
-    line[n] = 0;
-    if (n > 0 && line[n - 1] == '\n')
-        line[n - 1] = 0;
 }
 
 static int tokenize(char* s, char** argv, int max)
@@ -61,7 +78,9 @@ static void cmd_cat(const char* path)
     i64 fd = sys_open(path, 0);
     if (fd < 0)
     {
-        puts("cat: not found\n");
+        puts("cat: not found: ");
+        puts(path);
+        putc('\n');
         return;
     }
     char buf[256];
@@ -80,10 +99,13 @@ static void cmd_ls(const char* path)
     i64 fd = sys_open(path, 0);
     if (fd < 0)
     {
-        puts("ls: not found\n");
+        puts("ls: not found: ");
+        puts(path);
+        putc('\n');
         return;
     }
     DirEntry e;
+    u64 shown = 0;
     for (u64 i = 0;; ++i)
     {
         i64 n = sys_readdir(fd, i, &e);
@@ -91,7 +113,10 @@ static void cmd_ls(const char* path)
             break;
         puts(e.name);
         putc('\n');
+        ++shown;
     }
+    if (shown == 0)
+        puts("(empty)\n");
     sys_close(fd);
 }
 
@@ -113,19 +138,16 @@ static int build_path(const char* name)
 static void do_write(const char* path, const char* text)
 {
     (void)sys_create(path);
-
     i64 fd = sys_open(path, 0);
     if (fd < 0)
     {
         puts("write: cannot open\n");
         return;
     }
-
     u64 n = strlen(text);
     i64 wr = sys_write(fd, text, n);
     sys_write(fd, "\n", 1);
     sys_close(fd);
-
     puts("wrote ");
     put_int((i64)n);
     puts(" bytes, syscall returned ");
@@ -150,6 +172,7 @@ static void print_help(void)
     puts("  cat FILE          print file\n");
     puts("  echo TEXT         echo\n");
     puts("  write FILE TEXT   write to /disk/FILE\n");
+    puts("  game PATH         launch a PS3 ELF via GameRunner\n");
     puts("  rm FILE           delete /disk/FILE\n");
     puts("  pid               current pid\n");
     puts("  fork              fork a child\n");
@@ -166,7 +189,6 @@ static void print_about(void)
 {
     puts("NOTYVOS\n");
     puts("NotY215 x86_64 operating system\n");
-    puts("Desktop: framebuffer compositor, back buffer, PS/2 mouse\n");
     puts("Shell: pid ");
     put_int(sys_getpid());
     putc('\n');
@@ -175,7 +197,7 @@ static void print_about(void)
     puts(" ms\n");
     puts("Storage: NYFS on AHCI SATA, mounted at /disk\n");
     puts("Keyboard: PS/2 i8042, IRQ1. Serial fallback on COM1.\n");
-    puts("Mouse: PS/2 with wheel, IRQ12.\n");
+    puts("Mouse: PS/2 with wheel, IRQ12, 200 Hz.\n");
     puts("Graphics: software + VBE HAL backends.\n");
 }
 
@@ -201,7 +223,6 @@ void _start(void)
         }
         else if (strcmp(argv[0], "cls") == 0 || strcmp(argv[0], "clear") == 0)
         {
-            /* Form feed — the compositor clears the terminal on this byte. */
             putc(0x0C);
         }
         else if (strcmp(argv[0], "about") == 0)
@@ -237,7 +258,6 @@ void _start(void)
                 continue;
             }
             (void)build_path(argv[1]);
-
             int ti = 0;
             for (int i = 2; i < argc; ++i)
             {
@@ -248,7 +268,6 @@ void _start(void)
                     s_text[ti++] = s[k];
             }
             s_text[ti] = 0;
-
             do_write(s_path, s_text);
         }
         else if (strcmp(argv[0], "rm") == 0)
@@ -302,8 +321,8 @@ void _start(void)
                 puts("usage: exec PATH\n");
                 continue;
             }
-            i64 r = sys_exec(argv[1]);
-            if (r < 0 && argv[1][0] != '/')
+            i64 rr = sys_exec(argv[1]);
+            if (rr < 0 && argv[1][0] != '/')
             {
                 char alt[160];
                 int i = 0;
@@ -316,10 +335,10 @@ void _start(void)
                 for (int k = 0; argv[1][k] && i < 158; ++k)
                     alt[i++] = argv[1][k];
                 alt[i] = 0;
-                r = sys_exec(alt);
+                rr = sys_exec(alt);
             }
             puts("exec failed: ");
-            put_int(r);
+            put_int(rr);
             putc('\n');
         }
         else if (strcmp(argv[0], "brk") == 0)
@@ -364,6 +383,21 @@ void _start(void)
             i64 pid = parse_int(argv[1]);
             i64 r = sys_kill(pid, 15);
             puts("kill -> ");
+            put_int(r);
+            putc('\n');
+        }
+        else if (strcmp(argv[0], "game") == 0)
+        {
+            if (argc < 2)
+            {
+                puts("usage: game PATH\n");
+                continue;
+            }
+            puts("launching ");
+            puts(argv[1]);
+            putc('\n');
+            i64 r = sys_game_run(argv[1]);
+            puts("game -> ");
             put_int(r);
             putc('\n');
         }

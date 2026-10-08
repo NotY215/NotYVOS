@@ -17,7 +17,7 @@ endif()
 if(_notyvos_kernel_build)
     project(NotYVOS
         VERSION 0.1.0
-        DESCRIPTION "NOTYVOS — lightweight x86-64 OS with integrated PS3 runtime"
+        DESCRIPTION "NOTYVOS -- lightweight x86-64 OS with integrated PS3 runtime"
         LANGUAGES C CXX ASM)
 
     set(CMAKE_CXX_STANDARD 20)
@@ -30,7 +30,7 @@ if(_notyvos_kernel_build)
 else()
     project(NotYVOS
         VERSION 0.1.0
-        DESCRIPTION "NOTYVOS — lightweight x86-64 OS with integrated PS3 runtime"
+        DESCRIPTION "NOTYVOS -- lightweight x86-64 OS with integrated PS3 runtime"
         LANGUAGES NONE)
 
     message(STATUS "NOTYVOS host configuration: only cross-kernel builds are configured at Phase 0.")

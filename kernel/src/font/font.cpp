@@ -223,7 +223,7 @@ bool parse_simple_glyph(const Face* f, u32 glyph_offset, Outline& out) noexcept
     if (glyph_offset + 10 > f->size) return false;
 
     const i16 n_contours = rdi16(g);
-    if (n_contours < 0) return false;   // composite — handled separately
+    if (n_contours < 0) return false;   // composite -- handled separately
     if (n_contours == 0) return true;   // empty glyph (space)
 
     out.x_min = rdi16(g + 2);
@@ -860,7 +860,7 @@ const Glyph* glyph(Face* f, u32 cp, u32 px) noexcept
     cache_insert(f, cp, px, g);
 
     // Return the freshly inserted cache entry (or the last inserted if
-    // eviction happened — either way, the tail is what we want).
+    // eviction happened -- either way, the tail is what we want).
     if (f->cache_count == 0) return nullptr;
     return &f->cache[f->cache_count - 1].g;
 }

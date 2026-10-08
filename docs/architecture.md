@@ -60,10 +60,10 @@ general-purpose journaling filesystem.
 
 The graphics stack has four layers:
 
-1. Graphics API — device-independent drawing primitives.
-2. HAL — backend registration and common rendering surface.
-3. GPU abstraction — triangle, quad, line and rectangle primitives.
-4. Compositor — desktop scene, windows, widgets, input and presentation.
+1. Graphics API -- device-independent drawing primitives.
+2. HAL -- backend registration and common rendering surface.
+3. GPU abstraction -- triangle, quad, line and rectangle primitives.
+4. Compositor -- desktop scene, windows, widgets, input and presentation.
 
 ```mermaid
 flowchart LR

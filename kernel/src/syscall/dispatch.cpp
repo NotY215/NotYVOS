@@ -18,6 +18,7 @@
 #include <kernel/syscall/syscall.hpp>
 #include <kernel/syscall/uaccess.hpp>
 #include <kernel/gfx/compositor.hpp>
+#include <kernel/ps3/gamerunner.hpp>
 
 namespace notyvos::syscall
 {
@@ -515,6 +516,28 @@ i64 sys_kill_impl(u64 pid, u64 sig)
     return 0;
 }
 
+i64 sys_game_run_impl(u64 upath)
+{
+    char path[256];
+    if (!copy_from_user(path, upath, sizeof(path)))
+        return -1;
+    path[sizeof(path) - 1] = 0;
+
+    log::write(log::Level::Info, "game", "run '%s'", path);
+
+    const auto r = ps3::gamerunner::launch_from_path(path);
+    if (!r.loaded)
+    {
+        log::write(log::Level::Warn, "game", "launch failed");
+        return -1;
+    }
+
+    log::write(log::Level::Info, "game", "entry=0x%llx format=%llu ppu_steps=%llu ppu_ran=%s",
+               static_cast<unsigned long long>(r.entry), static_cast<unsigned long long>(r.format),
+               static_cast<unsigned long long>(r.ppu_steps), r.ppu_ran ? "yes" : "no");
+    return static_cast<i64>(r.ppu_steps);
+}
+
 i64 sys_create_impl(u64 upath)
 {
     log::write(log::Level::Info, "create", "upath=0x%llx", static_cast<unsigned long long>(upath));
@@ -626,6 +649,9 @@ extern "C" void syscall_dispatch(SyscallFrame* f) noexcept
         break;
     case nr::kUnlink:
         f->rax = static_cast<u64>(sys_unlink_impl(f->rdi));
+        break;
+    case nr::kGameRun:
+        f->rax = static_cast<u64>(sys_game_run_impl(f->rdi));
         break;
     default:
         log::write(log::Level::Warn, "syscall", "unknown nr=%llu",

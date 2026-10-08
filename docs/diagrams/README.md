@@ -65,7 +65,7 @@ Plain-text diagrams are also inlined in the docs they describe:
 
 The TrueType pipeline is mapped in:
 
-- `docs/data flow.md` — Phase 11 Mermaid + sequence + D2 + Markmap
-- `truetype.d2` — D2 source
+- `docs/data flow.md` -- Phase 11 Mermaid + sequence + D2 + Markmap
+- `truetype.d2` -- D2 source
 - Ilograph perspective `TrueType`
 - Desktop nodes in D2, Excalidraw, Cytoscape and GoJS

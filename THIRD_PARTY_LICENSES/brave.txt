@@ -1,4 +1,4 @@
-Brave Browser — MPL-2.0
+Brave Browser -- MPL-2.0
 
 Brave browser code is open source under the Mozilla Public License 2.0
 (MPL-2.0).

@@ -11,6 +11,10 @@
 namespace notyvos::arch::x86_64
 {
 
+// Defined in kernel/src/net/e1000.cpp. Called from the PIT IRQ so the
+// NIC's RX ring is drained 100 times per second without a task.
+extern "C" void notyvos_e1000_poll() noexcept;
+
 namespace
 {
 
@@ -162,6 +166,7 @@ void handle_irq(u8 irq, InterruptFrame* /*f*/) noexcept
     if (irq == 0)
     {
         pit_on_tick();
+        notyvos_e1000_poll();
         sched::scheduler_tick();
         // Mark the clock dirty. The actual repaint happens in the idle loop.
         static u32 tick_div = 0;

@@ -13,6 +13,8 @@ extern "C" void notyvos_compositor_pump_for_modal();
 #include <kernel/libk/string.hpp>
 #include <kernel/log.hpp>
 #include <kernel/mm/heap.hpp>
+#include <kernel/net/net.hpp>
+#include <kernel/net/e1000.hpp>
 
 namespace notyvos::gfx
 {
@@ -1514,9 +1516,33 @@ void draw_settings(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my, bool)
         label_row("Mouse", "PS/2, IRQ12, wheel, 200 Hz");
         break;
     case SettingsTab::Network:
-        label_row("e1000 driver", "not detected");
-        label_row("Wi-Fi", "not yet implemented");
+    {
+        char macbuf[24] = "(none)";
+        char ipbuf[20] = "0.0.0.0";
+        char maskbuf[20] = "0.0.0.0";
+        char gwbuf[20] = "0.0.0.0";
+        const char* link = "down";
+
+        auto* e1000_if = net::e1000_interface();
+        if (e1000_if)
+        {
+            net::format_mac(e1000_if->mac, macbuf);
+            net::format_ip(e1000_if->ip, ipbuf);
+            net::format_ip(e1000_if->netmask, maskbuf);
+            net::format_ip(e1000_if->gateway, gwbuf);
+            link = (e1000_if->state == net::IfState::Up) ? "up" : "down";
+        }
+
+        label_row("Interface", "eth0 (e1000)");
+        label_row("Link", link);
+        label_row("MAC", macbuf);
+        label_row("IPv4", ipbuf);
+        label_row("Netmask", maskbuf);
+        label_row("Gateway", gwbuf);
+        label_row("Wi-Fi", "no adapter");
+        label_row("DNS", "(none)");
         break;
+    }
     case SettingsTab::Appearance:
         t(rx + 16, cy, "Appearance settings land here.", 0x00606070, kContentBg);
         break;

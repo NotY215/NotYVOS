@@ -1,4 +1,4 @@
-# ADR 0005 — PS3 firmware isolated from NotYVFirm
+# ADR 0005 -- PS3 firmware isolated from NotYVFirm
 
 Status: Accepted
 

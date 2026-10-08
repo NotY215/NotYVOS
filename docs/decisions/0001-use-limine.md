@@ -1,4 +1,4 @@
-# ADR 0001 — Use Limine as the bootloader
+# ADR 0001 -- Use Limine as the bootloader
 
 Status: Accepted
 

@@ -47,7 +47,7 @@ constexpr u8 kG = 0xF;
 // Minimal x86-64 instruction emitter for the NOTYVOS baseline JIT.
 //
 // Only base-register + disp32 addressing is supported for memory operands.
-// The base register's low 3 bits must not be 4 (RSP/R12) — the emitter
+// The base register's low 3 bits must not be 4 (RSP/R12) -- the emitter
 // never emits a SIB byte. The JIT uses R15 exclusively as the Context
 // base; R15's low 3 bits are 7, so it is safe.
 class Emitter

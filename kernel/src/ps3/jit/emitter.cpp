@@ -65,7 +65,7 @@ void Emitter::emit_u64(u64 v) noexcept
 
 void Emitter::mov_rr(u8 dst, u8 src) noexcept
 {
-    // REX.W 89 /r — mov r/m64, r64 with mod=11.
+    // REX.W 89 /r -- mov r/m64, r64 with mod=11.
     emit_u8(rex(true, src, 0, dst));
     emit_u8(0x89);
     emit_u8(static_cast<u8>(kModRM_RegInd | ((src & 7u) << 3) | (dst & 7u)));
@@ -73,7 +73,7 @@ void Emitter::mov_rr(u8 dst, u8 src) noexcept
 
 void Emitter::mov_ri64(u8 dst, u64 imm) noexcept
 {
-    // REX.W B8+rd id — movabs r64, imm64.
+    // REX.W B8+rd id -- movabs r64, imm64.
     emit_u8(rex(true, 0, 0, dst));
     emit_u8(static_cast<u8>(0xB8u | (dst & 7u)));
     emit_u64(imm);
@@ -90,7 +90,7 @@ void Emitter::mov_ri32(u8 dst, u32 imm) noexcept
 
 void Emitter::mov_rm(u8 dst, u8 base, i32 disp) noexcept
 {
-    // REX.W 8B /r — mov r64, r/m64 with mod=10 (disp32).
+    // REX.W 8B /r -- mov r64, r/m64 with mod=10 (disp32).
     emit_u8(rex(true, dst, 0, base));
     emit_u8(0x8B);
     emit_u8(static_cast<u8>(kModRM_MemDisp32 | ((dst & 7u) << 3) | (base & 7u)));
@@ -99,7 +99,7 @@ void Emitter::mov_rm(u8 dst, u8 base, i32 disp) noexcept
 
 void Emitter::mov_mr(u8 base, i32 disp, u8 src) noexcept
 {
-    // REX.W 89 /r — mov r/m64, r64 with mod=10.
+    // REX.W 89 /r -- mov r/m64, r64 with mod=10.
     emit_u8(rex(true, src, 0, base));
     emit_u8(0x89);
     emit_u8(static_cast<u8>(kModRM_MemDisp32 | ((src & 7u) << 3) | (base & 7u)));
@@ -108,7 +108,7 @@ void Emitter::mov_mr(u8 base, i32 disp, u8 src) noexcept
 
 void Emitter::mov_r32_mem(u8 dst, u8 base, i32 disp) noexcept
 {
-    // 8B /r — mov r32, r/m32 with mod=10.
+    // 8B /r -- mov r32, r/m32 with mod=10.
     const bool need_rex = (dst >= 8) || (base >= 8);
     if (need_rex)
         emit_u8(rex(false, dst, 0, base));
@@ -161,7 +161,7 @@ void Emitter::alu_rr(u8 op, u8 dst, u8 src) noexcept
 
 void Emitter::alu_ri32(u8 op, u8 dst, i32 imm) noexcept
 {
-    // REX.W 81 /digit id — op r/m64, imm32 (sign-extended).
+    // REX.W 81 /digit id -- op r/m64, imm32 (sign-extended).
     emit_u8(rex(true, 0, 0, dst));
     emit_u8(0x81);
     emit_u8(static_cast<u8>(kModRM_RegInd | ((op & 7u) << 3) | (dst & 7u)));
@@ -170,7 +170,7 @@ void Emitter::alu_ri32(u8 op, u8 dst, i32 imm) noexcept
 
 void Emitter::alu_mem_imm8(u8 op, u8 base, i32 disp, u8 imm8) noexcept
 {
-    // REX.W 83 /digit ib — op qword [base+disp32], imm8 (sign-extended).
+    // REX.W 83 /digit ib -- op qword [base+disp32], imm8 (sign-extended).
     emit_u8(rex(true, 0, 0, base));
     emit_u8(0x83);
     emit_u8(static_cast<u8>(kModRM_MemDisp32 | ((op & 7u) << 3) | (base & 7u)));
@@ -180,7 +180,7 @@ void Emitter::alu_mem_imm8(u8 op, u8 base, i32 disp, u8 imm8) noexcept
 
 void Emitter::zero_r(u8 dst) noexcept
 {
-    // xor r32, r32 — zeroes the full 64-bit register.
+    // xor r32, r32 -- zeroes the full 64-bit register.
     emit_u8(rex(false, dst, 0, dst));
     emit_u8(0x31);
     emit_u8(static_cast<u8>(kModRM_RegInd | ((dst & 7u) << 3) | (dst & 7u)));
@@ -204,7 +204,7 @@ void Emitter::add_rsp_imm8(u8 imm8) noexcept
 
 void Emitter::shl_ri8_64(u8 dst, u8 imm8) noexcept
 {
-    // REX.W C1 /4 ib — shl r/m64, imm8.
+    // REX.W C1 /4 ib -- shl r/m64, imm8.
     emit_u8(0x48);
     emit_u8(0xC1);
     emit_u8(static_cast<u8>(kModRM_RegInd | (4u << 3) | (dst & 7u)));
@@ -213,7 +213,7 @@ void Emitter::shl_ri8_64(u8 dst, u8 imm8) noexcept
 
 void Emitter::sar_ri8_64(u8 dst, u8 imm8) noexcept
 {
-    // REX.W C1 /7 ib — sar r/m64, imm8.
+    // REX.W C1 /7 ib -- sar r/m64, imm8.
     emit_u8(0x48);
     emit_u8(0xC1);
     emit_u8(static_cast<u8>(kModRM_RegInd | (7u << 3) | (dst & 7u)));
@@ -222,7 +222,7 @@ void Emitter::sar_ri8_64(u8 dst, u8 imm8) noexcept
 
 void Emitter::sar_ri8_32(u8 dst, u8 imm8) noexcept
 {
-    // C1 /7 ib — sar r/m32, imm8 (32-bit; upper bits of dst are
+    // C1 /7 ib -- sar r/m32, imm8 (32-bit; upper bits of dst are
     // zeroed by the write-back on x86-64).
     if (dst >= 8)
         emit_u8(0x41);
@@ -233,7 +233,7 @@ void Emitter::sar_ri8_32(u8 dst, u8 imm8) noexcept
 
 void Emitter::rol_ri8_32(u8 dst, u8 imm8) noexcept
 {
-    // C1 /0 ib — rol r/m32, imm8.
+    // C1 /0 ib -- rol r/m32, imm8.
     if (dst >= 8)
         emit_u8(0x41);
     emit_u8(0xC1);
@@ -243,7 +243,7 @@ void Emitter::rol_ri8_32(u8 dst, u8 imm8) noexcept
 
 void Emitter::rol_r32_cl(u8 dst) noexcept
 {
-    // D3 /0 — rol r/m32, CL.
+    // D3 /0 -- rol r/m32, CL.
     if (dst >= 8)
         emit_u8(0x41);
     emit_u8(0xD3);
@@ -252,7 +252,7 @@ void Emitter::rol_r32_cl(u8 dst) noexcept
 
 void Emitter::call_r(u8 reg) noexcept
 {
-    // FF /2 — call r/m64.
+    // FF /2 -- call r/m64.
     if (reg >= 8)
         emit_u8(0x41);
     emit_u8(0xFF);

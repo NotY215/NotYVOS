@@ -1,23 +1,23 @@
 #include "../fb/font8x8.hpp"
 #include <kernel/acpi/acpi.hpp>
 #include <kernel/arch/x86_64/io.hpp>
-#include <kernel/arch/x86_64/mouse.hpp>
 #include <kernel/arch/x86_64/keyboard.hpp>
+#include <kernel/arch/x86_64/mouse.hpp>
 #include <kernel/arch/x86_64/pit.hpp>
 #include <kernel/arch/x86_64/rtc.hpp>
 #include <kernel/block/block.hpp>
 #include <kernel/fb/framebuffer.hpp>
-#include <kernel/fs/vfs.hpp>
 #include <kernel/font/font.hpp>
 #include <kernel/fs/nyfs.hpp>
+#include <kernel/fs/vfs.hpp>
 #include <kernel/gfx/api.hpp>
 #include <kernel/gfx/apps.hpp>
 #include <kernel/gfx/backend_vbe.hpp>
+#include <kernel/gfx/clipboard.hpp>
 #include <kernel/gfx/compositor.hpp>
 #include <kernel/gfx/hal.hpp>
-#include <kernel/gfx/theme.hpp>
 #include <kernel/gfx/icons.hpp>
-#include <kernel/gfx/clipboard.hpp>
+#include <kernel/gfx/theme.hpp>
 #include <kernel/gpu/gpu.hpp>
 #include <kernel/libk/mem.hpp>
 #include <kernel/libk/string.hpp>
@@ -32,43 +32,6 @@ namespace notyvos::gfx
 
 namespace
 {
-// Pending launch: window opens after a short loading animation.
-u32 g_taskbar_anim[kMaxWindows] = {};
-i32 g_switcher_idx = 0;
-enum class PendingLaunch : u8
-{
-    None = 0,
-    Terminal,
-    Explorer,
-    Settings,
-    GameLchr,
-    ImageVw,
-    Bin,
-};
-PendingLaunch g_pending_launch = PendingLaunch::None;
-u64 g_pending_launch_tick = 0;
-constexpr u64 kLoadingTicks = 90; // ~0.9 s at 100 Hz
-
-const char* pending_launch_label(PendingLaunch p) noexcept
-{
-    switch (p)
-    {
-    case PendingLaunch::Terminal:
-        return "Opening Terminal...";
-    case PendingLaunch::Explorer:
-        return "Opening Explorer...";
-    case PendingLaunch::Settings:
-        return "Opening Settings...";
-    case PendingLaunch::GameLchr:
-        return "Opening Game Launcher...";
-    case PendingLaunch::ImageVw:
-        return "Opening Image Viewer...";
-    case PendingLaunch::Bin:
-        return "Opening Recycle Bin...";
-    default:
-        return "";
-    }
-}
 
 constexpr u32 kScale = 2;
 constexpr u32 kCellW = 8 * kScale;
@@ -80,24 +43,18 @@ constexpr u32 kTitleH = 26;
 constexpr u32 kBorder = 1;
 constexpr u32 kShortcutW = 120;
 constexpr u32 kShortcutH = 40;
-constexpr u32 kCtxW      = 180;
-constexpr u32 kCtxItemH  = 24;
-constexpr u32 kCtxSepH   = 6;
+constexpr u32 kCtxW = 180;
+constexpr u32 kCtxItemH = 24;
+constexpr u32 kCtxSepH = 6;
 
-// Terminal geometry. Buffer is a scrollback of up to kTermMaxLines lines,
-// each up to kTermMaxCols chars wide. The visible viewport is
-// (g_term_cols x g_term_rows) inside that buffer.
-constexpr u32 kTermMaxCols  = 200;
+constexpr u32 kTermMaxCols = 200;
 constexpr u32 kTermMaxLines = 500;
 
-// Set to true if your hardware reports wheel-down as positive (uncommon).
-// Most hardware follows the IntelliMouse convention: wheel-up is +1.
 constexpr bool kTermScrollInvert = false;
 
-// Window open/close animation duration, in PIT ticks. 100 Hz -> 15 = 150 ms.
 constexpr u64 kAnimTicks = 15;
+constexpr u64 kBootSplashTicks = 250;
 
-// Theme-driven palette.
 u32 kBgTop, kBgBottom;
 u32 kTaskbarBg, kTaskbarHi;
 u32 kTitleOn, kTitleOff;
@@ -202,13 +159,12 @@ u32* g_wallpaper = nullptr;
 Window g_windows[kMaxWindows] = {};
 u32 g_win_count = 0;
 
-u32 g_term_cols = 0;         // visible width in chars
-u32 g_term_rows = 0;         // visible height in lines
-u32 g_term_cursor = 0;       // byte offset into g_term (stride = g_term_cols)
-u32 g_term_stored_lines = 0; // how many lines of content are currently stored
-u32 g_term_scroll = 0;       // how many lines back from bottom the view is
+u32 g_term_cols = 0;
+u32 g_term_rows = 0;
+u32 g_term_cursor = 0;
+u32 g_term_stored_lines = 0;
+u32 g_term_scroll = 0;
 
-// Flat scrollback: kTermMaxCols stride x kTermMaxLines lines = 100 KB.
 char g_term[kTermMaxCols * kTermMaxLines];
 
 u64 g_clock_sec = 0;
@@ -243,32 +199,19 @@ i32 g_last_click_shortcut = -1;
 
 bool g_dirty_scene = true;
 
-// Alt-Tab window switcher.
 bool g_switcher_open = false;
-// ---------------------------------------------------------------------------
-// 10E: notification toasts. A single slot with text + birth tick.
-// ---------------------------------------------------------------------------
+i32 g_switcher_idx = 0;
+
 constexpr usize kToastTextMax = 96;
 char g_toast_text[kToastTextMax];
-// ---------------------------------------------------------------------------
-// 10F: snap layout preview.
-//
-// A 2x3 grid of drop zones that appear when the user drags a window near
-// the top of the screen. Releasing inside a zone snaps the window to that
-// region. Zones are indexed (row, col) and define a rect in work area
-// coordinates, where the work area is the screen minus the taskbar.
-// ---------------------------------------------------------------------------
+
 constexpr u32 kSnapLayoutCount = 4;
 
 struct SnapZone
 {
     i32 x_frac_num, y_frac_num, w_frac_num, h_frac_num;
-}; // fractions / 100
+};
 
-// Layout 0: fullscreen
-// Layout 1: two side-by-side
-// Layout 2: left big + right stacked
-// Layout 3: left stacked + right big
 struct SnapLayout
 {
     const char* name;
@@ -289,9 +232,22 @@ i32 g_snap_zone_hover = -1;
 i32 g_snap_target_win = -1;
 u64 g_snap_open_tick = 0;
 
-// (Taskbar window groups are computed on the fly in scene_draw_taskbar.)
 u64 g_toast_birth_tick = 0;
 bool g_toast_visible = false;
+
+u32 g_taskbar_anim[kMaxWindows] = {};
+
+// RSX / game presentation surface. Owned by GameRunner, not by the
+// compositor. When non-null, a GameRuntime window exists and blits from
+// this buffer.
+u32* g_game_pixels = nullptr;
+u32 g_game_w = 0;
+u32 g_game_h = 0;
+u32 g_game_pitch = 0;
+
+// Boot splash state.
+bool g_boot_splash = false;
+u64 g_boot_splash_start = 0;
 
 inline i32 to_i32(u32 v) noexcept
 {
@@ -330,7 +286,6 @@ void s_rect(i32 x, i32 y, i32 w, i32 h, u32 c)
 
 void s_glyph(i32 px, i32 py, char ch, u32 fg, u32 bg)
 {
-    // Bitmap fallback used when no TTF face is loaded.
     if (ch < 0x20 || ch > 0x7E)
         ch = '?';
     const u8* rows = notyvos::fb::kFont8x8[static_cast<int>(ch) - 0x20];
@@ -353,17 +308,12 @@ void s_glyph(i32 px, i32 py, char ch, u32 fg, u32 bg)
     }
 }
 
-// Draw a UTF-8 string using the loaded TTF if available; otherwise fall
-// back to the 8x8 bitmap. The baseline is placed at (py + ascent) so
-// that callers who pass a top-left origin get the same visual box as the
-// old bitmap path.
 void s_text(i32 px, i32 py, const char* s, u32 fg, u32 bg)
 {
     font::Face* face = font::default_face();
     if (face && s)
     {
         const font::Metrics m = font::metrics(face, kTextPx);
-        // Baseline y: py + ascent (bitmap glyphs are 16 px tall).
         const i32 baseline = py + m.ascent;
         font::draw_text(g_scene, g_w, g_w, g_h, face, px, baseline, s, kTextPx, fg);
         return;
@@ -377,9 +327,6 @@ void s_text(i32 px, i32 py, const char* s, u32 fg, u32 bg)
     }
 }
 
-// Blit a loaded SVG icon into the scene buffer. Uses nearest-neighbour
-// scaling. Transparent black (0x000000) is skipped so icons composite
-// over whatever is behind them.
 void s_icon(icons::Id id, i32 x, i32 y, u32 size)
 {
     const u32* src = icons::bitmap(id);
@@ -409,23 +356,22 @@ void s_icon(icons::Id id, i32 x, i32 y, u32 size)
     }
 }
 
-// Map a shortcut kind to its icon.
 icons::Id icon_for_shortcut(u8 kind)
 {
     switch (kind)
     {
     case 0:
-        return icons::Id::Explorer; // Explorer
+        return icons::Id::Explorer;
     case 1:
-        return icons::Id::Settings; // Settings
+        return icons::Id::Settings;
     case 2:
-        return icons::Id::Terminal; // Terminal
+        return icons::Id::Terminal;
     case 3:
-        return icons::Id::GameLauncher; // Game Lchr
+        return icons::Id::GameLauncher;
     case 4:
-        return icons::Id::Explorer; // Images (reuse explorer for now)
+        return icons::Id::Explorer;
     case 5:
-        return icons::Id::Bin; // Bin
+        return icons::Id::Bin;
     default:
         return icons::Id::Explorer;
     }
@@ -586,7 +532,6 @@ void scene_draw_shortcut(const Shortcut& sc, bool hover, bool focus)
     s_fill(sc.x, sc.y, static_cast<i32>(kShortcutW), static_cast<i32>(kShortcutH), bg);
     s_rect(sc.x, sc.y, static_cast<i32>(kShortcutW), static_cast<i32>(kShortcutH), kBorderFg);
 
-    // Icon on the left, label on the right.
     const i32 icon_size = 28;
     const i32 icon_x = sc.x + 8;
     const i32 icon_y = sc.y + (static_cast<i32>(kShortcutH) - icon_size) / 2;
@@ -645,19 +590,16 @@ void civil_from_unix(u64 unix_secs, u32& year, u32& month, u32& day, u32& hour, 
 }
 } // namespace
 
-// Right-of-desktop disk panel. Reads block device + filesystem state and
-// renders a small "This PC" widget showing mounted volumes.
 void scene_draw_disk_panel()
 {
     if (g_win_count > 3)
-        return; // hide when desktop is busy
+        return;
 
     const i32 panel_w = 260;
     const i32 panel_h = 190;
     const i32 px = to_i32(g_w) - panel_w - 20;
     const i32 py = 20;
 
-    // Translucent panel using a dark tint.
     s_fill(px, py, panel_w, panel_h, 0x00101018);
     s_rect(px, py, panel_w, panel_h, kBorderFg);
 
@@ -665,7 +607,6 @@ void scene_draw_disk_panel()
 
     i32 cy = py + 40;
 
-    // Initramfs row.
     {
         s_icon(icons::Id::Explorer, px + 12, cy, 20);
         s_text(px + 42, cy + 2, "notyvos-root", kTextFg, 0x00101018);
@@ -673,7 +614,6 @@ void scene_draw_disk_panel()
         cy += 44;
     }
 
-    // Disk row.
     auto* dev = fs::nyfs_device();
     if (dev)
     {
@@ -705,7 +645,6 @@ void scene_draw_disk_panel()
         cy += 44;
     }
 
-    // Free-space summary (host RAM through PMM).
     {
         char buf[40];
         u64 free_mb = mm::PhysicalMemory::free_bytes() / (1024ull * 1024ull);
@@ -767,16 +706,11 @@ void scene_draw_taskbar()
     const i32 mx = arch::x86_64::mouse_x();
     const i32 my = arch::x86_64::mouse_y();
 
-    // Group consecutive visible windows by kind. The first window of each
-    // group is drawn as the group button; a small badge to the right shows
-    // how many are grouped.
     for (u32 i = 0; i < g_win_count; ++i)
     {
         if (!g_windows[i].visible)
             continue;
 
-        // Count how many windows share this group key (kind + a "/N" is
-        // not used — same-kind windows are grouped).
         u32 group_size = 0;
         for (u32 j = 0; j < g_win_count; ++j)
         {
@@ -786,8 +720,6 @@ void scene_draw_taskbar()
                 ++group_size;
         }
 
-        // If this window is not the first of its group, skip: it is drawn
-        // as part of the earlier button.
         bool is_first_of_group = true;
         for (u32 j = 0; j < i; ++j)
         {
@@ -853,7 +785,6 @@ void scene_draw_taskbar()
                y0 + (static_cast<i32>(kTaskbarH) - tb_icon) / 2, static_cast<u32>(tb_icon));
         s_text(x + 28, y0 + 8, g_windows[i].title, kTitleFg, color);
 
-        // Group badge.
         if (group_size > 1)
         {
             const i32 bx = x + static_cast<i32>(tw) - 20;
@@ -1022,21 +953,61 @@ void scene_draw_context_menu()
     }
 }
 
+void scene_draw_game_content(i32 gx, i32 gy, i32 gw, i32 gh)
+{
+    if (!g_game_pixels || g_game_w == 0 || g_game_h == 0)
+    {
+        s_text(gx + 12, gy + 12, "No RSX surface attached.", kTextFg, kClientBg);
+        return;
+    }
+
+    // Nearest-neighbour blit scaled to fit. Aspect ratio preserved.
+    const u32 scale_num_w = static_cast<u32>(gw);
+    const u32 scale_num_h = static_cast<u32>(gh);
+    u32 dw = g_game_w;
+    u32 dh = g_game_h;
+    if (dw > scale_num_w || dh > scale_num_h)
+    {
+        const u32 sw = scale_num_w * g_game_h;
+        const u32 sh = scale_num_h * g_game_w;
+        if (sw < sh)
+        {
+            dw = scale_num_w;
+            dh = (g_game_h * dw) / g_game_w;
+        }
+        else
+        {
+            dh = scale_num_h;
+            dw = (g_game_w * dh) / g_game_h;
+        }
+    }
+    const i32 ox = gx + (gw - static_cast<i32>(dw)) / 2;
+    const i32 oy = gy + (gh - static_cast<i32>(dh)) / 2;
+
+    for (u32 y = 0; y < dh; ++y)
+    {
+        const u32 sy = (y * g_game_h) / dh;
+        const u32* row = g_game_pixels + static_cast<usize>(sy) * g_game_pitch;
+        for (u32 x = 0; x < dw; ++x)
+        {
+            const u32 sx = (x * g_game_w) / dw;
+            const u32 c = row[sx] & 0x00FFFFFFu;
+            s_fill(ox + static_cast<i32>(x), oy + static_cast<i32>(y), 1, 1, c);
+        }
+    }
+}
+
 void scene_draw_terminal_content(i32 gx, i32 gy)
 {
     if (g_term_cols == 0 || g_term_rows == 0)
         return;
 
-    // Clamp scroll in case the buffer shrank.
     const u32 max_scroll =
         (g_term_stored_lines > g_term_rows) ? (g_term_stored_lines - g_term_rows) : 0u;
     if (g_term_scroll > max_scroll)
         g_term_scroll = max_scroll;
 
-    // Bottom-most visible line index (exclusive of nothing; this is the
-    // last line we display).
     const u32 bottom = g_term_stored_lines - g_term_scroll;
-    // Top-most visible line index.
     const u32 top = (bottom > g_term_rows) ? (bottom - g_term_rows) : 0u;
 
     for (u32 row = 0; row < g_term_rows; ++row)
@@ -1054,7 +1025,6 @@ void scene_draw_terminal_content(i32 gx, i32 gy)
         }
     }
 
-    // Cursor: only draw when the user is at the bottom.
     if (g_term_scroll == 0 && g_term_cols > 0)
     {
         const u32 ccol = g_term_cursor % g_term_cols;
@@ -1069,7 +1039,6 @@ void scene_draw_terminal_content(i32 gx, i32 gy)
         }
     }
 
-    // Small "history" indicator when scrolled back.
     if (g_term_scroll > 0)
     {
         const i32 by = gy + 2;
@@ -1104,6 +1073,11 @@ void scene_draw_window_content(const Window& win, i32 gx, i32 gy, i32 gw, i32 gh
     if (win.kind == WindowKind::Terminal)
     {
         scene_draw_terminal_content(gx, gy);
+        return;
+    }
+    if (win.kind == WindowKind::GameRuntime)
+    {
+        scene_draw_game_content(gx, gy, gw, gh);
         return;
     }
     const i32 mx = arch::x86_64::mouse_x();
@@ -1152,7 +1126,6 @@ void scene_draw_window(const Window& win_in)
 
     Window win = win_in;
 
-    // Animation: slide + shrink during transitions.
     if (win.anim_state != AnimState::Settled)
     {
         const u64 now = arch::x86_64::pit_ticks();
@@ -1179,7 +1152,6 @@ void scene_draw_window(const Window& win_in)
         }
         case AnimState::Minimizing:
         {
-            // Shrink toward the taskbar. pct: 0 -> 100.
             const i32 dy = ((centre_y - (win.y + win.h / 2)) * static_cast<i32>(pct)) / 100;
             const i32 sx = (win.w * (100 - static_cast<i32>(pct))) / 200;
             const i32 sy = (win.h * (100 - static_cast<i32>(pct))) / 200;
@@ -1195,7 +1167,6 @@ void scene_draw_window(const Window& win_in)
         }
         case AnimState::Restoring:
         {
-            // Grows back from the taskbar.
             const i32 inv = 100 - static_cast<i32>(pct);
             const i32 dy = ((centre_y - (win.y + win.h / 2)) * inv) / 100;
             const i32 sx = (win.w * inv) / 200;
@@ -1235,7 +1206,6 @@ void scene_draw_window(const Window& win_in)
     if (win.focused)
         s_fill(win.x, win.y, win.w, 2, kAccent);
 
-    // Small icon on the left of the title bar.
     const i32 tb_icon = 16;
     s_icon(icon_for_window(win.kind), win.x + 6, win.y + (static_cast<i32>(kTitleH) - tb_icon) / 2,
            static_cast<u32>(tb_icon));
@@ -1295,12 +1265,8 @@ void scene_draw_window(const Window& win_in)
                               win.h - static_cast<i32>(kTitleH));
 }
 
-// Toast popup in the bottom-right, above the taskbar. Fades out after
-// kToastTicks PIT ticks.
-constexpr u64 kToastTicks = 300; // 3 s at 100 Hz
+constexpr u64 kToastTicks = 300;
 
-// Draw the snap layout preview. Called during scene_render() after all
-// windows, so it floats on top of everything except the toast.
 void scene_draw_snap_preview()
 {
     if (!g_snap_preview_open)
@@ -1311,13 +1277,11 @@ void scene_draw_snap_preview()
     const i32 px = (to_i32(g_w) - preview_w) / 2;
     const i32 py = 20;
 
-    // Background.
     s_fill(px - 4, py - 4, preview_w + 8, preview_h + 8, kMenuBg);
     s_rect(px - 4, py - 4, preview_w + 8, preview_h + 8, kAccent);
 
     s_text(px, py + 4, "Snap layout", kTextFg, kMenuBg);
 
-    // Four layout cells, evenly spaced.
     const i32 cell_w = 56;
     const i32 cell_h = 80;
     const i32 cell_gap = 8;
@@ -1333,7 +1297,6 @@ void scene_draw_snap_preview()
         s_fill(cx, start_y, cell_w, cell_h, cell_bg);
         s_rect(cx, start_y, cell_w, cell_h, kBorderFg);
 
-        // Draw the zones inside the cell.
         const SnapLayout& L = g_snap_layouts[i];
         for (u32 z = 0; z < L.zone_count; ++z)
         {
@@ -1351,6 +1314,7 @@ void scene_draw_snap_preview()
 
     s_text(px + 12, py + preview_h - 20, "Release to snap", kTextDim, kMenuBg);
 }
+
 void scene_draw_toast()
 {
     if (!g_toast_visible)
@@ -1372,16 +1336,14 @@ void scene_draw_toast()
     s_fill(tx, ty, tw, th, kMenuBg);
     s_rect(tx, ty, tw, th, kAccent);
 
-    // Small accent bar on the left.
     s_fill(tx, ty, 4, th, kAccent);
 
     s_text(tx + 16, ty + 12, "Notification", kTextFg, kMenuBg);
     s_text(tx + 16, ty + 32, g_toast_text, kTextDim, kMenuBg);
 
-    // Auto-dismiss: schedule another dirty frame so the fade completes.
     g_dirty_scene = true;
 }
-// The available work area (screen minus taskbar) in screen pixels.
+
 void work_area(i32& x, i32& y, i32& w, i32& h)
 {
     x = 0;
@@ -1390,9 +1352,6 @@ void work_area(i32& x, i32& y, i32& w, i32& h)
     h = to_i32(g_h) - static_cast<i32>(kTaskbarH);
 }
 
-// Snap a window to a fraction-based rectangle. Fractions are /100 of the
-// work area. The window is re-inserted as maximized if the fraction is
-// 100x100, otherwise as a "half-tiled" free-form window.
 void snap_window(u32 win_idx, i32 xf, i32 yf, i32 wf, i32 hf)
 {
     if (win_idx >= g_win_count)
@@ -1402,7 +1361,6 @@ void snap_window(u32 win_idx, i32 xf, i32 yf, i32 wf, i32 hf)
     i32 wx, wy, ww, wh;
     work_area(wx, wy, ww, wh);
 
-    // Save the original geometry the first time we snap.
     if (!w.maximized && w.saved_w == 0)
     {
         w.saved_x = w.x;
@@ -1419,7 +1377,6 @@ void snap_window(u32 win_idx, i32 xf, i32 yf, i32 wf, i32 hf)
     w.anim_state = AnimState::Settled;
     g_dirty_scene = true;
 
-    // Emit a toast naming the applied layout.
     Compositor::notify("Snap applied");
 }
 
@@ -1435,7 +1392,6 @@ void scene_draw_switcher()
     const i32 px = (to_i32(g_w) - panel_w) / 2;
     const i32 py = (to_i32(g_h) - panel_h) / 2;
 
-    // Dim the backdrop.
     for (i32 y = 0; y < to_i32(g_h); y += 2)
         for (i32 x = 0; x < to_i32(g_w); x += 2)
             s_fill(x, y, 1, 1, 0x00000000);
@@ -1451,7 +1407,6 @@ void scene_draw_switcher()
         if (sel)
             s_fill(px + 4, ry, panel_w - 8, row_h - 4, bg);
 
-        // Window icon (a small bar representing the title bar colour).
         s_fill(px + 16, ry + 8, 24, 20, g_windows[i].focused ? kTitleOn : kTitleOff);
         s_fill(px + 16, ry + 8, 24, 2, kAccent);
 
@@ -1459,60 +1414,75 @@ void scene_draw_switcher()
     }
 }
 
-// Full-screen dimming overlay with a spinning Loading.ico. Drawn on top
-// of everything when a launch is pending. Keeps g_dirty_scene set so the
-// animation redraws every frame.
-void scene_draw_loading_overlay()
+// Boot splash: static logo, animated progress bar. Shown for
+// kBootSplashTicks, then the desktop appears.
+void scene_draw_boot_splash()
 {
-    if (g_pending_launch == PendingLaunch::None)
-        return;
+    s_fill(0, 0, to_i32(g_w), to_i32(g_h), 0x000A0A12);
 
-    const u64 now = arch::x86_64::pit_ticks();
-    const u64 elapsed = (now >= g_pending_launch_tick) ? (now - g_pending_launch_tick) : 0;
-
-    // 50% halftone dim: one dark pixel every two pixels.
-    for (i32 y = 0; y < to_i32(g_h); y += 2)
-        for (i32 x = 0; x < to_i32(g_w); x += 2)
-            s_fill(x, y, 1, 1, 0x00000000);
-
-    const i32 card_w = 260;
-    const i32 card_h = 160;
+    const i32 card_w = 420;
+    const i32 card_h = 260;
     const i32 cx = (to_i32(g_w) - card_w) / 2;
     const i32 cy = (to_i32(g_h) - card_h) / 2;
-    s_fill(cx, cy, card_w, card_h, kMenuBg);
-    s_rect(cx, cy, card_w, card_h, kAccent);
 
-    // Orbiting icon. angle_step goes 0..720 over kLoadingTicks, giving
-    // two full revolutions per animation.
-    const i32 icon_size = 48;
-    const i32 orbit_r = 40;
-    const i32 cx_mid = cx + card_w / 2;
-    const i32 cy_mid = cy + card_h / 2 - 12;
+    // Static logo (Start button icon as the brand mark).
+    s_icon(icons::Id::StartButton, cx + 28, cy + 28, 64);
 
-    const u32 angle_step =
-        static_cast<u32>((elapsed * 720u) / (kLoadingTicks > 0 ? kLoadingTicks : 1));
-    const u32 angle = angle_step % 360u;
+    s_text(cx + 108, cy + 30, "NOTYVOS", 0x00FFFFFF, 0x000A0A12);
+    s_text(cx + 108, cy + 56, "by NotY215", 0x0080A0C0, 0x000A0A12);
 
-    // 16-entry LUT approximating cos for 0..360 in 22.5-degree steps,
-    // scaled by 256. sin is read at (index + 4) mod 16.
-    static constexpr i32 kLut[16] = {256,  237,  181,  98,  0, -98, -181, -237,
-                                     -256, -237, -181, -98, 0, 98,  181,  237};
-    const u32 a16 = (angle * 16u) / 360u;
-    const i32 cos_v = kLut[a16 & 15u];
-    const i32 sin_v = kLut[(a16 + 4u) & 15u];
-    const i32 ix = cx_mid - icon_size / 2 + (cos_v * orbit_r) / 256;
-    const i32 iy = cy_mid - icon_size / 2 + (sin_v * orbit_r) / 256;
+    const i32 bar_x = cx + 40;
+    const i32 bar_y = cy + 150;
+    const i32 bar_w = card_w - 80;
+    const i32 bar_h = 22;
+    s_fill(bar_x, bar_y, bar_w, bar_h, 0x0020202A);
+    s_rect(bar_x, bar_y, bar_w, bar_h, 0x00404050);
 
-    s_icon(icons::Id::Loading, ix, iy, static_cast<u32>(icon_size));
+    const u64 now = arch::x86_64::pit_ticks();
+    const u64 elapsed = (now >= g_boot_splash_start) ? (now - g_boot_splash_start) : 0;
+    u32 pct = static_cast<u32>((elapsed * 100u) / kBootSplashTicks);
+    if (pct > 100u)
+        pct = 100u;
 
-    s_text(cx + 16, cy + card_h - 32, pending_launch_label(g_pending_launch), kMenuFg, kMenuBg);
+    const i32 fill_w = ((bar_w - 4) * static_cast<i32>(pct)) / 100;
+    if (fill_w > 0)
+        s_fill(bar_x + 2, bar_y + 2, fill_w, bar_h - 4, 0x003080C0);
 
-    // Keep the scene dirty while the animation runs.
+    char buf[8];
+    int n = 0;
+    if (pct >= 100u)
+    {
+        buf[n++] = '1';
+        buf[n++] = '0';
+        buf[n++] = '0';
+    }
+    else if (pct >= 10u)
+    {
+        buf[n++] = static_cast<char>('0' + (pct / 10u));
+        buf[n++] = static_cast<char>('0' + (pct % 10u));
+    }
+    else
+    {
+        buf[n++] = static_cast<char>('0' + pct);
+    }
+    buf[n++] = '%';
+    buf[n] = 0;
+    s_text(bar_x + bar_w / 2 - 24, bar_y + 34, buf, 0x00C0C0D0, 0x000A0A12);
+
+    const char* status = (pct < 100u) ? "Starting services..." : "Ready.";
+    s_text(cx + 40, cy + 220, status, 0x00808090, 0x000A0A12);
+
     g_dirty_scene = true;
 }
 
 void scene_render()
 {
+    if (g_boot_splash)
+    {
+        scene_draw_boot_splash();
+        return;
+    }
+
     scene_draw_background();
     scene_draw_desktop_icons();
     scene_draw_disk_panel();
@@ -1524,7 +1494,6 @@ void scene_render()
     scene_draw_switcher();
     scene_draw_snap_preview();
     scene_draw_toast();
-    scene_draw_loading_overlay();
 }
 
 i32 hit_window(i32 mx, i32 my)
@@ -1644,18 +1613,15 @@ void close_window(u32 idx)
     if (idx >= g_win_count)
         return;
     Window& w = g_windows[idx];
-    // Enter the closing animation. The actual removal happens in
-    // `scene_tick_animations` once the timer expires.
     if (w.anim_state != AnimState::Closing)
     {
         w.anim_state = AnimState::Closing;
         w.anim_start_tick = arch::x86_64::pit_ticks();
-        w.visible = true; // still draw during the animation
+        w.visible = true;
         w.focused = false;
         g_dirty_scene = true;
         return;
     }
-    // Immediate removal (called twice).
     for (u32 i = idx; i + 1 < g_win_count; ++i)
         g_windows[i] = g_windows[i + 1];
     --g_win_count;
@@ -1703,12 +1669,6 @@ void minimize_window(u32 idx)
     g_dirty_scene = true;
 }
 
-// ---------------------------------------------------------------------------
-// 10D: window animation tick.
-//
-// Called from Compositor::tick() before scene_render. Advances opening
-// windows to Settled and removes closing windows when their timer expires.
-// ---------------------------------------------------------------------------
 void scene_tick_animations()
 {
     const u64 now = arch::x86_64::pit_ticks();
@@ -1741,7 +1701,7 @@ void scene_tick_animations()
 
         case AnimState::Minimizing:
             if ((now - w.anim_start_tick) >= kAnimTicks)
-                w.anim_state = AnimState::Settled; // fully hidden
+                w.anim_state = AnimState::Settled;
             g_dirty_scene = true;
             break;
 
@@ -1834,8 +1794,6 @@ void create_terminal_window()
         g_term_cols = 1;
     if (g_term_rows == 0)
         g_term_rows = 1;
-    // NOTE: do not touch g_term_cursor, g_term_stored_lines or
-    // g_term_scroll. Terminal content and history survive close/reopen.
 
     ++g_win_count;
     focus_window(g_win_count - 1);
@@ -1857,69 +1815,35 @@ void launch_terminal()
     create_terminal_window();
 }
 
-// Perform the actual window creation. Called once the loading animation
-// completes.
-void execute_launch(PendingLaunch p)
-{
-    switch (p)
-    {
-    case PendingLaunch::Explorer:
-        log::write(log::Level::Info, "gfx", "launch: Explorer");
-        open_window(WindowKind::Explorer, "Explorer", 720, 480);
-        break;
-    case PendingLaunch::Settings:
-        log::write(log::Level::Info, "gfx", "launch: Settings");
-        open_window(WindowKind::Settings, "Settings", 720, 480);
-        break;
-    case PendingLaunch::Terminal:
-        log::write(log::Level::Info, "gfx", "launch: Terminal");
-        launch_terminal();
-        break;
-    case PendingLaunch::GameLchr:
-        log::write(log::Level::Info, "gfx", "launch: Game Launcher");
-        open_window(WindowKind::GameLauncher, "Game Launcher", 720, 480);
-        break;
-    case PendingLaunch::ImageVw:
-        log::write(log::Level::Info, "gfx", "launch: Image Viewer");
-        open_window(WindowKind::ImageViewer, "Image Viewer", 720, 480);
-        break;
-    case PendingLaunch::Bin:
-        log::write(log::Level::Info, "gfx", "launch: Recycle Bin");
-        open_window(WindowKind::Bin, "Recycle Bin", 620, 400);
-        break;
-    default:
-        break;
-    }
-}
-
 void launch_shortcut(ShortcutKind kind)
 {
-    if (g_pending_launch != PendingLaunch::None)
-        return; // already launching something else
-
     switch (kind)
     {
     case ShortcutKind::Explorer:
-        g_pending_launch = PendingLaunch::Explorer;
+        log::write(log::Level::Info, "gfx", "launch: Explorer");
+        open_window(WindowKind::Explorer, "Explorer", 720, 480);
         break;
     case ShortcutKind::Settings:
-        g_pending_launch = PendingLaunch::Settings;
+        log::write(log::Level::Info, "gfx", "launch: Settings");
+        open_window(WindowKind::Settings, "Settings", 720, 480);
         break;
     case ShortcutKind::Terminal:
-        g_pending_launch = PendingLaunch::Terminal;
+        log::write(log::Level::Info, "gfx", "launch: Terminal");
+        launch_terminal();
         break;
     case ShortcutKind::GameLchr:
-        g_pending_launch = PendingLaunch::GameLchr;
+        log::write(log::Level::Info, "gfx", "launch: Game Launcher");
+        open_window(WindowKind::GameLauncher, "Game Launcher", 720, 480);
         break;
     case ShortcutKind::ImageVw:
-        g_pending_launch = PendingLaunch::ImageVw;
+        log::write(log::Level::Info, "gfx", "launch: Image Viewer");
+        open_window(WindowKind::ImageViewer, "Image Viewer", 720, 480);
         break;
     case ShortcutKind::Bin:
-        g_pending_launch = PendingLaunch::Bin;
+        log::write(log::Level::Info, "gfx", "launch: Recycle Bin");
+        open_window(WindowKind::Bin, "Recycle Bin", 620, 400);
         break;
     }
-    g_pending_launch_tick = arch::x86_64::pit_ticks();
-    g_dirty_scene = true;
 }
 
 void launch_menu_item(MenuItem m)
@@ -2042,7 +1966,6 @@ void on_mouse_tick()
         const i32 widx = hit_window(mx, my);
         if (widx >= 0)
         {
-            // Right-click inside an Explorer window: open its context menu.
             Window& w = g_windows[static_cast<u32>(widx)];
             if (w.kind == WindowKind::Explorer)
             {
@@ -2066,7 +1989,6 @@ void on_mouse_tick()
         return;
     }
 
-    // Left-click while an Explorer context menu is open: the menu wins.
     if (just_left_pressed && apps_explorer_click_ctx(mx, my))
     {
         g_prev_left = left;
@@ -2164,9 +2086,6 @@ void on_mouse_tick()
             {
                 focus_window(static_cast<u32>(idx));
 
-                // Explorer toolbar hit-test. The three nav buttons live at
-                // window-relative x=4..32, 36..64, 68..96 in the 30-px
-                // toolbar band that sits below the 22-px menu bar.
                 if (w.kind == WindowKind::Explorer && just_left_pressed)
                 {
                     const i32 rx = mx - w.x;
@@ -2240,7 +2159,6 @@ void on_mouse_tick()
                     if (!g_windows[i].visible)
                         continue;
 
-                    // Only the first window of each group has a button.
                     bool is_first = true;
                     for (u32 j = 0; j < i; ++j)
                     {
@@ -2263,8 +2181,6 @@ void on_mouse_tick()
 
                     if (mx >= bx && mx < bx + static_cast<i32>(tw))
                     {
-                        // If any group member is minimized, restore them.
-                        // Otherwise, cycle focus to the next group member.
                         bool restored_any = false;
                         for (u32 j = 0; j < g_win_count; ++j)
                         {
@@ -2291,7 +2207,6 @@ void on_mouse_tick()
                         }
                         else
                         {
-                            // Cycle to the next non-focused member.
                             i32 cur = -1;
                             for (u32 j = 0; j < g_win_count; ++j)
                             {
@@ -2347,8 +2262,6 @@ void on_mouse_tick()
     {
         if (g_drag_win >= 0)
         {
-            // If the snap preview is open and the cursor is over a zone,
-            // apply that layout. Otherwise fall back to edge-snap.
             if (g_snap_preview_open && g_snap_layout_hover >= 0 && g_snap_zone_hover >= 0)
             {
                 const SnapLayout& L = g_snap_layouts[static_cast<u32>(g_snap_layout_hover)];
@@ -2358,7 +2271,6 @@ void on_mouse_tick()
             }
             else
             {
-                // Edge-snap fallback.
                 const i32 snap = 30;
                 const i32 work_h = to_i32(g_h) - static_cast<i32>(kTaskbarH);
                 Window& w = g_windows[static_cast<u32>(g_drag_win)];
@@ -2413,7 +2325,6 @@ void on_mouse_tick()
         if (w.y > to_i32(g_h) - static_cast<i32>(kTaskbarH) - 10)
             w.y = to_i32(g_h) - static_cast<i32>(kTaskbarH) - 10;
 
-        // Near the top edge: show the snap preview.
         const bool near_top = (my <= 12);
         if (near_top && !g_snap_preview_open)
         {
@@ -2430,7 +2341,6 @@ void on_mouse_tick()
             g_dirty_scene = true;
         }
 
-        // Track which cell and zone the cursor is over.
         if (g_snap_preview_open)
         {
             const i32 preview_w = 260;
@@ -2452,7 +2362,7 @@ void on_mouse_tick()
                 {
                     const i32 cx = start_x + layout_i * (cell_w + cell_gap);
                     if (mx >= cx + cell_w)
-                        layout_i = -1; // in the gap
+                        layout_i = -1;
                 }
             }
 
@@ -2498,7 +2408,6 @@ void on_mouse_tick()
         const i32 idx = hit_window(mx, my);
         if (idx >= 0 && g_windows[static_cast<u32>(idx)].kind == WindowKind::Terminal)
         {
-            // 3 lines per wheel tick.
             Compositor::term_scroll_by(wheel * 3);
             g_dirty_scene = true;
         }
@@ -2578,6 +2487,60 @@ void try_load_wallpaper()
 
 } // namespace
 
+void Compositor::game_attach(u32* pixels, u32 width, u32 height, u32 pitch) noexcept
+{
+    if (!pixels || width == 0 || height == 0)
+        return;
+
+    g_game_pixels = pixels;
+    g_game_w = width;
+    g_game_h = height;
+    g_game_pitch = (pitch != 0) ? pitch : width;
+
+    // Open or focus the game window.
+    for (u32 i = 0; i < g_win_count; ++i)
+    {
+        if (g_windows[i].kind == WindowKind::GameRuntime)
+        {
+            g_windows[i].minimized = false;
+            focus_window(i);
+            g_dirty_scene = true;
+            return;
+        }
+    }
+    if (g_win_count < kMaxWindows)
+    {
+        open_window(WindowKind::GameRuntime, "Game Runtime", 720, 480);
+    }
+}
+
+void Compositor::game_present() noexcept
+{
+    g_dirty_scene = true;
+}
+
+void Compositor::game_detach() noexcept
+{
+    for (u32 i = 0; i < g_win_count; ++i)
+    {
+        if (g_windows[i].kind == WindowKind::GameRuntime)
+        {
+            close_window(i);
+            break;
+        }
+    }
+    g_game_pixels = nullptr;
+    g_game_w = 0;
+    g_game_h = 0;
+    g_game_pitch = 0;
+    g_dirty_scene = true;
+}
+
+bool Compositor::game_attached() noexcept
+{
+    return g_game_pixels != nullptr;
+}
+
 void Compositor::notify(const char* text) noexcept
 {
     if (!text)
@@ -2600,6 +2563,18 @@ void Compositor::machine_shutdown() noexcept
 void Compositor::machine_restart() noexcept
 {
     acpi::restart();
+}
+
+void Compositor::boot_splash_begin() noexcept
+{
+    g_boot_splash = true;
+    g_boot_splash_start = arch::x86_64::pit_ticks();
+    g_dirty_scene = true;
+}
+
+bool Compositor::boot_splash_active() noexcept
+{
+    return g_boot_splash;
 }
 
 void Compositor::init() noexcept
@@ -2672,10 +2647,7 @@ void Compositor::init() noexcept
     g_ready = true;
     g_dirty_scene = true;
 
-    // Prime the terminal with everything that was logged before the
-    // compositor took over. The log ring contains boot messages from the
-    // very first line, so the terminal starts with a full boot log.
-    Compositor::term_put('\f'); // one clear, before replaying
+    Compositor::term_put('\f');
     log::replay(
         [](const char* line, void* user)
         {
@@ -2685,8 +2657,6 @@ void Compositor::init() noexcept
         },
         nullptr);
 
-    // After the replay, reset the terminal cursor scroll position so the
-    // latest line is visible.
     Compositor::term_scroll_bottom();
     Compositor::notify("Welcome to NOTYVOS");
     scene_render();
@@ -2721,25 +2691,18 @@ void Compositor::tick() noexcept
     if (!g_ready)
         return;
 
-    // Advance the launch animation.
-    if (g_pending_launch != PendingLaunch::None)
+    if (g_boot_splash)
     {
         const u64 now = arch::x86_64::pit_ticks();
-        if ((now - g_pending_launch_tick) >= kLoadingTicks)
+        if ((now - g_boot_splash_start) >= kBootSplashTicks)
         {
-            PendingLaunch p = g_pending_launch;
-            g_pending_launch = PendingLaunch::None;
-            execute_launch(p);
+            g_boot_splash = false;
+            g_dirty_scene = true;
         }
-        g_dirty_scene = true;
     }
 
-    // Poll USB HID once per frame. Cheap when no USB devices are attached.
     usb::hid::poll();
 
-    // Alt-Tab switcher. `Cycle` fires each time the user presses Tab while
-    // Alt is held; `Commit` fires when Alt is released.
-    // Clipboard shortcuts. Routed to the focused window's app.
     {
         Window* focused = nullptr;
         for (u32 i = 0; i < g_win_count; ++i)
@@ -2757,10 +2720,8 @@ void Compositor::tick() noexcept
         {
             if (focused->kind == WindowKind::Terminal)
             {
-                // Terminal: Ctrl+C delivers SIGINT (existing behaviour).
                 if (ctrl_c)
                     sched::scheduler_deliver_sigint();
-                // Ctrl+V pastes text into the keyboard ring buffer.
                 if (ctrl_v)
                 {
                     const auto& c = clipboard::get();
@@ -2770,7 +2731,6 @@ void Compositor::tick() noexcept
                             arch::x86_64::keyboard_inject(*p);
                     }
                 }
-                // Ctrl+X is a no-op in the terminal.
             }
             else if (focused->kind == WindowKind::Explorer)
             {
@@ -2784,7 +2744,6 @@ void Compositor::tick() noexcept
         }
     }
 
-    // Alt+F4 closes the focused window.
     if (arch::x86_64::keyboard_alt_f4_event())
     {
         for (u32 i = 0; i < g_win_count; ++i)
@@ -2863,7 +2822,6 @@ u32 Compositor::term_rows() noexcept
 
 void Compositor::term_scroll_by(i32 delta) noexcept
 {
-    // Positive delta = scroll up = see older content.
     const i32 eff = kTermScrollInvert ? -delta : delta;
 
     if (eff > 0)
@@ -2876,7 +2834,6 @@ void Compositor::term_scroll_by(i32 delta) noexcept
         g_term_scroll = (mag >= g_term_scroll) ? 0u : (g_term_scroll - mag);
     }
 
-    // Clamp against actual available history.
     const u32 max_scroll =
         (g_term_stored_lines > g_term_rows) ? (g_term_stored_lines - g_term_rows) : 0u;
     if (g_term_scroll > max_scroll)
@@ -2942,12 +2899,10 @@ void Compositor::term_put(char c) noexcept
         g_term[g_term_cursor++] = c;
     }
 
-    // Track stored lines.
     const u32 line_now = g_term_cursor / g_term_cols;
     if (line_now + 1u > g_term_stored_lines)
         g_term_stored_lines = line_now + 1u;
 
-    // Buffer full: shift by one line.
     if (g_term_cursor >= kTermMaxCols * kTermMaxLines)
     {
         libk::memmove(g_term, g_term + g_term_cols, (kTermMaxLines - 1u) * g_term_cols);
@@ -2956,13 +2911,10 @@ void Compositor::term_put(char c) noexcept
         g_term_cursor = (kTermMaxLines - 1u) * g_term_cols;
         g_term_stored_lines = kTermMaxLines;
 
-        // If the user was scrolled up, keep their absolute view position
-        // so the content under their cursor does not slide away.
         if (g_term_scroll > 0)
             ++g_term_scroll;
     }
 
-    // Clamp scroll after content change.
     const u32 max_scroll =
         (g_term_stored_lines > g_term_rows) ? (g_term_stored_lines - g_term_rows) : 0u;
     if (g_term_scroll > max_scroll)
@@ -2987,8 +2939,6 @@ void Compositor::set_theme(theme::Id id) noexcept
     g_dirty_scene = true;
 }
 
-// Non-member hook. Called by the Explorer modal loops so the desktop
-// keeps repainting while a modal dialog is open.
 extern "C" void notyvos_compositor_pump_for_modal()
 {
     Compositor::tick();

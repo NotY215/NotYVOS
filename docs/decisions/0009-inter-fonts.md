@@ -1,4 +1,4 @@
-# ADR 0009 — Inter font family
+# ADR 0009 -- Inter font family
 
 Status: Accepted
 

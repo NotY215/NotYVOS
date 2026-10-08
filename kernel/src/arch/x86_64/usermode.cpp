@@ -63,7 +63,7 @@ extern "C" void task_entry_fork_child() noexcept
     // Free the buffer once we no longer need it.
     // (We copy the frame on the child's kernel stack in the resume routine,
     // but it does not return here; the free is done inside the assembly
-    // helper via a callback — simpler to leak until process exit.)
+    // helper via a callback -- simpler to leak until process exit.)
     t->start_arg = nullptr;
     notyvos_enter_user_fork(frame);
     __builtin_unreachable();

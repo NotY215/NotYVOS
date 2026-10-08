@@ -10,7 +10,7 @@ namespace
 {
 
 // ---------------------------------------------------------------------------
-// Marker constants (baseline only — SOF0).
+// Marker constants (baseline only -- SOF0).
 // ---------------------------------------------------------------------------
 constexpr u8 kSOI = 0xD8;
 constexpr u8 kEOI = 0xD9;
@@ -335,7 +335,7 @@ bool decode_jpeg_impl(const void* data, usize size, Image& out) noexcept
             break;
 
         if (marker == kSOI || (marker >= 0xD0 && marker <= 0xD7))
-            continue; // stray SOI/RSTn — ignore
+            continue; // stray SOI/RSTn -- ignore
 
         // All other markers have a 2-byte big-endian length.
         if (br.p + 2 > br.end)
@@ -492,7 +492,7 @@ bool decode_jpeg_impl(const void* data, usize size, Image& out) noexcept
                     return false;
                 cs += 2;
             }
-            // Ss, Se, Ah/Al — ignored for baseline.
+            // Ss, Se, Ah/Al -- ignored for baseline.
             entropy_start = br.p + (mlen - 2);
             got_sos = true;
             break;

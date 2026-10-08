@@ -103,7 +103,7 @@ if (-not $haveBin) {
 }
 
 # ---------------------------------------------------------------------------
-# 3. Sanity check — boot files only (host tool is optional)
+# 3. Sanity check -- boot files only (host tool is optional)
 # ---------------------------------------------------------------------------
 $required = @("BOOTX64.EFI", "limine-uefi-cd.bin")
 $missing = @()

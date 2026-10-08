@@ -1,4 +1,4 @@
-# ADR 0002 — Clang/LLVM kernel toolchain, VS as IDE
+# ADR 0002 -- Clang/LLVM kernel toolchain, VS as IDE
 
 Status: Accepted
 Date: 2025

@@ -8,6 +8,36 @@ namespace notyvos::fs
 namespace
 {
 VNode* g_root = nullptr;
+
+isize fw_size(VNode*) noexcept
+{
+    usize n = 0;
+    (void)vfs_firmware(&n);
+    return static_cast<isize>(n);
+}
+
+isize fw_read(VNode*, void* buf, usize off, usize len) noexcept
+{
+    usize n = 0;
+    const void* data = vfs_firmware(&n);
+    if (!data)
+        return -1;
+    if (off >= n)
+        return 0;
+    usize avail = n - off;
+    usize copy = (len < avail) ? len : avail;
+    const u8* src = static_cast<const u8*>(data) + off;
+    for (usize i = 0; i < copy; ++i)
+        static_cast<u8*>(buf)[i] = src[i];
+    return static_cast<isize>(copy);
+}
+
+VNodeOps g_fw_ops = {fw_read, nullptr, nullptr, nullptr, fw_size};
+} // namespace
+
+VNodeOps* firmware_ops() noexcept
+{
+    return &g_fw_ops;
 }
 
 void vfs_init()

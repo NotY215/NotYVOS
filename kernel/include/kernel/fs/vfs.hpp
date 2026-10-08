@@ -9,6 +9,9 @@ void vfs_init();
 void vfs_mount_root(VNode* root);
 VNode* vfs_root();
 VNode* vfs_lookup(const char* path, const char* cwd);
+// VNodeOps that read from the PS3 firmware blob registered by main.cpp.
+// Used so guest code can open("/dev/ps3.pup") and read the firmware.
+VNodeOps* firmware_ops() noexcept;
 // Directory operations. Currently backed by NYFS when the parent is the
 // mounted disk root; other filesystems are read-only.
 // Return 0 on success, -1 on failure.

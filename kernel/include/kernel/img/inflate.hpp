@@ -4,7 +4,7 @@
 namespace notyvos::img::inflate
 {
 
-// Raw DEFLATE (RFC 1951) decompressor. No zlib header parsing — see
+// Raw DEFLATE (RFC 1951) decompressor. No zlib header parsing -- see
 // decompress_zlib() for that.
 //
 // `out_cap` is the maximum number of bytes to write to `out`. Returns

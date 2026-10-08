@@ -341,7 +341,7 @@ bool step(Context* ctx) noexcept {
             }
         }
 
-        case 17: {   // sc — syscall
+        case 17: {   // sc -- syscall
             if (!ctx->syscall || !ctx->syscall(ctx->user, ctx)) {
                 log::write(log::Level::Warn, "ppu",
                     "unhandled syscall, r3=0x%llx pc=0x%llx",

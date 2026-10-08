@@ -16,10 +16,9 @@ enum class WindowKind : u8
     Bin,
     ImageViewer,
     GameLauncher,
+    GameRuntime, // RSX guest surface presented by GameRunner
     Generic
 };
-
-// Window open/close animation states.
 enum class AnimState : u8
 {
     Settled = 0,
@@ -70,6 +69,16 @@ public:
     static void machine_restart() noexcept;
 
     static void set_theme(theme::Id id) noexcept;
+
+    static void game_attach(u32* pixels, u32 width, u32 height, u32 pitch) noexcept;
+    static void game_present() noexcept;
+    static void game_detach() noexcept;
+    static bool game_attached() noexcept;
+
+    // Boot splash: shown once after Compositor::init(). Static logo,
+    // animated progress bar. After kBootSplashTicks the desktop appears.
+    static void boot_splash_begin() noexcept;
+    static bool boot_splash_active() noexcept;
 };
 
 } // namespace notyvos::gfx

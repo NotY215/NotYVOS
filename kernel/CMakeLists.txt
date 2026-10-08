@@ -160,6 +160,12 @@ set(KERNEL_SOURCES
     src/block/block.cpp
     src/block/ahci.cpp
 
+    src/net/net.cpp
+    src/net/ethernet.cpp
+    src/net/arp.cpp
+    src/net/ipv4.cpp
+    src/net/icmp.cpp
+    src/net/dhcp.cpp
     src/net/e1000.cpp
     src/audio/hda.cpp
     src/acpi/acpi.cpp

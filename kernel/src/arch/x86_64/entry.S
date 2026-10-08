@@ -1,4 +1,4 @@
-/* NOTYVOS kernel entry — Limine protocol v3, higher-half.
+/* NOTYVOS kernel entry -- Limine protocol v3, higher-half.
  * Limine enters us in long mode with paging on.
  * Interrupts are disabled, direction flag is clear.
  * rdi = pointer to limine boot info (struct limine_internal_entry's

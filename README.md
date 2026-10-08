@@ -124,19 +124,19 @@ exec, brk, time, sleep, kill, about, and exit handling.
 
 **Phases 0–10F are frozen as delivered.**
 
-- **Phase 11 — TrueType Font Subsystem:** Done
-- **Phase 12 — Explorer 10G + Real File Operations:** Done
-- **Phase 13A — Desktop Clipboard:** Done
-- **Phase 15A–15E — USB Stack + Unified Input:** Done
+- **Phase 11 -- TrueType Font Subsystem:** Done
+- **Phase 12 -- Explorer 10G + Real File Operations:** Done
+- **Phase 13A -- Desktop Clipboard:** Done
+- **Phase 15A–15E -- USB Stack + Unified Input:** Done
 - **User-fault isolation + user build flags + BMP test vector:** Delivered
 - **Init program debugging:** Next
-- **Phase 14 / 7D — GameRunner Runtime Integration:** Queued
-- **Phase 16 — Production Network Stack:** Queued
-- **Phase 17 — Wi-Fi Driver + Management UI:** Queued
-- **Phase 18 — Bluetooth Framework:** Queued
-- **Phase 19 — NYFS Maturity:** Queued
-- **Phase 20 — Firewall + Network Security:** Queued
-- **Phase 21 — NotYVFirm:** Queued
+- **Phase 14 / 7D -- GameRunner Runtime Integration:** Queued
+- **Phase 16 -- Production Network Stack:** Queued
+- **Phase 17 -- Wi-Fi Driver + Management UI:** Queued
+- **Phase 18 -- Bluetooth Framework:** Queued
+- **Phase 19 -- NYFS Maturity:** Queued
+- **Phase 20 -- Firewall + Network Security:** Queued
+- **Phase 21 -- NotYVFirm:** Queued
 
 Windows `.exe` compatibility and Brave/VLC validation are **explicitly excluded** from the current roadmap.
 

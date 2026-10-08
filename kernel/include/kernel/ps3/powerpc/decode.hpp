@@ -34,9 +34,9 @@ struct Instruction {
     u8   opcode;       // primary opcode (bits 0..5)
     Form form;
     // Common extracted fields. Meaning depends on form.
-    u32  rt;           // bits 6..10  — target GPR
-    u32  ra;           // bits 11..15 — source GPR / base
-    u32  rb;           // bits 16..20 — second source GPR
+    u32  rt;           // bits 6..10  -- target GPR
+    u32  ra;           // bits 11..15 -- source GPR / base
+    u32  rb;           // bits 16..20 -- second source GPR
     i32  simm;         // sign-extended 16-bit immediate (D-form)
     u32  uimm;         // zero-extended 16-bit immediate (D-form)
     u32  xo;           // extended opcode (bits 21..30 for X/XO/XL)
@@ -53,7 +53,7 @@ struct Instruction {
 // Decode one instruction word. `word` is the 32-bit value as it appears in
 // memory (big-endian on disk; caller must load it as a u32 with the byte
 // order already swapped, or pass the raw host-order value and let the
-// decoder know — see below).
+// decoder know -- see below).
 Instruction decode(u32 word_be_host) noexcept;
 
 // Convenience: assemble a 32-bit word from four big-endian bytes.
