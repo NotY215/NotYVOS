@@ -34,19 +34,19 @@ flowchart TD
 
 | Subsystem | Status | Approx. | Reality |
 |---|---|---:|---|
-| Kernel boot / GDT / IDT / TSS / SMP / syscalls | Delivered | ~92% | Missing production networking, firewall and USB |
+| Kernel boot / GDT / IDT / TSS / SMP / syscalls | Delivered | ~92% | Production networking, firewall and later hardware expansion are tracked in later phases |
 | Memory (PMM, VMM, heap, exec arena) | Delivered | ~95% | Solid |
 | Scheduler / tasks / fork / signals | Delivered | ~85% | Missing priorities, CPU affinity and real IPC |
 | VFS / NYFS / initramfs | Delivered | ~55% | NYFS is development-grade; no journaling or recovery |
 | Graphics (compositor, HAL, VBE, GPU API) | Delivered | ~85% | Solid for software rendering |
 | RSX compatibility | Delivered | ~65% | FIFO, methods, raster, texture, UV, mip and depth; shaders/full method coverage remain |
 | PPU / SPU / DMA / JIT | Delivered | ~70% | Working interpreter and baseline JIT; broader opcode coverage remains |
-| PS3 ABI / cellFs / GameRunner | Delivered | ~55% | Load, run and file I/O; 7D runtime integration remains |
-| Desktop UI | Delivered | ~70% | 10G Explorer, real file operations, clipboard, drag/drop and dialogs remain |
+| PS3 ABI / cellFs / GameRunner | Delivered | ~70% | 7D runtime integration is delivered; broader PS3 compatibility coverage remains |
+| Desktop UI | Delivered | ~85% | Core Explorer, file operations, clipboard and dialogs are delivered; polish remains |
 | Image decoders | Delivered | ~90% | BMP/PNG/GIF/ICO/JPEG are solid |
 | SVG decoder + icons | Delivered | ~85% | Diagnostics added; VFS packaging confirmation remains |
 | TrueType font renderer | Delivered | ~75% | Inter rasterization and AA text delivered; shaping and kerning remain |
-| Hardware support | Partial | ~35% | ACPI, AHCI, e1000, HDA, PS/2, USB; RTL8188EU Wi-Fi firmware input is now defined, but full Wi-Fi integration remains |
+| Hardware support | Partial | ~45% | ACPI, AHCI, e1000, HDA, PS/2 and USB are delivered; RTL8188EU Wi-Fi is the active Phase 17 target |
 | Native firmware (NotYVFirm) | Not started | 0% | Long-term firmware domain |
 | Windows .exe compatibility | Excluded | 0% | Not on the current roadmap |
 | Brave / VLC validation | Excluded | 0% | Not on the current roadmap |
