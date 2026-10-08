@@ -136,6 +136,6 @@ The frozen delivered boundary is **Phases 0–10F**.
 
 Phase 11 validation covers Inter TTF parsing, simple glyph outlines, anti-aliased coverage rasterization, glyph caching, compositor text drawing and the boot self-test.
 
-Phase 12 Explorer validation is delivered, including grid/details, breadcrumb navigation and real file operations. Phase 13A clipboard and Phase 15A–15E USB + unified input are delivered. The next active regression target is **init-program debugging**. Phase 14 / 7D and later networking, Bluetooth, NYFS, firewall and NotYVFirm work remain queued. Wi-Fi firmware input is now defined as `Firmware/rtl8188eufw.bin`, while full RTL8188EU integration remains a Phase 17 target.
+Phase 12 Explorer validation is delivered, including grid/details, breadcrumb navigation and real file operations. Phase 13A clipboard and Phase 15A–15E USB + unified input are delivered. Phases 0–16 are completely delivered. The active validation target is **Phase 17 RTL8188EU Wi-Fi + Network Manager**. Phases 18–21 remain queued.
 
 Windows PE/Win32 compatibility and Brave/VLC validation are excluded and are not test targets.
