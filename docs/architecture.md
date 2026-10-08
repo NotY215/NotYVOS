@@ -107,10 +107,10 @@ Implemented driver/domain code includes:
 - Intel e1000 network device detection/initialization
 - HDA audio initialization
 - PS/2 keyboard and mouse
+- RTL8188EU Wi-Fi firmware input (`Firmware/rtl8188eufw.bin`)
 - LAPIC/per-CPU/SMP infrastructure
 
-Wi-Fi, Bluetooth, USB HID and a production network
-stack are not currently implemented.
+The RTL8188EU firmware input is now defined for Wi-Fi development, but the full Wi-Fi driver, association and management path is not yet complete. Bluetooth and the production network stack remain queued.
 
 ## PS3 translation architecture
 
