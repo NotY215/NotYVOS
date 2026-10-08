@@ -210,3 +210,6 @@ perspectives:
           label: font::draw_text
         - to: Graphics API
           label: present
+
+
+# RTL8188EU firmware input is a local development dependency.
