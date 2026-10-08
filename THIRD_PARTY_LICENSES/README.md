@@ -30,7 +30,7 @@ runtime test workflow.
 
 | Component | Source / status |
 |---|---|
-| PS3 firmware | User-supplied, legally obtained, Sony proprietary |
+| PS3 firmware | User-supplied, legally obtained, Sony proprietary |\n| RTL8188EU firmware | `rtl8188eufw.bin`, locally supplied firmware blob; redistribution status must be verified before bundling |
 | PS3 game software | User-supplied, respective copyright holders |
 | Windows applications | User-supplied, respective copyright holders; compatibility validation excluded from current roadmap |
 
