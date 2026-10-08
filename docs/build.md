@@ -30,6 +30,17 @@ The scripts populate:
     ├── limine-12.9.0/
     └── limine-binary/
 
+## Wi-Fi firmware input
+
+The current Realtek RTL8188EU Wi-Fi development path uses the local firmware
+file:
+
+    Firmware/rtl8188eufw.bin
+
+This firmware blob is not repository source code. It must be supplied locally
+unless redistribution rights have been explicitly verified. The Wi-Fi driver
+loads this firmware as part of the RTL8188EU hardware path.
+
 ## Local PS3 firmware input
 
 PS3 GameRunner builds may use a developer-provided PS3 firmware package.
