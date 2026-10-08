@@ -157,6 +157,10 @@ set(KERNEL_SOURCES
     src/arch/x86_64/fork_entry.S
     src/arch/x86_64/entry.S
 
+    src/audio/hda.cpp
+    
+    src/acpi/acpi.cpp
+
     src/block/block.cpp
     src/block/ahci.cpp
 
@@ -165,10 +169,20 @@ set(KERNEL_SOURCES
     src/net/arp.cpp
     src/net/ipv4.cpp
     src/net/icmp.cpp
+    src/net/udp.cpp
+    src/net/tcp.cpp
+    src/net/socket.cpp
     src/net/dhcp.cpp
+    src/net/dns.cpp
+    src/net/wifi.cpp
+    src/net/wpa.cpp
     src/net/e1000.cpp
-    src/audio/hda.cpp
-    src/acpi/acpi.cpp
+
+    src/crypto/sha1.cpp
+    src/crypto/pbkdf2.cpp
+    src/crypto/aes_unwrap.cpp
+    src/crypto/aes_enc_block.cpp
+    src/crypto/ccmp.cpp
 )
 
 add_executable(notyvos-kernel ${KERNEL_SOURCES})

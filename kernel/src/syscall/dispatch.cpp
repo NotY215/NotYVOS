@@ -73,6 +73,22 @@ i64 sys_write(u64 fd, u64 buf, u64 len)
     return static_cast<i64>(len);
 }
 
+i64 sys_dns_impl(u64 uhost, u64 uout)
+{
+    char host[256];
+    if (!copy_from_user(host, uhost, sizeof(host)))
+        return -1;
+    host[255] = 0;
+ps3_unused:
+    (void)0;
+    net::dns::AddressList list{};
+    if (!net::dns::resolve(host, &list, 3000))
+        return -1;
+    if (!copy_to_user(uout, &list.v4[0], sizeof(u32)))
+        return -1;
+    return static_cast<i64>(list.count);
+}
+
 i64 sys_open(const char* upath, u64 /*flags*/)
 {
     if (!upath)
@@ -600,6 +616,9 @@ extern "C" void syscall_dispatch(SyscallFrame* f) noexcept
         break;
     case nr::kWrite:
         f->rax = static_cast<u64>(sys_write(f->rdi, f->rsi, f->rdx));
+        break;
+    case nr::kDns:
+        f->rax = static_cast<u64>(sys_dns_impl(f->rdi, f->rsi));
         break;
     case nr::kYield:
         f->rax = static_cast<u64>(sys_yield());

@@ -29,6 +29,12 @@ typedef u64 usize;
 #define SYS_CREATE 16
 #define SYS_UNLINK 17
 #define SYS_GAME_RUN 18
+#define SYS_DNS 19
+
+static inline i64 sys_dns(const char* host, u32* out_ip)
+{
+    return __sc3(SYS_DNS, (i64)host, (i64)out_ip, 0);
+}
 
 static inline i64 __sc1(i64 n, i64 a1)
 {

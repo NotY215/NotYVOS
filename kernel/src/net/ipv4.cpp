@@ -5,6 +5,7 @@
 #include <kernel/net/ethernet.hpp>
 #include <kernel/net/icmp.hpp>
 #include <kernel/net/ipv4.hpp>
+#include <kernel/net/tcp.hpp>
 
 namespace notyvos::net::ipv4
 {
@@ -114,8 +115,15 @@ void handle(Interface* iface, const u8* payload, usize len) noexcept
     const u8* next = payload + ihl;
     const usize nlen = tot - ihl;
 
+    // Deliver UDP to the socket layer as well.
+
     switch (h->proto)
     {
+    case kProtoTCP:
+    {
+        tcp::handle(iface, src, next, nlen);
+        break;
+    }
     case kProtoICMP:
         icmp::handle(iface, src, next, nlen);
         break;

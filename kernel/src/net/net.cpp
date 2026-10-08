@@ -7,6 +7,12 @@
 #include <kernel/net/icmp.hpp>
 #include <kernel/net/ipv4.hpp>
 #include <kernel/net/net.hpp>
+#include <kernel/arch/x86_64/pit.hpp>
+
+extern "C" volatile u64 notyvos_net_now_ticks() noexcept
+{
+    return notyvos::arch::x86_64::pit_ticks();
+}
 
 namespace notyvos::net
 {

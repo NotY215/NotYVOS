@@ -168,6 +168,7 @@ void handle_irq(u8 irq, InterruptFrame* /*f*/) noexcept
         pit_on_tick();
         notyvos_e1000_poll();
         sched::scheduler_tick();
+        net::wpa::tick();
         // Mark the clock dirty. The actual repaint happens in the idle loop.
         static u32 tick_div = 0;
         if (++tick_div >= 25)

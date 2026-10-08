@@ -173,6 +173,7 @@ static void print_help(void)
     puts("  echo TEXT         echo\n");
     puts("  write FILE TEXT   write to /disk/FILE\n");
     puts("  game PATH         launch a PS3 ELF via GameRunner\n");
+    puts("  dns HOST          resolve a hostname\n");
     puts("  rm FILE           delete /disk/FILE\n");
     puts("  pid               current pid\n");
     puts("  fork              fork a child\n");
@@ -400,6 +401,33 @@ void _start(void)
             puts("game -> ");
             put_int(r);
             putc('\n');
+        }
+                else if (strcmp(argv[0], "dns") == 0)
+        {
+            if (argc < 2)
+            {
+                puts("usage: dns HOST\n");
+                continue;
+            }
+            u32 ip = 0;
+            i64 n = sys_dns(argv[1], &ip);
+            if (n > 0)
+            {
+                puts(argv[1]);
+                puts(" -> ");
+                put_int((ip >> 24) & 0xFF);
+                putc('.');
+                put_int((ip >> 16) & 0xFF);
+                putc('.');
+                put_int((ip >> 8) & 0xFF);
+                putc('.');
+                put_int(ip & 0xFF);
+                putc('\n');
+            }
+            else
+            {
+                puts("dns: failed\n");
+            }
         }
         else if (strcmp(argv[0], "exit") == 0)
         {

@@ -15,6 +15,7 @@ extern "C" void notyvos_compositor_pump_for_modal();
 #include <kernel/mm/heap.hpp>
 #include <kernel/net/net.hpp>
 #include <kernel/net/e1000.hpp>
+#include <kernel/net/wifi.hpp>
 
 namespace notyvos::gfx
 {
@@ -1541,6 +1542,32 @@ void draw_settings(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my, bool)
         label_row("Gateway", gwbuf);
         label_row("Wi-Fi", "no adapter");
         label_row("DNS", "(none)");
+                const u32 na = net::wifi::adapter_count();
+        if (na == 0)
+        {
+            label_row("Wi-Fi", "no adapter");
+        }
+        else
+        {
+            for (u32 i = 0; i < na; ++i)
+            {
+                auto* a = net::wifi::adapter_by_index(i);
+                if (!a)
+                    continue;
+                char row[64];
+                u32 p = 0;
+                const char* n = a->name;
+                while (*n && p < 40)
+                    row[p++] = *n++;
+                row[p++] = ':';
+                row[p++] = ' ';
+                const char* st = a->connected ? "connected" : "idle";
+                while (*st && p < 60)
+                    row[p++] = *st++;
+                row[p] = 0;
+                label_row("Wi-Fi", row);
+            }
+        }
         break;
     }
     case SettingsTab::Appearance:

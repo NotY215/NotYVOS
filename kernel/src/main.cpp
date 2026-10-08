@@ -106,6 +106,10 @@ extern "C"
 #include <kernel/mm/vmm.hpp>
 #include <kernel/net/e1000.hpp>
 #include <kernel/net/dhcp.hpp>
+#include <kernel/net/wifi.hpp>
+#include <kernel/net/wpa.hpp>
+#include <kernel/net/socket.hpp>
+#include <kernel/net/dns.hpp>
 #include <kernel/panic.hpp>
 #include <kernel/proc/elf.hpp>
 #include <kernel/ps3/jit/jit.hpp>
@@ -226,6 +230,10 @@ extern "C" [[noreturn]] void kernel_main()
 
     // ---- Networking + Audio ----
     net::init();
+    net::sock::init();
+    net::dns::init();
+    net::wifi::init();
+    net::wpa::init();
     if (net::e1000_init())
     {
         net::Interface* eth0 = net::e1000_interface();
