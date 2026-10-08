@@ -52,7 +52,7 @@ The repository setup script creates a development VM with:
 | VM disk | 256 MiB VDI |
 
 This is a development configuration. SMP and the current PS/2, storage,
-graphics and audio initialization are already implemented. USB support is implemented in the kernel, including xHCI, HID and MSC, but the current VM configuration keeps USB off. Wi-Fi and Bluetooth remain queued in Phases 17 and 18.
+graphics and audio initialization are already implemented. USB support is implemented in the kernel, including xHCI, HID and MSC, but the current VM configuration keeps USB off. RTL8188EU Wi-Fi firmware is supplied from `Firmware/rtl8188eufw.bin` for physical-hardware development; VirtualBox does not provide the RTL8188EU hardware path. Bluetooth remains queued in Phase 18.
 
 ## Why I/O APIC is off
 
