@@ -1,7 +1,7 @@
 # NOTYVOS Roadmap
 
 This is the canonical NOTYVOS roadmap. It supersedes the previous phase numbering.
-Phases 0–10F are frozen as delivered. Phase 11, Phase 12, Phase 13A and Phase 15A–15E are delivered. The active milestone is init-program debugging. Windows .exe compatibility and Brave/VLC validation are explicitly excluded from the current queue.
+Phases 0–10F and Phases 11–16 are completely delivered. Phase 17 is the active development milestone. Phases 18–21 remain queued. Windows .exe compatibility and Brave/VLC validation are explicitly excluded from the current queue.
 
 ## Roadmap map
 
@@ -12,13 +12,12 @@ flowchart TD
     D[Phases 0-10F delivered] --> P11[11 TrueType DONE]
     P11 --> P12[12 Explorer DONE]
     P12 --> P13A[13A Clipboard DONE]
-    P13A --> I[Init debugging NEXT]
-    P12 --> P14[14 / 7D GameRunner QUEUED]
+    P12 --> P14[14 / 7D GameRunner DONE]
     P13A --> P15[15A-15E USB + unified input DONE]
-    P15 --> P16[16 Production network]
-    P16 --> P17[17 Wi-Fi]
-    P15 --> P18[18 Bluetooth]
-    P16 --> P20[20 Firewall]
+    P15 --> P16[16 Production network DONE]
+    P16 --> P17[17 Wi-Fi WORKING]
+    P15 --> P18[18 Bluetooth QUEUED]
+    P16 --> P20[20 Firewall QUEUED]
     P19[19 NYFS maturity]
     P21[21 NotYVFirm]
     X[Windows PE / Brave / VLC]:::ex
@@ -26,9 +25,9 @@ flowchart TD
 ```
 
 - NOTYVOS roadmap
-  - Delivered: 0–10F, 11 TrueType, 12 Explorer, 13A clipboard, 15A–15E USB + unified input
-  - Next: Init program debugging
-  - Queued: 13B–13C, 14/7D, 16–21
+  - Delivered: 0–10F and Phases 11–16
+  - Working: Phase 17 RTL8188EU Wi-Fi + Network Manager
+  - Queued: Phases 18–21
   - Excluded: Windows PE, Brave, VLC
 
 ## Current state
@@ -96,27 +95,27 @@ horizontal rendering.
 
 Deferred from Phase 12: drag/drop, multi-select and Explorer search.
 
-## Phase 13 -- Desktop Clipboard + Dialogs -- PARTIAL
+## Phase 13 -- Desktop Clipboard + Dialogs -- DONE
 
 **Dependency:** Phase 12.
 
 | Subphase | Scope |
 |---|---|
 | 13A | **Done** | Global clipboard, text/file lists, Ctrl+C/X/V routing |
-| 13B | Blocking input and confirmation dialogs |
-| 13C | Read-only Properties dialog with real metadata |
+| 13B | **Done** | Blocking input and confirmation dialogs |
+| 13C | **Done** | Read-only Properties dialog with real metadata |
 
 Deferred: rich-text clipboard, image clipboard and multi-item paste ordering.
 
-## Phase 14 -- 7D GameRunner Runtime Integration -- QUEUED
+## Phase 14 -- 7D GameRunner Runtime Integration -- DONE
 
 **Dependency:** Phase 12.
 
 | Subphase | Scope |
 |---|---|
-| 14A | Session lifecycle: start/step/pause/resume/stop and dedicated task |
-| 14B | Persistent per-game configuration |
-| 14C | cellSaveData bridge to NYFS |
+| 14A | **Done** | Session lifecycle: start/step/pause/resume/stop and dedicated task |
+| 14B | **Done** | Persistent per-game configuration |
+| 14C | **Done** | cellSaveData bridge to NYFS |
 
 Universal save states remain deferred.
 
@@ -132,30 +131,30 @@ Universal save states remain deferred.
 
 Deferred: hubs, USB 3.x SuperSpeed and isochronous transfers.
 
-## Phase 16 -- Production Network Stack -- QUEUED
+## Phase 16 -- Production Network Stack -- DONE
 
 **Dependency:** Phase 15 optional.
 
 | Subphase | Scope |
 |---|---|
-| 16A | Ethernet, ARP and IPv4 |
-| 16B | ICMP and UDP |
-| 16C | TCP |
-| 16D | DHCP and DNS |
-| 16E | User-space socket API |
+| 16A | **Done** | Ethernet, ARP and IPv4 |
+| 16B | **Done** | ICMP and UDP |
+| 16C | **Done** | TCP |
+| 16D | **Done** | DHCP and DNS |
+| 16E | **Done** | User-space socket API |
 
 Deferred: IPv6, IPsec, multicast and raw sockets.
 
-## Phase 17 -- Wi-Fi Driver + Management UI -- QUEUED
+## Phase 17 -- Wi-Fi Driver + Management UI -- WORKING
 
-**Dependency:** Phase 16.
+**Dependency:** Phase 16. Phase 16 is completely delivered. The current active work is Phase 17.
 
 | Subphase | Scope |
 |---|---|
-| 17A | RTL8188EU 802.11 driver and `Firmware/rtl8188eufw.bin` firmware loading |
-| 17B | WPA2 supplicant |
-| 17C | Network Manager UI in Settings |
-| 17D | Roaming and power management |
+| 17A | **Working** | RTL8188EU 802.11 driver and `Firmware/rtl8188eufw.bin` firmware loading |
+| 17B | **Working** | WPA2 supplicant |
+| 17C | **Working** | Network Manager UI in Settings |
+| 17D | **Working** | Roaming and power management |
 
 Deferred: WPA3, 802.1X enterprise and monitor mode.
 
@@ -212,30 +211,22 @@ Deferred indefinitely: Secure Boot integration and TPM measurements.
 ## Honest gap list
 
 ### Core OS
-1. Production IPv4/IPv6, TCP, UDP, DHCP, DNS and sockets
-2. USB host controller, USB HID and USB storage
-3. Wi-Fi driver and management, including RTL8188EU firmware loading
-4. Bluetooth framework
+1. Wi-Fi driver polish and remaining RTL8188EU integration
+2. Bluetooth framework
 5. Firewall and network security
 6. NYFS journaling, crash recovery and scaling
 7. NotYVFirm
 
-### Desktop / UI
-8. Explorer 10G grid/details/breadcrumb
-9. Real Explorer file operations
-10. File-operation dialogs
-11. Clipboard subsystem
-12. Drag-and-drop file management
-13. Multiple Inter font weight selection
-14. Complex-script shaping and kerning
-15. Application lifecycle management
+### Remaining desktop / UI polish
+3. Multiple Inter font weight selection
+4. Complex-script shaping and kerning
+5. Application lifecycle polish
 
-### PS3 / compatibility
-16. 7D GameRunner runtime/session integration
-17. Full PS3 system-call coverage
-18. Complete PPU opcode coverage
-19. Complete SPU ecosystem coverage
-20. Complete RSX method and shader-model coverage
+### Remaining PS3 / compatibility work
+6. Full PS3 system-call coverage
+7. Complete PPU opcode coverage
+8. Complete SPU ecosystem coverage
+9. Complete RSX method and shader-model coverage
 
 ## Explicit exclusions
 
@@ -262,13 +253,12 @@ Every subsystem gets a boot self-test. Warnings are errors, casts use
 | 11 | TrueType Font Subsystem | **Done** |
 | 12 | Explorer 10G + Real File Operations | **Done** |
 | 13A | Desktop Clipboard | **Done** |
-| 13B–13C | Remaining clipboard/dialog work | Queued |
+| 13 | Desktop Clipboard + Dialogs | **Done** |
 | Fix | User-fault isolation + user build flags + BMP test vector | **Delivered** |
-| Init | Init program debugging | **Next** |
-| 14 / 7D | GameRunner Runtime Integration | Queued |
+| 14 / 7D | GameRunner Runtime Integration | **Done** |
 | 15A–15E | USB Stack + Unified Input | **Done** |
-| 16 | Production Network Stack | Queued |
-| 17 | Wi-Fi Driver + Management UI | Queued |
+| 16 | Production Network Stack | **Done** |
+| 17 | Wi-Fi Driver + Management UI | **Working** |
 | 18 | Bluetooth Framework | Queued |
 | 19 | NYFS Maturity | Queued |
 | 20 | Firewall + Network Security | Queued |
@@ -276,11 +266,6 @@ Every subsystem gets a boot self-test. Warnings are errors, casts use
 | -- | Windows .exe compatibility | **Excluded** |
 | -- | Brave / VLC validation | **Excluded** |
 
-**Next delivery: Init program debugging in `user/init/main.c`.**
-
-
-## Current continuation milestone
-
-The next active engineering target is `user/init/main.c`. Resolve the current init-program build/runtime issue before advancing to Phase 14 / 7D unless explicitly requested otherwise.
+**Current active delivery: Phase 17 RTL8188EU Wi-Fi + Network Manager.**
 
 The delivered ISR exception-dispatch fix is commit `ef79fc3f31e0c6f1574cb2e29028ce4e91dcdb1b`. Kernel-mode exceptions remain fatal; user-mode exceptions are isolated to the offending task through the scheduler exit path.
