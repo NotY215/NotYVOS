@@ -764,7 +764,7 @@ flowchart TD
     P13A --> INIT[Init program debugging NEXT]
     P13A --> P15[15A-15E USB + unified input DONE]
     P15 --> P16[16 Production networking]
-    P16 --> P17[17 RTL8188EU Wi-Fi + Network Manager]
+    P16 --> P17[17 RTL8188EU Wi-Fi + Network Manager WORKING]
     P15 --> P18[18 Bluetooth]
     P16 --> P20[20 Firewall]
     P19[19 NYFS maturity]
