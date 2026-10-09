@@ -7,7 +7,7 @@ foundation.
 NOTYVOS is currently a development-stage system. The native kernel, user process model, VFS, desktop compositor, widgets,
 storage stack, PS3 runtime foundation, RSX compatibility foundation,
 GameRunner foundation, image viewer, theme system and native GPU backend are implemented.
-Extended UI management now covers the delivered 10C–10F desktop interaction work and completely delivered Phases 11–16; Phase 17 RTL8188EU Wi-Fi development is now active. Windows application compatibility remains excluded from the current roadmap.
+Extended UI management covers delivered 10C–10F desktop interaction work and delivered Phases 11–18, including networking, Wi-Fi and Bluetooth. Phase 19 NYFS Maturity is now active. Windows application compatibility remains excluded from the current roadmap.
 
 ## Current platform
 
@@ -77,7 +77,7 @@ exec, brk, time, sleep, kill, about, and exit handling.
 - ACPI table discovery and power/restart paths
 - AHCI storage
 - Intel e1000 network driver
-- RTL8188EU Wi-Fi firmware input via `Firmware/rtl8188eufw.bin`; full Wi-Fi driver and management remain in Phase 17
+- RTL8188EU Wi-Fi support using `Firmware/rtl8188eufw.bin`, with Wi-Fi HAL, WPA2 supplicant/crypto, USB driver, virtual adapter and management UI delivered
 - HDA audio driver
 - PS/2 keyboard and mouse
 - VBE/framebuffer presentation path
@@ -123,19 +123,15 @@ exec, brk, time, sleep, kill, about, and exit handling.
 
 ## Current roadmap status
 
-**Phases 0–10F are frozen as delivered.**
+**Phases 0–10F and Phases 11–18 are delivered.**
 
-- **Phases 11–16:** Done
+- **Phase 16A–16E:** Network core, e1000 LAN driver, DHCP, UDP/sockets/TCP stub and DNS resolver delivered
+- **Phase 17A–17C:** Wi-Fi HAL, WPA supplicant, crypto primitives, RTL8188EU USB driver, virtual Wi-Fi adapter and management UI delivered
+- **Phase 18:** Bluetooth Framework delivered
+- **Phase 19 -- NYFS Maturity:** Working
+- **Phase 20 -- Firewall + Network Security:** Queued
+- **Phase 21 -- NotYVFirm:** Queued
 - **User-fault isolation + user build flags + BMP test vector:** Delivered
-- **Phase 17 -- RTL8188EU Wi-Fi Driver + Management UI:** Working
-- **Phase 18 -- Bluetooth Framework:** Queued
-- **Phase 19 -- NYFS Maturity:** Queued
-- **Phase 20 -- Firewall + Network Security:** Queued
-- **Phase 21 -- NotYVFirm:** Queued
-- **Phase 18 -- Bluetooth Framework:** Queued
-- **Phase 19 -- NYFS Maturity:** Queued
-- **Phase 20 -- Firewall + Network Security:** Queued
-- **Phase 21 -- NotYVFirm:** Queued
 
 Windows `.exe` compatibility and Brave/VLC validation are **explicitly excluded** from the current roadmap.
 
