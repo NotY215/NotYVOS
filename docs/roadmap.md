@@ -1,7 +1,7 @@
 # NOTYVOS Roadmap
 
 This is the canonical NOTYVOS roadmap. It supersedes the previous phase numbering.
-Phases 0–10F and Phases 11–16 are completely delivered. Phase 17 is the active development milestone. Phases 18–21 remain queued. Windows .exe compatibility and Brave/VLC validation are explicitly excluded from the current queue.
+Phases 0–10F and Phases 11–18 are delivered. Phase 19 NYFS Maturity is the active development milestone. Phases 20–21 remain queued. Windows .exe compatibility and Brave/VLC validation are explicitly excluded from the current queue.
 
 ## Roadmap map
 
@@ -14,20 +14,20 @@ flowchart TD
     P12 --> P13A[13A Clipboard DONE]
     P12 --> P14[14 / 7D GameRunner DONE]
     P13A --> P15[15A-15E USB + unified input DONE]
-    P15 --> P16[16 Production network DONE]
-    P16 --> P17[17 Wi-Fi WORKING]
-    P15 --> P18[18 Bluetooth QUEUED]
-    P16 --> P20[20 Firewall QUEUED]
-    P19[19 NYFS maturity]
-    P21[21 NotYVFirm]
+    P15 --> P16[16 Network DONE]
+    P16 --> P17[17 Wi-Fi DONE]
+    P17 --> P18[18 Bluetooth DONE]
+    P18 --> P19[19 NYFS maturity WORKING]
+    P19 --> P20[20 Firewall QUEUED]
+    P20 --> P21[21 NotYVFirm QUEUED]
     X[Windows PE / Brave / VLC]:::ex
     classDef ex fill:#3b1f1f,stroke:#c44,color:#fff
 ```
 
 - NOTYVOS roadmap
-  - Delivered: 0–10F and Phases 11–16
-  - Working: Phase 17 RTL8188EU Wi-Fi + Network Manager
-  - Queued: Phases 18–21
+  - Delivered: 0–10F and Phases 11–18
+  - Working: Phase 19 NYFS Maturity
+  - Queued: Phases 20–21
   - Excluded: Windows PE, Brave, VLC
 
 ## Current state
@@ -46,7 +46,7 @@ flowchart TD
 | Image decoders | Delivered | ~90% | BMP/PNG/GIF/ICO/JPEG are solid |
 | SVG decoder + icons | Delivered | ~85% | Diagnostics added; VFS packaging confirmation remains |
 | TrueType font renderer | Delivered | ~75% | Inter rasterization and AA text delivered; shaping and kerning remain |
-| Hardware support | Partial | ~45% | ACPI, AHCI, e1000, HDA, PS/2 and USB are delivered; RTL8188EU Wi-Fi is the active Phase 17 target |
+| Hardware support | Delivered baseline | ~65% | ACPI, AHCI, e1000, HDA, PS/2, USB, RTL8188EU Wi-Fi and Bluetooth framework are delivered; further device coverage remains |
 | Native firmware (NotYVFirm) | Not started | 0% | Long-term firmware domain |
 | Windows .exe compatibility | Excluded | 0% | Not on the current roadmap |
 | Brave / VLC validation | Excluded | 0% | Not on the current roadmap |
@@ -131,34 +131,34 @@ Universal save states remain deferred.
 
 Deferred: hubs, USB 3.x SuperSpeed and isochronous transfers.
 
-## Phase 16 -- Production Network Stack -- DONE
+## Phase 16 -- Network Core + LAN -- DELIVERED
 
-**Dependency:** Phase 15 optional.
+| Subphase | Status | Scope |
+|---|---|---|
+| 16A | **Delivered** | Network core |
+| 16B | **Delivered** | Intel e1000 LAN driver |
+| 16C | **Delivered** | DHCP client |
+| 16D | **Delivered** | UDP, sockets and TCP stub |
+| 16E | **Delivered** | DNS resolver |
 
-| Subphase | Scope |
-|---|---|
-| 16A | **Done** | Ethernet, ARP and IPv4 |
-| 16B | **Done** | ICMP and UDP |
-| 16C | **Done** | TCP |
-| 16D | **Done** | DHCP and DNS |
-| 16E | **Done** | User-space socket API |
+All listed Phase 16 deliverables are complete. Future protocol expansion can be scoped separately.
 
-Deferred: IPv6, IPsec, multicast and raw sockets.
+## Phase 17 -- Wi-Fi + Network Manager -- DELIVERED
 
-## Phase 17 -- Wi-Fi Driver + Management UI -- WORKING
+| Subphase | Status | Scope |
+|---|---|---|
+| 17A | **Delivered** | Wi-Fi HAL |
+| 17B | **Delivered** | WPA supplicant |
+| 17B-crypto | **Delivered** | SHA1, HMAC, PBKDF2, AES unwrap and CCMP |
+| 17B-hw | **Delivered** | RTL8188EU USB driver |
+| 17B-stub | **Delivered** | Virtual Wi-Fi adapter |
+| 17C | **Delivered** | Wi-Fi Management UI |
 
-**Dependency:** Phase 16. Phase 16 is completely delivered. The current active work is Phase 17.
+All supplied Phase 17 subphases are delivered.
 
-| Subphase | Scope |
-|---|---|
-| 17A | **Working** | RTL8188EU 802.11 driver and `Firmware/rtl8188eufw.bin` firmware loading |
-| 17B | **Working** | WPA2 supplicant |
-| 17C | **Working** | Network Manager UI in Settings |
-| 17D | **Working** | Roaming and power management |
+## Phase 18 -- Bluetooth Framework -- DELIVERED
 
-Deferred: WPA3, 802.1X enterprise and monitor mode.
-
-## Phase 18 -- Bluetooth Framework -- QUEUED
+**Status:** Delivered. The milestone is complete.
 
 **Dependency:** Phase 15 optional.
 
@@ -171,7 +171,7 @@ Deferred: WPA3, 802.1X enterprise and monitor mode.
 
 Deferred: BLE and audio profiles.
 
-## Phase 19 -- NYFS Maturity -- QUEUED
+## Phase 19 -- NYFS Maturity -- WORKING
 
 | Subphase | Scope |
 |---|---|
@@ -211,11 +211,9 @@ Deferred indefinitely: Secure Boot integration and TPM measurements.
 ## Honest gap list
 
 ### Core OS
-1. Wi-Fi driver polish and remaining RTL8188EU integration
-2. Bluetooth framework
-5. Firewall and network security
-6. NYFS journaling, crash recovery and scaling
-7. NotYVFirm
+1. NYFS journaling, crash recovery, directory/inode scaling and CRC32 integrity
+2. Firewall and network security
+3. NotYVFirm
 
 ### Remaining desktop / UI polish
 3. Multiple Inter font weight selection
@@ -257,15 +255,15 @@ Every subsystem gets a boot self-test. Warnings are errors, casts use
 | Fix | User-fault isolation + user build flags + BMP test vector | **Delivered** |
 | 14 / 7D | GameRunner Runtime Integration | **Done** |
 | 15A–15E | USB Stack + Unified Input | **Done** |
-| 16 | Production Network Stack | **Done** |
-| 17 | Wi-Fi Driver + Management UI | **Working** |
-| 18 | Bluetooth Framework | Queued |
-| 19 | NYFS Maturity | Queued |
+| 16 | Network Core + LAN | **Done** |
+| 17 | Wi-Fi + Network Manager | **Done** |
+| 18 | Bluetooth Framework | **Done** |
+| 19 | NYFS Maturity | **Working** |
 | 20 | Firewall + Network Security | Queued |
 | 21 | NotYVFirm | Queued |
 | -- | Windows .exe compatibility | **Excluded** |
 | -- | Brave / VLC validation | **Excluded** |
 
-**Current active delivery: Phase 17 RTL8188EU Wi-Fi + Network Manager.**
+**Current active delivery: Phase 19 NYFS Maturity.**
 
 The delivered ISR exception-dispatch fix is commit `ef79fc3f31e0c6f1574cb2e29028ce4e91dcdb1b`. Kernel-mode exceptions remain fatal; user-mode exceptions are isolated to the offending task through the scheduler exit path.
