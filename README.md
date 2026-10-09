@@ -201,3 +201,15 @@ under `docs/diagrams/`:
 - Python Diagrams host/build map
 
 See `docs/diagrams/README.md`.
+
+
+## Project policies
+
+- [Contributing](CONTRIBUTING.md)
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Security](SECURITY.md)
+- [Privacy Policy](PRIVACY.md)
+- [Support](SUPPORT.md)
+- [Citation](CITATION.cff)
+- [Governance](GOVERNANCE.md)
+- [License](LICENSE)
