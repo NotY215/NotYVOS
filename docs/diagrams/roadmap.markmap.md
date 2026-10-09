@@ -34,13 +34,27 @@ Markmap parses this native Markdown outline into an interactive mindmap
     - Phase 13 -- Clipboard + Dialogs
     - Phase 14 -- GameRunner Runtime Integration
     - Phase 15 -- USB + HID
-    - Phase 16 -- Production Network
+    - Phase 16 -- Network Core + LAN
+      - 16A Network core
+      - 16B Intel e1000 LAN driver
+      - 16C DHCP client
+      - 16D UDP, sockets and TCP stub
+      - 16E DNS resolver
+    - Phase 17 -- Wi-Fi + Network Manager
+      - 17A Wi-Fi HAL
+      - 17B WPA supplicant
+      - 17B-crypto SHA1, HMAC, PBKDF2, AES unwrap and CCMP
+      - 17B-hw RTL8188EU USB driver
+      - 17B-stub Virtual Wi-Fi adapter
+      - 17C Wi-Fi Management UI
+    - Phase 18 -- Bluetooth Framework
   - Working
-    - Phase 17 -- RTL8188EU Wi-Fi + Network Manager
-      - Firmware input: Firmware/rtl8188eufw.bin
+    - Phase 19 -- NYFS Maturity
+      - Write-ahead journaling
+      - Crash recovery
+      - Dynamic directory / inode scaling
+      - CRC32 block integrity
   - Queued
-    - Phase 18 -- Bluetooth -- QUEUED
-    - Phase 19 -- NYFS Maturity -- QUEUED
     - Phase 20 -- Firewall -- QUEUED
     - Phase 21 -- NotYVFirm -- QUEUED
   - Explicitly excluded
