@@ -34,7 +34,6 @@ constexpr u64 kCellFsClosedir = 210;
 constexpr u64 kCellFsUnlink = 211;
 constexpr u64 kCellFsMkdir = 212;
 constexpr u64 kCellFsRename = 213;
-constexpr u64 kDns = 19;
 
 // Firmware access. Returns (address, size) in two guest-readable slots.
 constexpr u64 kFirmwareGet = 300;

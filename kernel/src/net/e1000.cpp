@@ -16,9 +16,7 @@ namespace
 constexpr u64 kHhdm = 0xffff800000000000ULL;
 
 constexpr u32 kREG_CTRL  = 0x0000;
-constexpr u32 kREG_STATUS = 0x0008;
 constexpr u32 kREG_ICR   = 0x00C0;
-constexpr u32 kREG_IMS   = 0x00D0;
 constexpr u32 kREG_IMC   = 0x00D8;
 constexpr u32 kREG_RCTL  = 0x0100;
 constexpr u32 kREG_TCTL  = 0x0400;
@@ -32,7 +30,6 @@ constexpr u32 kREG_TDBAH = 0x3804;
 constexpr u32 kREG_TDLEN = 0x3808;
 constexpr u32 kREG_TDH   = 0x3810;
 constexpr u32 kREG_TDT   = 0x3818;
-constexpr u32 kREG_MTA   = 0x5200;
 constexpr u32 kREG_RAL   = 0x5400;
 constexpr u32 kREG_RAH   = 0x5404;
 

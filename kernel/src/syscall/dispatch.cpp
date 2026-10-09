@@ -11,6 +11,7 @@
 #include <kernel/mm/paging.hpp>
 #include <kernel/mm/pmm.hpp>
 #include <kernel/mm/vmm.hpp>
+#include <kernel/net/dns.hpp>
 #include <kernel/proc/elf.hpp>
 #include <kernel/proc/fork.hpp>
 #include <kernel/sched/scheduler.hpp>
@@ -79,8 +80,6 @@ i64 sys_dns_impl(u64 uhost, u64 uout)
     if (!copy_from_user(host, uhost, sizeof(host)))
         return -1;
     host[255] = 0;
-ps3_unused:
-    (void)0;
     net::dns::AddressList list{};
     if (!net::dns::resolve(host, &list, 3000))
         return -1;

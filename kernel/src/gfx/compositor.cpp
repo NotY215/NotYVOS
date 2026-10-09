@@ -6,6 +6,7 @@
 #include <kernel/arch/x86_64/pit.hpp>
 #include <kernel/arch/x86_64/rtc.hpp>
 #include <kernel/block/block.hpp>
+#include <kernel/bt/bt.hpp>
 #include <kernel/fb/framebuffer.hpp>
 #include <kernel/font/font.hpp>
 #include <kernel/fs/nyfs.hpp>
@@ -24,6 +25,8 @@
 #include <kernel/log.hpp>
 #include <kernel/mm/heap.hpp>
 #include <kernel/mm/pmm.hpp>
+#include <kernel/net/wifi.hpp>
+#include <kernel/net/e1000.hpp>
 #include <kernel/sched/scheduler.hpp>
 #include <kernel/usb/hid.hpp>
 
@@ -682,6 +685,9 @@ void scene_draw_taskbar()
     const i32 start_x = taskbar_cluster_x();
     i32 x = start_x;
 
+    // ------------------------------------------------------------------
+    // Start button with the real ICO.
+    // ------------------------------------------------------------------
     {
         const bool open = g_start_open;
         const u32 bg = open ? kAccent : kTaskbarBg;
@@ -689,6 +695,10 @@ void scene_draw_taskbar()
         s_icon(icons::Id::StartButton, x + 6, y0 + 6, 24);
         x += 44;
     }
+
+    // ------------------------------------------------------------------
+    // Search button (decorative placeholder).
+    // ------------------------------------------------------------------
     {
         s_fill(x, y0 + 4, 36, static_cast<i32>(kTaskbarH) - 8, kTaskbarBg);
         for (i32 i = 0; i < 10; ++i)
@@ -706,6 +716,9 @@ void scene_draw_taskbar()
     const i32 mx = arch::x86_64::mouse_x();
     const i32 my = arch::x86_64::mouse_y();
 
+    // ------------------------------------------------------------------
+    // Window buttons grouped by kind.
+    // ------------------------------------------------------------------
     for (u32 i = 0; i < g_win_count; ++i)
     {
         if (!g_windows[i].visible)
@@ -799,9 +812,12 @@ void scene_draw_taskbar()
         x += static_cast<i32>(tw) + 6;
     }
 
-    const i32 tray_x = to_i32(g_w) - 150;
+    // ------------------------------------------------------------------
+    // System tray: Wi-Fi, Ethernet, Bluetooth, Volume, Clock, Date.
+    // ------------------------------------------------------------------
+    const i32 tray_x = to_i32(g_w) - 170;
 
-    // Wi-Fi indicator: coloured square if any adapter is connected.
+    // Wi-Fi indicator.
     {
         u32 wifi_color = kTextDim;
         bool any = false;
@@ -818,6 +834,7 @@ void scene_draw_taskbar()
         }
         if (!any && n > 0)
             wifi_color = 0x00C0A040u;
+
         s_fill(tray_x + 0, y0 + 12, 8, 8, wifi_color);
         s_fill(tray_x + 2, y0 + 18, 4, 2, wifi_color);
     }
@@ -827,11 +844,29 @@ void scene_draw_taskbar()
         const bool eth_up = net::e1000_present();
         const u32 eth_color = eth_up ? 0x0060C060u : kTextDim;
         s_fill(tray_x + 16, y0 + 12, 8, 8, eth_color);
+        s_fill(tray_x + 18, y0 + 18, 4, 2, eth_color);
     }
 
-    // Volume (placeholder).
-    s_fill(tray_x + 32, y0 + 12, 6, 6, kTextDim);
+    // Bluetooth indicator.
+    {
+        const bool bt_on = bt::powered();
+        const u32 bt_color = bt_on ? 0x0060A0E0u : kTextDim;
+        s_fill(tray_x + 34, y0 + 12, 4, 8, bt_color);
+        s_fill(tray_x + 36, y0 + 14, 2, 2, bt_color);
+        s_fill(tray_x + 36, y0 + 17, 2, 2, bt_color);
+    }
 
+    // Volume indicator (placeholder triangle).
+    {
+        for (i32 i = 0; i < 6; ++i)
+        {
+            const i32 h = 2 + i;
+            s_fill(tray_x + 50, y0 + 18 - h / 2, 1, h, kTextDim);
+        }
+        s_fill(tray_x + 56, y0 + 12, 3, 6, kTextDim);
+    }
+
+    // Clock and date.
     {
         u32 yy = 0, mo = 0, dy = 0, hh = 0, mi = 0;
         civil_from_unix(g_clock_sec, yy, mo, dy, hh, mi);
@@ -846,7 +881,7 @@ void scene_draw_taskbar()
         buf[n++] = ':';
         push2(mi);
         buf[n] = 0;
-        s_text(tray_x + 68, y0 + 4, buf, kTextFg, kTaskbarBg);
+        s_text(tray_x + 72, y0 + 4, buf, kTextFg, kTaskbarBg);
     }
     {
         u32 yy = 0, mo = 0, dy = 0, hh = 0, mi = 0;
@@ -864,7 +899,7 @@ void scene_draw_taskbar()
         buf[n++] = '/';
         push2(yy % 100u);
         buf[n] = 0;
-        s_text(tray_x + 68, y0 + 16, buf, kTextDim, kTaskbarBg);
+        s_text(tray_x + 72, y0 + 16, buf, kTextDim, kTaskbarBg);
     }
 }
 

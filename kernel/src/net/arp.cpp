@@ -19,10 +19,6 @@ struct Entry
 constexpr u32 kCacheSize = 16;
 Entry g_cache[kCacheSize] = {};
 
-u16 checksum_add(u32 sum, u16 v) noexcept
-{
-    return static_cast<u16>((sum + v) & 0xFFFFu);
-}
 } // namespace
 
 void init() noexcept

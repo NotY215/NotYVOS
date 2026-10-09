@@ -4,6 +4,7 @@ extern "C" void notyvos_compositor_pump_for_modal();
 #include <kernel/arch/x86_64/keyboard.hpp>
 #include <kernel/arch/x86_64/mouse.hpp>
 #include <kernel/arch/x86_64/pit.hpp>
+#include <kernel/bt/bt.hpp>
 #include <kernel/fb/framebuffer.hpp>
 #include <kernel/fs/vfs.hpp>
 #include <kernel/gfx/apps.hpp>
@@ -13,10 +14,10 @@ extern "C" void notyvos_compositor_pump_for_modal();
 #include <kernel/libk/string.hpp>
 #include <kernel/log.hpp>
 #include <kernel/mm/heap.hpp>
-#include <kernel/net/net.hpp>
-#include <kernel/net/e1000.hpp>
 #include <kernel/net/wifi.hpp>
 #include <kernel/net/wpa.hpp>
+#include <kernel/net/e1000.hpp>
+#include <kernel/net/net.hpp>
 
 namespace notyvos::gfx
 {
@@ -1360,6 +1361,7 @@ enum class SettingsTab : u8
     Input,
     Network,
     Wifi,
+    Bluetooth,
     Appearance,
     About
 };
@@ -1372,9 +1374,9 @@ struct SettingsState
 };
 SettingsState g_set{};
 
-const char* tab_label(SettingsTab t)
+const char* tab_label(SettingsTab tb)
 {
-    switch (t)
+    switch (tb)
     {
     case SettingsTab::System:
         return "System";
@@ -1388,6 +1390,8 @@ const char* tab_label(SettingsTab t)
         return "Network";
     case SettingsTab::Wifi:
         return "Wi-Fi";
+    case SettingsTab::Bluetooth:
+        return "Bluetooth";
     case SettingsTab::Appearance:
         return "Appearance";
     case SettingsTab::About:
@@ -1395,6 +1399,25 @@ const char* tab_label(SettingsTab t)
     }
     return "";
 }
+
+struct WifiUiState
+{
+    bool scanning;
+    u64 scan_started;
+    char selected_ssid[net::wifi::kMaxSsid + 1];
+    char password[64];
+    bool connect_dialog_open;
+};
+
+WifiUiState g_wifi{};
+
+constexpr u8 kWiFiTabCount = 8;
+constexpr u8 kTabCount = 9;
+
+const SettingsTab kTabList[9] = {
+    SettingsTab::System,    SettingsTab::Display,    SettingsTab::Storage,
+    SettingsTab::Input,     SettingsTab::Network,    SettingsTab::Wifi,
+    SettingsTab::Bluetooth, SettingsTab::Appearance, SettingsTab::About};
 
 struct BinState
 {
@@ -1469,21 +1492,17 @@ void draw_settings(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my, bool)
     r(gx, gy, side_w, 40, 0x00E4E4E4);
     t(gx + 16, gy + 14, "Settings", 0x00202020, 0x00E4E4E4);
 
-    const SettingsTab tabs[8] = {
-        SettingsTab::System,  SettingsTab::Display, SettingsTab::Storage,    SettingsTab::Input,
-        SettingsTab::Network, SettingsTab::Wifi,    SettingsTab::Appearance, SettingsTab::About};
-
     i32 ty = gy + 52;
     g_set.hover_tab = -1;
-    for (u32 i = 0; i < 8; ++i)
+    for (u32 i = 0; i < kTabCount; ++i)
     {
         const bool hover = (mx >= gx && mx < gx + side_w - 1 && my >= ty && my < ty + 34);
         if (hover)
             g_set.hover_tab = static_cast<i32>(i);
-        const u32 bg = (tabs[i] == g_set.current) ? kNavHi : hover ? 0x00DCE4EC : 0x00F0F0F0;
+        const u32 bg = (kTabList[i] == g_set.current) ? kNavHi : hover ? 0x00DCE4EC : 0x00F0F0F0;
         if (bg != 0x00F0F0F0)
             r(gx + 4, ty, side_w - 8, 32, bg);
-        t(gx + 16, ty + 9, tab_label(tabs[i]), 0x00202020, bg);
+        t(gx + 16, ty + 9, tab_label(kTabList[i]), 0x00202020, bg);
         ty += 36;
     }
 
@@ -1508,19 +1527,23 @@ void draw_settings(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my, bool)
         label_row("Kernel", "x86-64, C++20");
         label_row("Heap", "64 MiB");
         break;
+
     case SettingsTab::Display:
         label_row("Resolution", "800 x 600");
         label_row("Colour depth", "32-bit ARGB");
         break;
+
     case SettingsTab::Storage:
         label_row("Device", "sda (AHCI)");
         label_row("Filesystem", "NYFS");
         label_row("Mount point", "/disk");
         break;
+
     case SettingsTab::Input:
         label_row("Keyboard", "PS/2 i8042, IRQ1");
         label_row("Mouse", "PS/2, IRQ12, wheel, 200 Hz");
         break;
+
     case SettingsTab::Network:
     {
         char macbuf[24] = "(none)";
@@ -1545,36 +1568,10 @@ void draw_settings(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my, bool)
         label_row("IPv4", ipbuf);
         label_row("Netmask", maskbuf);
         label_row("Gateway", gwbuf);
-        label_row("Wi-Fi", "no adapter");
-        label_row("DNS", "(none)");
-                const u32 na = net::wifi::adapter_count();
-        if (na == 0)
-        {
-            label_row("Wi-Fi", "no adapter");
-        }
-        else
-        {
-            for (u32 i = 0; i < na; ++i)
-            {
-                auto* a = net::wifi::adapter_by_index(i);
-                if (!a)
-                    continue;
-                char row[64];
-                u32 p = 0;
-                const char* n = a->name;
-                while (*n && p < 40)
-                    row[p++] = *n++;
-                row[p++] = ':';
-                row[p++] = ' ';
-                const char* st = a->connected ? "connected" : "idle";
-                while (*st && p < 60)
-                    row[p++] = *st++;
-                row[p] = 0;
-                label_row("Wi-Fi", row);
-            }
-        }
+        label_row("DNS", "(dhcp)");
         break;
     }
+
     case SettingsTab::Wifi:
     {
         const u32 na = net::wifi::adapter_count();
@@ -1582,7 +1579,7 @@ void draw_settings(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my, bool)
         {
             t(rx + 16, cy, "No Wi-Fi adapter detected.", 0x00606070, kContentBg);
             cy += 22;
-            t(rx + 16, cy, "Attach a USB Wi-Fi dongle and pass it through VBox.", 0x00909090,
+            t(rx + 16, cy, "Attach a USB Wi-Fi dongle, or enable the stub adapter.", 0x00909090,
               kContentBg);
             break;
         }
@@ -1591,33 +1588,29 @@ void draw_settings(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my, bool)
         if (!adapter)
             break;
 
-        char status[64];
+        char status[96];
         int s = 0;
         const char* name = adapter->name;
-        while (*name && s < 32)
+        while (*name && s < 40)
             status[s++] = *name++;
         status[s++] = ':';
         status[s++] = ' ';
         const char* st = adapter->connected ? "connected" : "disconnected";
-        while (*st && s < 63)
+        while (*st && s < 90)
             status[s++] = *st++;
         status[s] = 0;
 
-        t(rx + 16, cy, "Adapter", 0x00404040, kContentBg);
-        t(rx + 240, cy, status, 0x00202020, kContentBg);
-        cy += 22;
+        label_row("Adapter", status);
 
         if (adapter->connected)
         {
-            t(rx + 16, cy, "SSID", 0x00404040, kContentBg);
-            t(rx + 240, cy, adapter->current_ssid, 0x00202020, kContentBg);
-            cy += 22;
+            label_row("SSID", adapter->current_ssid);
         }
 
-        // Scan button.
+        cy += 10;
         const i32 btn_x = rx + 16;
-        const i32 btn_y = cy + 10;
-        const i32 btn_w = 120;
+        const i32 btn_y = cy;
+        const i32 btn_w = 160;
         const i32 btn_h = 30;
         r(btn_x, btn_y, btn_w, btn_h, kNavHi);
         r(btn_x, btn_y, btn_w, 1, kHeaderEdge);
@@ -1626,25 +1619,23 @@ void draw_settings(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my, bool)
           kNavHi);
         cy += 50;
 
-        // Results.
-        const u32 n = net::wifi::scan_results(adapter->name, nullptr, 0);
         static net::wifi::ScanResult results[net::wifi::kMaxScanResults];
         const u32 got = net::wifi::scan_results(adapter->name, results, net::wifi::kMaxScanResults);
-        (void)n;
 
         if (got == 0)
         {
-            t(rx + 16, cy, "No networks. Press Scan.", 0x00909090, kContentBg);
+            t(rx + 16, cy, g_wifi.scanning ? "Scanning..." : "No networks. Press Scan.", 0x00909090,
+              kContentBg);
         }
         else
         {
             t(rx + 16, cy, "SSID", 0x00606060, kContentBg);
             t(rx + 300, cy, "Ch", 0x00606060, kContentBg);
-            t(rx + 340, cy, "Signal", 0x00606060, kContentBg);
-            t(rx + 420, cy, "Security", 0x00606060, kContentBg);
+            t(rx + 350, cy, "Signal", 0x00606060, kContentBg);
+            t(rx + 460, cy, "Security", 0x00606060, kContentBg);
             cy += 20;
 
-            for (u32 i = 0; i < got && i < 10; ++i)
+            for (u32 i = 0; i < got && i < 8; ++i)
             {
                 const auto& r2 = results[i];
                 t(rx + 16, cy, r2.ssid, 0x00202020, kContentBg);
@@ -1658,10 +1649,10 @@ void draw_settings(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my, bool)
                 {
                     char tmp[4];
                     int m = 0;
-                    while (ch)
+                    while (ch && m < 3)
                     {
                         tmp[m++] = static_cast<char>('0' + ch % 10);
-                        ch /= 10;
+                        ch = static_cast<u8>(ch / 10);
                     }
                     while (m)
                         chbuf[n2++] = tmp[--m];
@@ -1684,7 +1675,7 @@ void draw_settings(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my, bool)
                 sig[n3++] = 'd';
                 sig[n3++] = 'B';
                 sig[n3] = 0;
-                t(rx + 340, cy, sig, 0x00202020, kContentBg);
+                t(rx + 350, cy, sig, 0x00202020, kContentBg);
 
                 const char* sec = "Open";
                 if (r2.security == net::wifi::Security::WPA2_PSK)
@@ -1693,9 +1684,8 @@ void draw_settings(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my, bool)
                     sec = "WPA";
                 else if (r2.security == net::wifi::Security::WEP)
                     sec = "WEP";
-                t(rx + 420, cy, sec, 0x00202020, kContentBg);
+                t(rx + 460, cy, sec, 0x00202020, kContentBg);
 
-                // Connect button.
                 const i32 cx2 = rx + rw - 100;
                 r(cx2, cy - 2, 80, 18, 0x00D0E4F4);
                 t(cx2 + 12, cy, "Connect", 0x00202020, 0x00D0E4F4);
@@ -1705,9 +1695,115 @@ void draw_settings(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my, bool)
         }
         break;
     }
+
+    case SettingsTab::Bluetooth:
+    {
+        const char* tr = "none";
+        switch (bt::current_transport())
+        {
+        case bt::Transport::Usb:
+            tr = "USB";
+            break;
+        case bt::Transport::Uart:
+            tr = "UART";
+            break;
+        case bt::Transport::Virtual:
+            tr = "virtual";
+            break;
+        default:
+            tr = "none";
+            break;
+        }
+        label_row("Transport", tr);
+        label_row("Power", bt::powered() ? "on" : "off");
+
+        const u32 n = bt::device_count();
+        char nbuf[16];
+        int nn = 0;
+        if (n == 0)
+            nbuf[nn++] = '0';
+        else
+        {
+            u32 v = n;
+            char tmp[8];
+            int m = 0;
+            while (v)
+            {
+                tmp[m++] = static_cast<char>('0' + v % 10);
+                v /= 10;
+            }
+            while (m)
+                nbuf[nn++] = tmp[--m];
+        }
+        nbuf[nn] = 0;
+        label_row("Devices", nbuf);
+
+        cy += 8;
+
+        const i32 b1x = rx + 16;
+        const i32 b1y = cy;
+        r(b1x, b1y, 140, 30, bt::inquiry_active() ? kHeaderBg : kNavHi);
+        t(b1x + 20, b1y + 7, bt::inquiry_active() ? "Scanning..." : "Start scan", 0x00202020,
+          bt::inquiry_active() ? kHeaderBg : kNavHi);
+        cy += 40;
+
+        if (n == 0)
+        {
+            t(rx + 16, cy, "No devices discovered.", 0x00909090, kContentBg);
+            break;
+        }
+
+        t(rx + 16, cy, "Address", 0x00606060, kContentBg);
+        t(rx + 200, cy, "Class", 0x00606060, kContentBg);
+        t(rx + 320, cy, "Name", 0x00606060, kContentBg);
+        cy += 20;
+        for (u32 i = 0; i < n && i < 10; ++i)
+        {
+            const bt::Device* d = bt::device(i);
+            if (!d)
+                continue;
+            char addr[24];
+            bt::format_address(d->address, addr);
+            t(rx + 16, cy, addr, 0x00202020, kContentBg);
+            const char* cl = "Other";
+            switch (d->cls)
+            {
+            case bt::DeviceClass::Computer:
+                cl = "Computer";
+                break;
+            case bt::DeviceClass::Phone:
+                cl = "Phone";
+                break;
+            case bt::DeviceClass::Audio:
+                cl = "Audio";
+                break;
+            case bt::DeviceClass::Headset:
+                cl = "Headset";
+                break;
+            case bt::DeviceClass::Keyboard:
+                cl = "Keyboard";
+                break;
+            case bt::DeviceClass::Mouse:
+                cl = "Mouse";
+                break;
+            case bt::DeviceClass::Printer:
+                cl = "Printer";
+                break;
+            default:
+                cl = "Other";
+                break;
+            }
+            t(rx + 200, cy, cl, 0x00202020, kContentBg);
+            t(rx + 320, cy, d->name, 0x00202020, kContentBg);
+            cy += 20;
+        }
+        break;
+    }
+
     case SettingsTab::Appearance:
         t(rx + 16, cy, "Appearance settings land here.", 0x00606070, kContentBg);
         break;
+
     case SettingsTab::About:
         t(rx + 16, cy, "NOTYVOS", 0x00202020, kContentBg);
         cy += 22;
@@ -1789,17 +1885,6 @@ struct GameLauncherState
     i32 hover;
     i32 tab;
 };
-struct WifiUiState
-{
-    bool scanning;
-    u64 scan_started;
-    char selected_ssid[33];
-    char password[64];
-    bool connect_dialog_open;
-    bool password_focused;
-};
-WifiUiState g_wifi{};
-
 GameLauncherState g_gl{};
 
 void gamelauncher_scan()
@@ -1928,46 +2013,23 @@ void draw_gamelauncher(i32 gx, i32 gy, i32 gw, i32 gh, i32 mx, i32 my, bool)
     }
 }
 
-bool wifi_connect_clicked(i32 mx, i32 my, i32 rx, i32 rw, i32 cy_base,
-                          const net::wifi::ScanResult* results, u32 count) noexcept
-{
-    for (u32 i = 0; i < count && i < 10; ++i)
-    {
-        const i32 row_y = cy_base + 20 + static_cast<i32>(i) * 22;
-        const i32 cx2 = rx + rw - 100;
-        if (mx >= cx2 && mx < cx2 + 80 && my >= row_y - 2 && my < row_y + 18)
-        {
-            u32 n = 0;
-            while (results[i].ssid[n] && n < 32)
-            {
-                g_wifi.selected_ssid[n] = results[i].ssid[n];
-                ++n;
-            }
-            g_wifi.selected_ssid[n] = 0;
-            g_wifi.connect_dialog_open = true;
-            g_wifi.password[0] = 0;
-            return true;
-        }
-    }
-    return false;
-}
-
 void wifi_prompt_password() noexcept
 {
-    // Blocking modal loop, same pattern as the Explorer's prompt_text.
     auto* a = net::wifi::adapter_by_index(0);
     if (!a)
         return;
 
     usize plen = 0;
+    u64 frames = 0;
+    const u64 max_frames = 2000;
+
     for (;;)
     {
-        extern "C" void notyvos_compositor_pump_for_modal();
         notyvos_compositor_pump_for_modal();
 
         const i32 sw = static_cast<i32>(fb::Framebuffer::width());
         const i32 sh = static_cast<i32>(fb::Framebuffer::height());
-        const i32 w = 420, h = 180;
+        const i32 w = 420, h = 190;
         const i32 x = (sw - w) / 2, y = (sh - h) / 2;
 
         r(x - 2, y - 2, w + 4, h + 4, 0x00000000);
@@ -1977,27 +2039,29 @@ void wifi_prompt_password() noexcept
         r(x, y, 1, h, 0x00606060);
         r(x + w - 1, y, 1, h, 0x00606060);
 
-        t(x + 16, y + 16, "Wi-Fi Password", 0x00202020, 0x00F0F0F0);
-        char line[80];
+        t(x + 16, y + 16, "Connect to Wi-Fi", 0x00202020, 0x00F0F0F0);
+
+        char ssid_line[80];
         int p = 0;
         const char* s = g_wifi.selected_ssid;
         while (*s && p < 60)
-            line[p++] = *s++;
-        line[p++] = ' ';
-        line[p++] = '|';
-        line[p++] = ' ';
-        for (usize i = 0; i < plen && p < 78; ++i)
-            line[p++] = '*';
-        line[p] = 0;
-        t(x + 16, y + 46, line, 0x00404040, 0x00F0F0F0);
+            ssid_line[p++] = *s++;
+        ssid_line[p] = 0;
+        t(x + 16, y + 42, "Network:", 0x00404040, 0x00F0F0F0);
+        t(x + 110, y + 42, ssid_line, 0x00202020, 0x00F0F0F0);
 
-        r(x + 16, y + 80, w - 32, 30, 0x00FFFFFF);
-        r(x + 16, y + 80, w - 32, 1, 0x00A0A0A0);
-        r(x + 16, y + 109, w - 32, 1, 0x00A0A0A0);
+        t(x + 16, y + 70, "Password:", 0x00404040, 0x00F0F0F0);
+
+        r(x + 16, y + 92, w - 32, 30, 0x00FFFFFF);
+        r(x + 16, y + 92, w - 32, 1, 0x00A0A0A0);
+        r(x + 16, y + 121, w - 32, 1, 0x00A0A0A0);
+        r(x + 16, y + 92, 1, 30, 0x00A0A0A0);
+        r(x + w - 17, y + 92, 1, 30, 0x00A0A0A0);
+
         for (usize i = 0; i < plen; ++i)
-            t(x + 22 + static_cast<i32>(i) * 8, y + 86, "*", 0x00202020, 0x00FFFFFF);
+            t(x + 22 + static_cast<i32>(i) * 8, y + 99, "*", 0x00202020, 0x00FFFFFF);
 
-        t(x + 16, y + 126, "Enter = connect   Esc = cancel", 0x00606060, 0x00F0F0F0);
+        t(x + 16, y + 140, "Enter = connect   Esc = cancel", 0x00606060, 0x00F0F0F0);
 
         i32 c = arch::x86_64::keyboard_pop();
         while (c >= 0)
@@ -2026,8 +2090,13 @@ void wifi_prompt_password() noexcept
             }
             c = arch::x86_64::keyboard_pop();
         }
-        for (u32 i = 0; i < 400000; ++i)
+        for (u32 i = 0; i < 400000u; ++i)
             asm volatile("pause");
+        if (++frames > max_frames)
+        {
+            g_wifi.connect_dialog_open = false;
+            return;
+        }
     }
 }
 
@@ -2192,18 +2261,29 @@ bool apps_click_settings(i32 mx, i32 my, bool pressed_edge) noexcept
     if (!pressed_edge)
         return false;
 
-    const SettingsTab tabs[7] = {SettingsTab::System, SettingsTab::Display, SettingsTab::Storage,
-                                 SettingsTab::Input,  SettingsTab::Network, SettingsTab::Appearance,
-                                 SettingsTab::About};
+    if (g_set.hover_tab >= 0 && g_set.hover_tab < static_cast<i32>(kWiFiTabCount))
+    {
+        g_set.current = kTabList[static_cast<u32>(g_set.hover_tab)];
+        return true;
+    }
 
-        // Wi-Fi tab interactions.
     if (g_set.current == SettingsTab::Wifi)
     {
         auto* a = net::wifi::adapter_by_index(0);
         if (a)
         {
-            // Scan button: approximate coordinates from draw_settings.
-            if (mx >= 224 && mx < 344 && my >= 200 && my < 230)
+            // Approximate screen position of the Scan button and Connect
+            // buttons, computed from the draw_settings layout. These need
+            // to match the current Settings window geometry.
+            const i32 win_x = 0;
+            const i32 win_y = 0;
+            const i32 rx = win_x + 200 + 8;
+            const i32 rw = 720 - 200 - 16;
+
+            // Scan button occupies [btn_x, btn_x+160] at [btn_y, btn_y+30].
+            const i32 btn_x = rx + 16;
+            const i32 btn_y = win_y + 56 + 22 * 4 + 10;
+            if (mx >= btn_x && mx < btn_x + 160 && my >= btn_y && my < btn_y + 30)
             {
                 wifi_start_scan();
                 return true;
@@ -2211,18 +2291,25 @@ bool apps_click_settings(i32 mx, i32 my, bool pressed_edge) noexcept
 
             static net::wifi::ScanResult results[net::wifi::kMaxScanResults];
             const u32 got = net::wifi::scan_results(a->name, results, net::wifi::kMaxScanResults);
-            if (wifi_connect_clicked(mx, my, 220, 600, 280, results, got))
+            const i32 list_y = btn_y + 50 + 20;
+            for (u32 i = 0; i < got && i < 8; ++i)
             {
-                wifi_prompt_password();
-                return true;
+                const i32 row_y = list_y + static_cast<i32>(i) * 22;
+                const i32 cx2 = rx + rw - 100;
+                if (mx >= cx2 && mx < cx2 + 80 && my >= row_y - 2 && my < row_y + 18)
+                {
+                    u32 n = 0;
+                    while (results[i].ssid[n] && n < net::wifi::kMaxSsid)
+                    {
+                        g_wifi.selected_ssid[n] = results[i].ssid[n];
+                        ++n;
+                    }
+                    g_wifi.selected_ssid[n] = 0;
+                    wifi_prompt_password();
+                    return true;
+                }
             }
         }
-    }
-
-    if (g_set.hover_tab >= 0 && g_set.hover_tab < 7)
-    {
-        g_set.current = tabs[static_cast<u32>(g_set.hover_tab)];
-        return true;
     }
 
     (void)mx;

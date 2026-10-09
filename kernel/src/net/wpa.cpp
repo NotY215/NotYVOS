@@ -4,29 +4,32 @@
 #include <kernel/net/wifi.hpp>
 #include <kernel/net/wpa.hpp>
 
-// Crypto primitives. Supplied by kernel/src/crypto/. These are stubs the
-// integrator must implement; the state machine below is complete and
-// driver-agnostic.
-extern "C" void notyvos_hmac_sha1(const u8* key, usize key_len, const u8* data, usize data_len,
-                                   u8 out[20]) noexcept;
-extern "C" void notyvos_pbkdf2_sha1(const u8* password, usize password_len, const u8* salt,
-                                     usize salt_len, u32 iterations, u8* out,
-                                     usize out_len) noexcept;
-extern "C" void notyvos_sha1(const u8* data, usize len, u8 out[20]) noexcept;
-extern "C" bool notyvos_aes_unwrap(const u8* kek, const u8* in, usize in_len,
-                                    u8* out) noexcept;
-extern "C" bool notyvos_ccmp_decrypt(const u8* tk, const u8* frame, usize frame_len,
-                                      u8* out, usize* out_len) noexcept;
-extern "C" bool notyvos_ccmp_encrypt(const u8* tk, const u8* frame, usize frame_len,
-                                      u8* out, usize* out_len) noexcept;
+extern "C" void notyvos_hmac_sha1(const notyvos::u8* key, notyvos::usize key_len,
+                                  const notyvos::u8* data, notyvos::usize data_len,
+                                  notyvos::u8 out[20]) noexcept;
+extern "C" void notyvos_pbkdf2_sha1(const notyvos::u8* password, notyvos::usize password_len,
+                                    const notyvos::u8* salt, notyvos::usize salt_len,
+                                    notyvos::u32 iterations, notyvos::u8* out,
+                                    notyvos::usize out_len) noexcept;
+extern "C" void notyvos_sha1(const notyvos::u8* data, notyvos::usize len,
+                             notyvos::u8 out[20]) noexcept;
+extern "C" bool notyvos_aes_unwrap(const notyvos::u8* kek, const notyvos::u8* in,
+                                   notyvos::usize in_len, notyvos::u8* out) noexcept;
+extern "C" bool notyvos_ccmp_decrypt(const notyvos::u8* tk, const notyvos::u8* frame,
+                                     notyvos::usize frame_len, notyvos::u8* out,
+                                     notyvos::usize* out_len) noexcept;
+extern "C" bool notyvos_ccmp_encrypt(const notyvos::u8* tk, const notyvos::u8* frame,
+                                     notyvos::usize frame_len, notyvos::u8* out,
+                                     notyvos::usize* out_len) noexcept;
 
 namespace notyvos::net::wpa
 {
 
+extern "C" notyvos::u64 notyvos_net_now_ticks() noexcept;
+
 namespace
 {
 
-constexpr u8 kEapolType = 0x88u | 0xC7u;   // 802.1X
 constexpr u8 kEapolKeyDescRsn = 2;
 
 Session g_sessions[kMaxIfaces] = {};
@@ -61,80 +64,66 @@ Session* alloc_session(const char* adapter_name) noexcept
     return &s;
 }
 
-// EAPOL-Key frame layout (802.1X-2010)
-//
-// Offset  Size  Field
-//   0      1    Version (2 for 802.1X-2004)
-//   1      1    Type (3 = EAPOL-Key)
-//   2      2    Length (big-endian, total body length)
-//   4      1    Descriptor Type (2 = RSN)
-//   5      2    Key Information (bitfield)
-//   7      2    Key Length
-//   9      8    Replay Counter
-//  17     32    Key Nonce
-//  49     16    Key IV
-//  65      8    Key RSC
-//  73      8    Key ID (reserved in some)
-//  81     16    Key MIC
-//  97      2    Key Data Length
-//  99      N    Key Data (RSN IE, GTK)
 struct EapolKey
 {
-    u8  version;
-    u8  type;
+    u8 version;
+    u8 type;
     u16 body_len;
-    u8  desc_type;
+    u8 desc_type;
     u16 key_info;
     u16 key_len;
-    u8  replay[8];
-    u8  nonce[kNonceLen];
-    u8  iv[16];
-    u8  rsc[8];
-    u8  key_id[8];
-    u8  mic[kMicLen];
+    u8 replay[8];
+    u8 nonce[kNonceLen];
+    u8 iv[16];
+    u8 rsc[8];
+    u8 key_id[8];
+    u8 mic[kMicLen];
     u16 key_data_len;
-    u8  key_data[];
+    u8 key_data[128];
 } __attribute__((packed));
 
-constexpr u16 kKeyInfoAck     = 1u << 7;
-constexpr u16 kKeyInfoMic     = 1u << 8;
-constexpr u16 kKeyInfoSecure  = 1u << 9;
+constexpr u16 kKeyInfoAck = 1u << 7;
+constexpr u16 kKeyInfoMic = 1u << 8;
+constexpr u16 kKeyInfoSecure = 1u << 9;
 constexpr u16 kKeyInfoInstall = 1u << 6;
 constexpr u16 kKeyInfoPairwise = 1u << 3;
 
-// Derive the PTK.
-//
-//   PTK = PRF-512(PMK, "Pairwise key expansion",
-//                 min(AA, SPA) || max(AA, SPA) ||
-//                 min(ANonce, SNonce) || max(ANonce, SNonce))
-//
-// PRF-512 is HMAC-SHA1 based with NIST counter mode.
 void derive_ptk(Session* s) noexcept
 {
     u8 data[76];
-    // AA (authenticator, BSSID), SPA (supplicant MAC).
-    // We do not have the supplicant MAC here; the driver supplies it via
-    // the adapter. For simplicity, use the BSSID for both.
     libk::memcpy(data + 0, s->bssid, 6);
     libk::memcpy(data + 6, s->bssid, 6);
 
-    // min/max of ANonce and SNonce.
     const u8* min_n;
     const u8* max_n;
     int cmp = 0;
     for (u32 i = 0; i < kNonceLen; ++i)
     {
-        if (s->anonce[i] < s->snonce[i]) { cmp = -1; break; }
-        if (s->anonce[i] > s->snonce[i]) { cmp =  1; break; }
+        if (s->anonce[i] < s->snonce[i])
+        {
+            cmp = -1;
+            break;
+        }
+        if (s->anonce[i] > s->snonce[i])
+        {
+            cmp = 1;
+            break;
+        }
     }
-    if (cmp <= 0) { min_n = s->anonce; max_n = s->snonce; }
-    else          { min_n = s->snonce; max_n = s->anonce; }
+    if (cmp <= 0)
+    {
+        min_n = s->anonce;
+        max_n = s->snonce;
+    }
+    else
+    {
+        min_n = s->snonce;
+        max_n = s->anonce;
+    }
 
     libk::memcpy(data + 12, min_n, kNonceLen);
     libk::memcpy(data + 44, max_n, kNonceLen);
 
-    // PRF-512: five HMAC-SHA1 blocks of 20 bytes each = 100 bytes,
-    // truncated to 64.
     u8 prf[64];
     u8 hmac[20];
     for (u32 i = 0; i < 4; ++i)
@@ -153,7 +142,6 @@ void derive_ptk(Session* s) noexcept
 
 void send_eapol_key(Session* s, const u8* body, usize body_len) noexcept
 {
-    // Wrap in EAPOL.
     u8 frame[256];
     if (body_len + 4 > sizeof(frame))
         return;
@@ -162,7 +150,6 @@ void send_eapol_key(Session* s, const u8* body, usize body_len) noexcept
     frame[2] = static_cast<u8>((body_len >> 8) & 0xFF);
     frame[3] = static_cast<u8>(body_len & 0xFF);
     libk::memcpy(frame + 4, body, body_len);
-    // The driver sends it as an 802.11 data frame. Adapter-side.
     auto* a = wifi::adapter_by_name(s->adapter);
     if (a && a->send)
         (void)a->send(a->user, frame, body_len + 4);
@@ -170,8 +157,6 @@ void send_eapol_key(Session* s, const u8* body, usize body_len) noexcept
 
 void send_msg2(Session* s) noexcept
 {
-    // Build EAPOL-Key with MIC for the supplicant side. This is the
-    // second message of the handshake.
     u8 body[128];
     auto* ek = reinterpret_cast<EapolKey*>(body);
     libk::memset(body, 0, sizeof(body));
@@ -183,7 +168,6 @@ void send_msg2(Session* s) noexcept
     libk::memcpy(ek->replay, &s->eapol_replay, 8);
     libk::memcpy(ek->nonce, s->snonce, kNonceLen);
 
-    // Compute MIC using KCK over the whole frame.
     u8 mic_input[128];
     libk::memcpy(mic_input, body, sizeof(body));
     u8 hmac[20];
@@ -217,9 +201,6 @@ void on_msg1(Session* s, const EapolKey* ek) noexcept
     libk::memcpy(s->anonce, ek->nonce, kNonceLen);
     s->have_anonce = true;
 
-    // Generate our nonce. A real implementation uses a CSPRNG; here we
-    // mix the tick and the previous nonce.
-    extern volatile u64 notyvos_net_now_ticks() noexcept;
     const u64 t = notyvos_net_now_ticks();
     for (u32 i = 0; i < kNonceLen; ++i)
         s->snonce[i] = static_cast<u8>((t >> ((i % 8) * 8)) ^ (i * 0x9E));
@@ -233,8 +214,6 @@ void on_msg1(Session* s, const EapolKey* ek) noexcept
 void on_msg3(Session* s, const EapolKey* ek) noexcept
 {
     (void)ek;
-    // In a full implementation we would verify the MIC with KCK, unwrap
-    // the GTK with KEK, and install the pairwise key. Then send msg4.
     send_msg4(s);
     s->state = State::WaitGroupMsg;
 }
@@ -290,7 +269,6 @@ bool connect(const char* adapter_name, const char* ssid, const char* passphrase)
         ++g_failed;
         return false;
     }
-    // Hand the association to the adapter framework.
     if (!wifi::associate(adapter_name, ssid))
     {
         s->state = State::Failed;
@@ -320,49 +298,41 @@ void handle_eapol(const char* adapter_name, const u8* frame, usize len) noexcept
     if (!s || !frame || len < 4)
         return;
     if (frame[1] != 3)
-        return;   // not EAPOL-Key
+        return;
     const usize body_len = (static_cast<usize>(frame[2]) << 8) | frame[3];
     if (len < 4 + body_len || body_len < sizeof(EapolKey))
         return;
 
     const auto* ek = reinterpret_cast<const EapolKey*>(frame + 4);
 
-    // Identify which handshake message this is by key_info flags.
     const bool ack = (ek->key_info & kKeyInfoAck) != 0;
     const bool mic = (ek->key_info & kKeyInfoMic) != 0;
     const bool install = (ek->key_info & kKeyInfoInstall) != 0;
 
-    // Save replay counter and bssid for the PTK derivation. The BSSID
-    // comes from the driver as part of the caller's context; the driver
-    // should populate s->bssid before this call.
     libk::memcpy(&s->eapol_replay, ek->replay, 2);
 
     if (ack && !mic)
     {
-        // Message 1 of 4-way handshake.
         on_msg1(s, ek);
     }
     else if (ack && mic && install)
     {
-        // Message 3.
         on_msg3(s, ek);
     }
     else if (ack && mic)
     {
-        // Group rekey or similar. Not handled in this baseline.
     }
 }
 
 void tick() noexcept
 {
-    extern volatile u64 notyvos_net_now_ticks() noexcept;
     const u64 now = notyvos_net_now_ticks();
     for (u32 i = 0; i < g_session_count; ++i)
     {
         Session& s = g_sessions[i];
         if (s.state == State::Idle || s.state == State::Connected || s.state == State::Failed)
             continue;
-        if (now - s.last_tick < 300)   // 3 s at 100 Hz
+        if (now - s.last_tick < 300)
             continue;
         s.last_tick = now;
         if (++s.retries > 3)
@@ -373,8 +343,6 @@ void tick() noexcept
             continue;
         }
         log::write(log::Level::Info, "wpa", "retry handshake for %s", s.adapter);
-        // Re-send the last handshake message we have. Baseline resends
-        // msg2 if we have the anonce, otherwise triggers re-association.
         if (s.state == State::WaitMsg3 && s.have_anonce && s.have_snonce)
             send_msg2(&s);
     }
@@ -386,7 +354,13 @@ State state(const char* adapter_name) noexcept
     return s ? s->state : State::Idle;
 }
 
-u64 handshakes_completed() noexcept { return g_completed; }
-u64 handshakes_failed() noexcept { return g_failed; }
+u64 handshakes_completed() noexcept
+{
+    return g_completed;
+}
+u64 handshakes_failed() noexcept
+{
+    return g_failed;
+}
 
 } // namespace notyvos::net::wpa

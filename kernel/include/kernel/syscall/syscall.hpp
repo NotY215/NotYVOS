@@ -21,7 +21,6 @@ extern SyscallFrame* g_current_frame;
 
 namespace nr
 {
-constexpr u64 kGameRun = 18;
 constexpr u64 kExit = 0;
 constexpr u64 kWrite = 1;
 constexpr u64 kYield = 2;
@@ -40,6 +39,8 @@ constexpr u64 kSleep = 14;
 constexpr u64 kKill = 15;
 constexpr u64 kCreate = 16;
 constexpr u64 kUnlink = 17;
+constexpr u64 kGameRun = 18;
+constexpr u64 kDns = 19;
 } // namespace nr
 
 } // namespace notyvos::syscall

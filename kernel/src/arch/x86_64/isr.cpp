@@ -3,8 +3,10 @@
 #include <kernel/arch/x86_64/mouse.hpp>
 #include <kernel/arch/x86_64/pic.hpp>
 #include <kernel/arch/x86_64/pit.hpp>
+#include <kernel/bt/bt.hpp>
 #include <kernel/gfx/compositor.hpp>
 #include <kernel/log.hpp>
+#include <kernel/net/wpa.hpp>
 #include <kernel/net/rtl8188eu.hpp>
 #include <kernel/panic.hpp>
 #include <kernel/sched/scheduler.hpp>
@@ -171,6 +173,7 @@ void handle_irq(u8 irq, InterruptFrame* /*f*/) noexcept
         net::rtl8188eu::poll();
         sched::scheduler_tick();
         net::wpa::tick();
+        bt::tick();
         // Mark the clock dirty. The actual repaint happens in the idle loop.
         static u32 tick_div = 0;
         if (++tick_div >= 25)

@@ -179,6 +179,12 @@ set(KERNEL_SOURCES
     src/net/e1000.cpp
     src/net/rtl8188eu.cpp
     src/net/wifi_stub.cpp
+
+    src/bt/bt.cpp
+    src/bt/bt_transport.cpp
+    src/bt/hci.cpp
+    src/bt/bt_stub.cpp
+    src/bt/self_test.cpp
     
     src/crypto/sha1.cpp
     src/crypto/pbkdf2.cpp

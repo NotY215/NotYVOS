@@ -87,6 +87,8 @@ extern "C"
 #include <kernel/block/ahci.hpp>
 #include <kernel/block/block.hpp>
 #include <kernel/boot/limine.hpp>
+#include <kernel/bt/bt.hpp>
+#include <kernel/bt/self_test.hpp>
 #include <kernel/fb/console.hpp>
 #include <kernel/fb/framebuffer.hpp>
 #include <kernel/fs/initramfs.hpp>
@@ -235,7 +237,10 @@ extern "C" [[noreturn]] void kernel_main()
     net::wifi::init();
     net::wpa::init();
     net::rtl8188eu::init();
-    net::wifi_stub::init();  
+    net::wifi_stub::init();
+    bt::init();
+    bt::virtual_ctrl::init();
+    bt::self_test();  
     net::sock::init();
     net::dns::init();
     if (net::e1000_init())

@@ -7,25 +7,25 @@
 namespace notyvos::net::dhcp
 {
 
+extern "C" notyvos::u64 notyvos_net_now_ticks() noexcept;
+
 namespace
 {
-constexpr u16 kServerPort = 67;
-constexpr u16 kClientPort = 68;
 
 constexpr u8 kOpRequest = 1;
-constexpr u8 kOpReply   = 2;
+constexpr u8 kOpReply = 2;
 
 constexpr u8 kMsgDiscover = 1;
-constexpr u8 kMsgOffer    = 2;
-constexpr u8 kMsgRequest  = 3;
-constexpr u8 kMsgAck      = 5;
+constexpr u8 kMsgOffer = 2;
+constexpr u8 kMsgRequest = 3;
+constexpr u8 kMsgAck = 5;
 
 struct Header
 {
-    u8  op;
-    u8  htype;
-    u8  hlen;
-    u8  hops;
+    u8 op;
+    u8 htype;
+    u8 hlen;
+    u8 hops;
     u32 xid;
     u16 secs;
     u16 flags;
@@ -33,14 +33,14 @@ struct Header
     u32 yiaddr;
     u32 siaddr;
     u32 giaddr;
-    u8  chaddr[16];
-    u8  sname[64];
-    u8  file[128];
+    u8 chaddr[16];
+    u8 sname[64];
+    u8 file[128];
     u32 magic;
-    u8  options[64];
+    u8 options[64];
 } __attribute__((packed));
 
-u32 g_xid = 0x4E59564F;   // "NYVO"
+u32 g_xid = 0x4E59564F;
 u32 g_offered_ip = 0;
 u32 g_server_ip = 0;
 bool g_has_offer = false;
@@ -51,6 +51,7 @@ bool broadcast(Interface* iface, const Header& h) noexcept
     Mac bcast = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
     return ether::send(iface, bcast, ether::kTypeIPv4, &h, sizeof(h));
 }
+
 } // namespace
 
 void init() noexcept
@@ -69,7 +70,6 @@ void handle(Interface* iface, const u8* payload, usize len) noexcept
     if (h->op != kOpReply || h->xid != htonl(g_xid))
         return;
 
-    // Walk options for message type.
     const u8* opt = payload + offsetof(Header, options);
     const usize opt_len = len - offsetof(Header, options);
     u8 msg = 0;
@@ -80,11 +80,18 @@ void handle(Interface* iface, const u8* payload, usize len) noexcept
     while (i + 2 <= opt_len)
     {
         const u8 code = opt[i];
-        if (code == 0) { ++i; continue; }
-        if (code == 255) break;
+        if (code == 0)
+        {
+            ++i;
+            continue;
+        }
+        if (code == 255)
+            break;
         const u8 olen = opt[i + 1];
-        if (i + 2 + olen > opt_len) break;
-        if (code == 53 && olen >= 1) msg = opt[i + 2];
+        if (i + 2 + olen > opt_len)
+            break;
+        if (code == 53 && olen >= 1)
+            msg = opt[i + 2];
         if (code == 1 && olen >= 4)
             libk::memcpy(&subnet, opt + i + 2, 4);
         if (code == 3 && olen >= 4)
@@ -119,13 +126,12 @@ bool acquire(Interface* iface, u32 timeout_ms) noexcept
         return false;
     init();
 
-    // DISCOVER
     Header h{};
     h.op = kOpRequest;
     h.htype = 1;
     h.hlen = 6;
     h.xid = htonl(g_xid);
-    h.flags = htons(0x8000);   // broadcast
+    h.flags = htons(0x8000);
     libk::memcpy(h.chaddr, iface->mac, 6);
     h.magic = htonl(0x63825363);
     u8 opts[4] = {53, 1, kMsgDiscover, 255};
@@ -133,24 +139,15 @@ bool acquire(Interface* iface, u32 timeout_ms) noexcept
     if (!broadcast(iface, h))
         return false;
 
-    // Wait for OFFER.
-    const u64 deadline = timeout_ms * 100ULL + 1ULL;   // rough ticks (100 Hz)
-    u64 t0 = 0;
-    {
-        // We do not have a direct tick accessor here; use a simple
-        // countdown loop that pumps the same mechanisms the stack does.
-        extern volatile u64 notyvos_net_now_ticks() noexcept;
-        t0 = notyvos_net_now_ticks();
-    }
+    const u64 deadline = static_cast<u64>(timeout_ms) * 100ULL + 1ULL;
+    const u64 t0 = notyvos_net_now_ticks();
     while (!g_has_offer)
     {
-        extern volatile u64 notyvos_net_now_ticks() noexcept;
         if (notyvos_net_now_ticks() - t0 > deadline)
             return false;
         asm volatile("pause");
     }
 
-    // REQUEST
     Header r{};
     r.op = kOpRequest;
     r.htype = 1;
@@ -171,11 +168,11 @@ bool acquire(Interface* iface, u32 timeout_ms) noexcept
     libk::memcpy(r.options, ropts, sizeof(ropts));
     (void)broadcast(iface, r);
 
-    const u64 deadline2 = timeout_ms * 100ULL + 1ULL;
-    t0 = notyvos_net_now_ticks();
+    const u64 deadline2 = static_cast<u64>(timeout_ms) * 100ULL + 1ULL;
+    const u64 t1 = notyvos_net_now_ticks();
     while (!g_acked)
     {
-        if (notyvos_net_now_ticks() - t0 > deadline2)
+        if (notyvos_net_now_ticks() - t1 > deadline2)
             return false;
         asm volatile("pause");
     }
