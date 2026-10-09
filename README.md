@@ -208,6 +208,7 @@ See `docs/diagrams/README.md`.
 - [Contributing](CONTRIBUTING.md)
 - [Code of Conduct](CODE_OF_CONDUCT.md)
 - [Security](SECURITY.md)
+- [Privacy Policy](PRIVACY.md)
 - [Support](SUPPORT.md)
 - [Citation](CITATION.cff)
 - [Governance](GOVERNANCE.md)
