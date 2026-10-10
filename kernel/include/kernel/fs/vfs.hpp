@@ -18,6 +18,7 @@ VNodeOps* firmware_ops() noexcept;
 int vfs_create(VNode* parent, const char* name) noexcept;
 int vfs_unlink(VNode* node) noexcept;
 int vfs_rename(VNode* node, const char* new_name) noexcept;
+int vfs_truncate(VNode* node, u32 new_size) noexcept;
 // Register a raw firmware blob. Called from main.cpp once the Limine
 // modules are known. GameRunner queries it via vfs_firmware().
 void vfs_register_firmware(const void* data, usize size) noexcept;

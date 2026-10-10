@@ -71,6 +71,9 @@ set(KERNEL_SOURCES
     src/fs/vfs.cpp
     src/fs/initramfs.cpp
     src/fs/nyfs.cpp
+    src/fs/nyfs_journal.cpp
+    src/fs/nyfs_fsck.cpp
+    src/fs/nyfs_truncate.cpp
 
     src/img/decoder.cpp
     src/img/bmp.cpp

@@ -41,6 +41,8 @@ constexpr u64 kCreate = 16;
 constexpr u64 kUnlink = 17;
 constexpr u64 kGameRun = 18;
 constexpr u64 kDns = 19;
+constexpr u64 kFtruncate = 20;
+constexpr u64 kChmod = 21;
 } // namespace nr
 
 } // namespace notyvos::syscall

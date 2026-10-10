@@ -106,6 +106,29 @@ void handle(Interface* iface, const u8* payload, usize len) noexcept
         g_offered_ip = ntohl(h->yiaddr);
         g_server_ip = ntohl(h->siaddr);
         g_has_offer = true;
+
+        // Immediately request the offered address. Doing this from the
+        // RX path keeps acquire() non-blocking and lets the handshake
+        // complete asynchronously once the PIT is delivering IRQs.
+        Header r{};
+        r.op = kOpRequest;
+        r.htype = 1;
+        r.hlen = 6;
+        r.xid = htonl(g_xid);
+        r.flags = htons(0x8000);
+        libk::memcpy(r.chaddr, iface->mac, 6);
+        r.magic = htonl(0x63825363);
+        u8 ropts[16] = {53, 1, kMsgRequest, 50, 4, 0, 0, 0, 0, 54, 4, 0, 0, 0, 0, 255};
+        ropts[5] = static_cast<u8>((g_offered_ip >> 24) & 0xFF);
+        ropts[6] = static_cast<u8>((g_offered_ip >> 16) & 0xFF);
+        ropts[7] = static_cast<u8>((g_offered_ip >> 8) & 0xFF);
+        ropts[8] = static_cast<u8>(g_offered_ip & 0xFF);
+        ropts[11] = static_cast<u8>((g_server_ip >> 24) & 0xFF);
+        ropts[12] = static_cast<u8>((g_server_ip >> 16) & 0xFF);
+        ropts[13] = static_cast<u8>((g_server_ip >> 8) & 0xFF);
+        ropts[14] = static_cast<u8>(g_server_ip & 0xFF);
+        libk::memcpy(r.options, ropts, sizeof(ropts));
+        (void)broadcast(iface, r);
     }
     else if (msg == kMsgAck)
     {
@@ -120,7 +143,7 @@ void handle(Interface* iface, const u8* payload, usize len) noexcept
     }
 }
 
-bool acquire(Interface* iface, u32 timeout_ms) noexcept
+bool acquire(Interface* iface, u32 /*timeout_ms*/) noexcept
 {
     if (!iface)
         return false;
@@ -136,46 +159,11 @@ bool acquire(Interface* iface, u32 timeout_ms) noexcept
     h.magic = htonl(0x63825363);
     u8 opts[4] = {53, 1, kMsgDiscover, 255};
     libk::memcpy(h.options, opts, 4);
+
     if (!broadcast(iface, h))
         return false;
 
-    const u64 deadline = static_cast<u64>(timeout_ms) * 100ULL + 1ULL;
-    const u64 t0 = notyvos_net_now_ticks();
-    while (!g_has_offer)
-    {
-        if (notyvos_net_now_ticks() - t0 > deadline)
-            return false;
-        asm volatile("pause");
-    }
-
-    Header r{};
-    r.op = kOpRequest;
-    r.htype = 1;
-    r.hlen = 6;
-    r.xid = htonl(g_xid);
-    r.flags = htons(0x8000);
-    libk::memcpy(r.chaddr, iface->mac, 6);
-    r.magic = htonl(0x63825363);
-    u8 ropts[16] = {53, 1, kMsgRequest, 50, 4, 0, 0, 0, 0, 54, 4, 0, 0, 0, 0, 255};
-    ropts[5] = static_cast<u8>((g_offered_ip >> 24) & 0xFF);
-    ropts[6] = static_cast<u8>((g_offered_ip >> 16) & 0xFF);
-    ropts[7] = static_cast<u8>((g_offered_ip >> 8) & 0xFF);
-    ropts[8] = static_cast<u8>(g_offered_ip & 0xFF);
-    ropts[11] = static_cast<u8>((g_server_ip >> 24) & 0xFF);
-    ropts[12] = static_cast<u8>((g_server_ip >> 16) & 0xFF);
-    ropts[13] = static_cast<u8>((g_server_ip >> 8) & 0xFF);
-    ropts[14] = static_cast<u8>(g_server_ip & 0xFF);
-    libk::memcpy(r.options, ropts, sizeof(ropts));
-    (void)broadcast(iface, r);
-
-    const u64 deadline2 = static_cast<u64>(timeout_ms) * 100ULL + 1ULL;
-    const u64 t1 = notyvos_net_now_ticks();
-    while (!g_acked)
-    {
-        if (notyvos_net_now_ticks() - t1 > deadline2)
-            return false;
-        asm volatile("pause");
-    }
+    log::write(log::Level::Info, "dhcp", "%s discover sent", iface->name);
     return true;
 }
 

@@ -4,6 +4,7 @@
 #include <kernel/fs/file.hpp>
 #include <kernel/fs/nyfs.hpp>
 #include <kernel/fs/vfs.hpp>
+#include <kernel/fs/nyfs.hpp>
 #include <kernel/libk/mem.hpp>
 #include <kernel/libk/string.hpp>
 #include <kernel/log.hpp>
@@ -601,6 +602,34 @@ i64 sys_unlink_impl(u64 upath)
 
 } // namespace
 
+i64 sys_ftruncate_impl(u64 fd, u64 new_size)
+{
+    auto* cur = sched::scheduler_current();
+    if (!cur || !cur->files)
+        return -1;
+    auto* f = fs::filetable_get(cur->files, static_cast<i32>(fd));
+    if (!f || !f->vnode)
+        return -1;
+    if (!fs::nyfs_owns_vnode(f->vnode))
+        return -1;
+    return fs::nyfs_truncate(f->vnode, static_cast<u32>(new_size));
+}
+
+i64 sys_chmod_impl(u64 upath, u64 mode)
+{
+    char path[256];
+    if (!copy_from_user(path, upath, sizeof(path)))
+        return -1;
+    path[255] = 0;
+    auto* cur = sched::scheduler_current();
+    auto* vn = fs::vfs_lookup(path, cur ? cur->cwd : "/");
+    if (!vn)
+        return -1;
+    if (!fs::nyfs_owns_vnode(vn))
+        return -1;
+    return fs::nyfs_chmod(vn, static_cast<u16>(mode));
+}
+
 extern "C" void syscall_dispatch(SyscallFrame* f) noexcept
 {
     g_current_frame = f;
@@ -618,6 +647,12 @@ extern "C" void syscall_dispatch(SyscallFrame* f) noexcept
         break;
     case nr::kDns:
         f->rax = static_cast<u64>(sys_dns_impl(f->rdi, f->rsi));
+        break;
+    case nr::kFtruncate:
+        f->rax = static_cast<u64>(sys_ftruncate_impl(f->rdi, f->rsi));
+        break;
+    case nr::kChmod:
+        f->rax = static_cast<u64>(sys_chmod_impl(f->rdi, f->rsi));
         break;
     case nr::kYield:
         f->rax = static_cast<u64>(sys_yield());

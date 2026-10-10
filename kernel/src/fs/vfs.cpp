@@ -1,6 +1,7 @@
 #include <kernel/fs/vfs.hpp>
 #include <kernel/fs/nyfs.hpp>
 #include <kernel/libk/string.hpp>
+#include <kernel/fs/nyfs.hpp>
 
 namespace notyvos::fs
 {
@@ -108,23 +109,26 @@ int vfs_create(VNode* parent, const char* name) noexcept
 {
     if (!parent || !name || !name[0])
         return -1;
+    if (!nyfs_owns_vnode(parent))
+        return -1;
+    VNode* v = nyfs_create_in(parent, name, VType::File);
+    return v ? 0 : -1;
+}
 
-    // NYFS is mounted under a vnode whose name is "disk".
-    if (libk::strcmp(parent->name, "disk") == 0 && parent->type == VType::Dir)
-    {
-        return nyfs_create(name);
-    }
-    // Initramfs is read-only.
-    return -1;
+int vfs_truncate(VNode* node, u32 new_size) noexcept
+{
+    if (!node)
+        return -1;
+    if (!nyfs_owns_vnode(node))
+        return -1;
+    return nyfs_truncate(node, new_size);
 }
 
 int vfs_unlink(VNode* node) noexcept
 {
-    if (!node)
+    if (!node || !node->parent)
         return -1;
-    if (!node->parent)
-        return -1;
-    if (libk::strcmp(node->parent->name, "disk") != 0)
+    if (!nyfs_owns_vnode(node->parent))
         return -1;
     return nyfs_unlink(node->name);
 }
@@ -135,7 +139,7 @@ int vfs_rename(VNode* node, const char* new_name) noexcept
         return -1;
     if (!node->parent)
         return -1;
-    if (libk::strcmp(node->parent->name, "disk") != 0)
+    if (!nyfs_owns_vnode(node->parent))
         return -1;
     return nyfs_rename(node->name, new_name);
 }

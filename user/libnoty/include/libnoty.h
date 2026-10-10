@@ -30,6 +30,8 @@ typedef u64 usize;
 #define SYS_UNLINK 17
 #define SYS_GAME_RUN 18
 #define SYS_DNS 19
+#define SYS_FTRUNCATE 20
+#define SYS_CHMOD 21
 
 static inline i64 __sc1(i64 n, i64 a1)
 {
@@ -119,6 +121,15 @@ static inline i64 sys_game_run(const char* path)
 static inline i64 sys_dns(const char* host, u32* out_ip)
 {
     return __sc3(SYS_DNS, (i64)host, (i64)out_ip, 0);
+}
+static inline i64 sys_ftruncate(i64 fd, u64 size)
+{
+    return __sc3(SYS_FTRUNCATE, fd, (i64)size, 0);
+}
+
+static inline i64 sys_chmod(const char* path, i64 mode)
+{
+    return __sc3(SYS_CHMOD, (i64)path, mode, 0);
 }
 
 static inline i64 sys_mmap(void* hint, u64 len, i64 flags)
