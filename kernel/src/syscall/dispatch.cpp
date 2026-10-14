@@ -4,7 +4,7 @@
 #include <kernel/fs/file.hpp>
 #include <kernel/fs/nyfs.hpp>
 #include <kernel/fs/vfs.hpp>
-#include <kernel/fs/nyfs.hpp>
+#include <kernel/gfx/compositor.hpp>
 #include <kernel/libk/mem.hpp>
 #include <kernel/libk/string.hpp>
 #include <kernel/log.hpp>
@@ -15,12 +15,11 @@
 #include <kernel/net/dns.hpp>
 #include <kernel/proc/elf.hpp>
 #include <kernel/proc/fork.hpp>
+#include <kernel/ps3/gamerunner.hpp>
 #include <kernel/sched/scheduler.hpp>
 #include <kernel/sched/task.hpp>
 #include <kernel/syscall/syscall.hpp>
 #include <kernel/syscall/uaccess.hpp>
-#include <kernel/gfx/compositor.hpp>
-#include <kernel/ps3/gamerunner.hpp>
 
 namespace notyvos::syscall
 {
@@ -75,20 +74,6 @@ i64 sys_write(u64 fd, u64 buf, u64 len)
     return static_cast<i64>(len);
 }
 
-i64 sys_dns_impl(u64 uhost, u64 uout)
-{
-    char host[256];
-    if (!copy_from_user(host, uhost, sizeof(host)))
-        return -1;
-    host[255] = 0;
-    net::dns::AddressList list{};
-    if (!net::dns::resolve(host, &list, 3000))
-        return -1;
-    if (!copy_to_user(uout, &list.v4[0], sizeof(u32)))
-        return -1;
-    return static_cast<i64>(list.count);
-}
-
 i64 sys_open(const char* upath, u64 /*flags*/)
 {
     if (!upath)
@@ -120,7 +105,6 @@ i64 sys_read_stdin(u64 ubuf, u64 len)
     usize got = 0;
     while (got < len)
     {
-        // Drive the compositor while we wait for input.
         gfx::Compositor::tick();
 
         while (!arch::x86_64::keyboard_has_data())
@@ -145,7 +129,6 @@ i64 sys_read_stdin(u64 ubuf, u64 len)
             continue;
         char ch = static_cast<char>(c);
 
-        // Special keys handled internally by the kernel.
         if (ch == arch::x86_64::kKeyUp)
         {
             gfx::Compositor::term_scroll_by(+1);
@@ -268,9 +251,7 @@ i64 sys_fork(SyscallFrame* f)
         dst[i] = src[i];
 
     if (!proc::clone_user_range(parent->cr3, new_pml4, parent->user_lo, parent->user_hi))
-    {
         return -1;
-    }
 
     auto* child = sched::task_create_forked(parent->name, new_pml4, parent->user_lo,
                                             parent->user_hi, f, sizeof(SyscallFrame));
@@ -278,12 +259,9 @@ i64 sys_fork(SyscallFrame* f)
         return -1;
 
     if (parent->files && child->files)
-    {
         for (u32 i = 0; i < fs::kMaxFds; ++i)
-        {
             child->files->fds[i] = parent->files->fds[i];
-        }
-    }
+
     child->brk_start = parent->brk_start;
     child->brk_current = parent->brk_current;
     child->brk_max = parent->brk_max;
@@ -371,9 +349,7 @@ i64 sys_mmap(u64 addr_hint, u64 len, u64 /*prot*/, u64 /*flags*/, i64 fd, u64 /*
             return -1;
         libk::memset(reinterpret_cast<void*>(phys + kHhdm), 0, kPage);
         if (!mm::VirtualMemory::map_page(base + i * kPage, phys, kLeaf))
-        {
             return -1;
-        }
     }
     if (base + bytes > cur->user_hi)
         cur->user_hi = base + bytes;
@@ -475,9 +451,7 @@ i64 sys_brk_impl(u64 new_brk)
                 return static_cast<i64>(cur->brk_current);
             libk::memset(reinterpret_cast<void*>(phys + kHhdm), 0, 0x1000);
             if (!mm::VirtualMemory::map_page(va, phys, kLeaf))
-            {
                 return static_cast<i64>(cur->brk_current);
-            }
         }
         cur->brk_max = end;
         if (cur->user_hi < end)
@@ -522,9 +496,7 @@ i64 sys_kill_impl(u64 pid, u64 sig)
         break;
     case 18:
         if (t->state == sched::TaskState::Stopped)
-        {
             t->state = sched::TaskState::Ready;
-        }
         break;
     default:
         return -1;
@@ -532,31 +504,8 @@ i64 sys_kill_impl(u64 pid, u64 sig)
     return 0;
 }
 
-i64 sys_game_run_impl(u64 upath)
-{
-    char path[256];
-    if (!copy_from_user(path, upath, sizeof(path)))
-        return -1;
-    path[sizeof(path) - 1] = 0;
-
-    log::write(log::Level::Info, "game", "run '%s'", path);
-
-    const auto r = ps3::gamerunner::launch_from_path(path);
-    if (!r.loaded)
-    {
-        log::write(log::Level::Warn, "game", "launch failed");
-        return -1;
-    }
-
-    log::write(log::Level::Info, "game", "entry=0x%llx format=%llu ppu_steps=%llu ppu_ran=%s",
-               static_cast<unsigned long long>(r.entry), static_cast<unsigned long long>(r.format),
-               static_cast<unsigned long long>(r.ppu_steps), r.ppu_ran ? "yes" : "no");
-    return static_cast<i64>(r.ppu_steps);
-}
-
 i64 sys_create_impl(u64 upath)
 {
-    log::write(log::Level::Info, "create", "upath=0x%llx", static_cast<unsigned long long>(upath));
     char path[256];
     if (!copy_from_user(path, upath, sizeof(path)))
         return -1;
@@ -574,7 +523,6 @@ i64 sys_create_impl(u64 upath)
     }
     if (!name[0])
         return -1;
-    log::write(log::Level::Info, "create", "stripped name='%s'", name);
     return fs::nyfs_create(name);
 }
 
@@ -600,7 +548,44 @@ i64 sys_unlink_impl(u64 upath)
     return fs::nyfs_unlink(name);
 }
 
-} // namespace
+i64 sys_game_run_impl(u64 upath)
+{
+    char path[256];
+    if (!copy_from_user(path, upath, sizeof(path)))
+        return -1;
+    path[sizeof(path) - 1] = 0;
+
+    log::write(log::Level::Info, "game", "run '%s'", path);
+
+    const auto r = ps3::gamerunner::launch_from_path(path);
+    if (!r.loaded)
+    {
+        log::write(log::Level::Warn, "game", "launch failed");
+        return -1;
+    }
+
+    log::write(log::Level::Info, "game", "entry=0x%llx format=%llu ppu_steps=%llu ppu_ran=%s",
+               static_cast<unsigned long long>(r.entry), static_cast<unsigned long long>(r.format),
+               static_cast<unsigned long long>(r.ppu_steps), r.ppu_ran ? "yes" : "no");
+    return static_cast<i64>(r.ppu_steps);
+}
+
+i64 sys_dns_impl(u64 uhost, u64 uout)
+{
+    char host[256];
+    if (!copy_from_user(host, uhost, sizeof(host)))
+        return -1;
+    host[255] = 0;
+
+    net::dns::AddressList list{};
+    if (!net::dns::resolve(host, &list, 3000))
+        return -1;
+    if (list.count == 0)
+        return -1;
+    if (!copy_to_user(uout, &list.v4[0], sizeof(u32)))
+        return -1;
+    return static_cast<i64>(list.count);
+}
 
 i64 sys_ftruncate_impl(u64 fd, u64 new_size)
 {
@@ -630,6 +615,8 @@ i64 sys_chmod_impl(u64 upath, u64 mode)
     return fs::nyfs_chmod(vn, static_cast<u16>(mode));
 }
 
+} // namespace
+
 extern "C" void syscall_dispatch(SyscallFrame* f) noexcept
 {
     g_current_frame = f;
@@ -644,15 +631,6 @@ extern "C" void syscall_dispatch(SyscallFrame* f) noexcept
         break;
     case nr::kWrite:
         f->rax = static_cast<u64>(sys_write(f->rdi, f->rsi, f->rdx));
-        break;
-    case nr::kDns:
-        f->rax = static_cast<u64>(sys_dns_impl(f->rdi, f->rsi));
-        break;
-    case nr::kFtruncate:
-        f->rax = static_cast<u64>(sys_ftruncate_impl(f->rdi, f->rsi));
-        break;
-    case nr::kChmod:
-        f->rax = static_cast<u64>(sys_chmod_impl(f->rdi, f->rsi));
         break;
     case nr::kYield:
         f->rax = static_cast<u64>(sys_yield());
@@ -705,6 +683,15 @@ extern "C" void syscall_dispatch(SyscallFrame* f) noexcept
         break;
     case nr::kGameRun:
         f->rax = static_cast<u64>(sys_game_run_impl(f->rdi));
+        break;
+    case nr::kDns:
+        f->rax = static_cast<u64>(sys_dns_impl(f->rdi, f->rsi));
+        break;
+    case nr::kFtruncate:
+        f->rax = static_cast<u64>(sys_ftruncate_impl(f->rdi, f->rsi));
+        break;
+    case nr::kChmod:
+        f->rax = static_cast<u64>(sys_chmod_impl(f->rdi, f->rsi));
         break;
     default:
         log::write(log::Level::Warn, "syscall", "unknown nr=%llu",

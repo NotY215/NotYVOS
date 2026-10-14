@@ -185,6 +185,11 @@ void _start(void)
     // Self-test: prove the write path works before entering the loop.
     puts("selftest: ok\n");
 
+    // Give the compositor a few ticks to render the desktop before the
+    // first prompt, so the user always sees the terminal populated.
+    for (int i = 0; i < 4; ++i)
+        sys_yield();
+
     for (;;)
     {
         puts("$ ");

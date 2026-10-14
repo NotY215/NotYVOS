@@ -34,13 +34,11 @@ u64 pit_ticks() noexcept
 
 void pit_on_tick() noexcept
 {
-    // C++20 deprecates ++/--/compound assignment on volatile objects.
-    // Use explicit read-modify-write.
     g_ticks = g_ticks + 1;
 
     if (g_frequency != 0 && (g_ticks % g_frequency) == 0)
     {
-        log::write(log::Level::Debug, "pit", "tick %u", static_cast<u64>(g_ticks));
+        log::write(log::Level::Info, "pit", "tick %llu", static_cast<unsigned long long>(g_ticks));
     }
 }
 

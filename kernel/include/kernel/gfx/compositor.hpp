@@ -16,7 +16,7 @@ enum class WindowKind : u8
     Bin,
     ImageViewer,
     GameLauncher,
-    GameRuntime, // RSX guest surface presented by GameRunner
+    GameRuntime,
     Generic
 };
 enum class AnimState : u8
@@ -70,6 +70,10 @@ public:
 
     static void set_theme(theme::Id id) noexcept;
 
+    // RSX / GameRunner presentation. `pixels` is a kernel-owned ARGB32
+    // buffer that stays valid while the game window is open. Called by
+    // gamerunner.cpp before the PPU runs, and by the RSX output path
+    // when a frame is complete.
     static void game_attach(u32* pixels, u32 width, u32 height, u32 pitch) noexcept;
     static void game_present() noexcept;
     static void game_detach() noexcept;

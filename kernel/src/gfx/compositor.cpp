@@ -25,8 +25,9 @@
 #include <kernel/log.hpp>
 #include <kernel/mm/heap.hpp>
 #include <kernel/mm/pmm.hpp>
-#include <kernel/net/wifi.hpp>
 #include <kernel/net/e1000.hpp>
+#include <kernel/net/net.hpp>
+#include <kernel/net/wifi.hpp>
 #include <kernel/sched/scheduler.hpp>
 #include <kernel/usb/hid.hpp>
 
@@ -56,7 +57,7 @@ constexpr u32 kTermMaxLines = 500;
 constexpr bool kTermScrollInvert = false;
 
 constexpr u64 kAnimTicks = 15;
-constexpr u64 kBootSplashTicks = 250;
+constexpr u64 kBootSplashTicks = 50;
 
 u32 kBgTop, kBgBottom;
 u32 kTaskbarBg, kTaskbarHi;
@@ -150,6 +151,7 @@ enum class CtxItem : u8
     Rename,
     Properties
 };
+
 const CtxItem g_ctx_items[10] = {
     CtxItem::New,   CtxItem::Refresh, CtxItem::Sep1,   CtxItem::Cut,        CtxItem::Copy,
     CtxItem::Paste, CtxItem::Sep2,    CtxItem::Rename, CtxItem::Properties, CtxItem::None};
@@ -240,17 +242,20 @@ bool g_toast_visible = false;
 
 u32 g_taskbar_anim[kMaxWindows] = {};
 
-// RSX / game presentation surface. Owned by GameRunner, not by the
-// compositor. When non-null, a GameRuntime window exists and blits from
-// this buffer.
 u32* g_game_pixels = nullptr;
 u32 g_game_w = 0;
 u32 g_game_h = 0;
 u32 g_game_pitch = 0;
 
-// Boot splash state.
 bool g_boot_splash = false;
 u64 g_boot_splash_start = 0;
+u32 g_boot_splash_calls = 0;
+constexpr u32 kBootSplashMaxCalls = 50;
+
+i32 g_tray_wifi_x = 0, g_tray_wifi_y = 0;
+i32 g_tray_eth_x = 0, g_tray_eth_y = 0;
+i32 g_tray_bt_x = 0, g_tray_bt_y = 0;
+i32 g_tray_vol_x = 0, g_tray_vol_y = 0;
 
 inline i32 to_i32(u32 v) noexcept
 {
@@ -395,6 +400,8 @@ icons::Id icon_for_window(WindowKind kind)
     case WindowKind::ImageViewer:
         return icons::Id::Explorer;
     case WindowKind::GameLauncher:
+        return icons::Id::GameLauncher;
+    case WindowKind::GameRuntime:
         return icons::Id::GameLauncher;
     default:
         return icons::Id::StartButton;
@@ -605,17 +612,14 @@ void scene_draw_disk_panel()
 
     s_fill(px, py, panel_w, panel_h, 0x00101018);
     s_rect(px, py, panel_w, panel_h, kBorderFg);
-
     s_text(px + 12, py + 10, "This PC", kTextFg, 0x00101018);
 
     i32 cy = py + 40;
 
-    {
-        s_icon(icons::Id::Explorer, px + 12, cy, 20);
-        s_text(px + 42, cy + 2, "notyvos-root", kTextFg, 0x00101018);
-        s_text(px + 42, cy + 18, "initramfs", kTextDim, 0x00101018);
-        cy += 44;
-    }
+    s_icon(icons::Id::Explorer, px + 12, cy, 20);
+    s_text(px + 42, cy + 2, "notyvos-root", kTextFg, 0x00101018);
+    s_text(px + 42, cy + 18, "initramfs", kTextDim, 0x00101018);
+    cy += 44;
 
     auto* dev = fs::nyfs_device();
     if (dev)
@@ -643,38 +647,36 @@ void scene_draw_disk_panel()
         szbuf[n++] = 'M';
         szbuf[n++] = 'B';
         szbuf[n] = 0;
-        s_text(px + 42, cy + 18, "NYFS, size", kTextDim, 0x00101018);
-        s_text(px + 130, cy + 18, szbuf, kTextDim, 0x00101018);
+        s_text(px + 42, cy + 18, "NYFS v2, size", kTextDim, 0x00101018);
+        s_text(px + 150, cy + 18, szbuf, kTextDim, 0x00101018);
         cy += 44;
     }
 
+    char buf[40];
+    u64 free_mb = mm::PhysicalMemory::free_bytes() / (1024ull * 1024ull);
+    int n = 0;
+    if (free_mb == 0)
+        buf[n++] = '0';
+    while (free_mb)
     {
-        char buf[40];
-        u64 free_mb = mm::PhysicalMemory::free_bytes() / (1024ull * 1024ull);
-        int n = 0;
-        if (free_mb == 0)
-            buf[n++] = '0';
-        while (free_mb)
-        {
-            buf[n++] = static_cast<char>('0' + free_mb % 10);
-            free_mb /= 10;
-        }
-        for (int k = 0; k < n / 2; ++k)
-        {
-            char t = buf[k];
-            buf[k] = buf[n - 1 - k];
-            buf[n - 1 - k] = t;
-        }
-        buf[n++] = ' ';
-        buf[n++] = 'M';
-        buf[n++] = 'B';
-        buf[n++] = ' ';
-        buf[n++] = 'f';
-        buf[n++] = 'r';
-        buf[n++] = 'e';
-        buf[n] = 0;
-        s_text(px + 12, cy, buf, kTextDim, 0x00101018);
+        buf[n++] = static_cast<char>('0' + free_mb % 10);
+        free_mb /= 10;
     }
+    for (int k = 0; k < n / 2; ++k)
+    {
+        char t = buf[k];
+        buf[k] = buf[n - 1 - k];
+        buf[n - 1 - k] = t;
+    }
+    buf[n++] = ' ';
+    buf[n++] = 'M';
+    buf[n++] = 'B';
+    buf[n++] = ' ';
+    buf[n++] = 'f';
+    buf[n++] = 'r';
+    buf[n++] = 'e';
+    buf[n] = 0;
+    s_text(px + 12, cy, buf, kTextDim, 0x00101018);
 }
 
 void scene_draw_taskbar()
@@ -685,9 +687,6 @@ void scene_draw_taskbar()
     const i32 start_x = taskbar_cluster_x();
     i32 x = start_x;
 
-    // ------------------------------------------------------------------
-    // Start button with the real ICO.
-    // ------------------------------------------------------------------
     {
         const bool open = g_start_open;
         const u32 bg = open ? kAccent : kTaskbarBg;
@@ -695,10 +694,6 @@ void scene_draw_taskbar()
         s_icon(icons::Id::StartButton, x + 6, y0 + 6, 24);
         x += 44;
     }
-
-    // ------------------------------------------------------------------
-    // Search button (decorative placeholder).
-    // ------------------------------------------------------------------
     {
         s_fill(x, y0 + 4, 36, static_cast<i32>(kTaskbarH) - 8, kTaskbarBg);
         for (i32 i = 0; i < 10; ++i)
@@ -716,9 +711,6 @@ void scene_draw_taskbar()
     const i32 mx = arch::x86_64::mouse_x();
     const i32 my = arch::x86_64::mouse_y();
 
-    // ------------------------------------------------------------------
-    // Window buttons grouped by kind.
-    // ------------------------------------------------------------------
     for (u32 i = 0; i < g_win_count; ++i)
     {
         if (!g_windows[i].visible)
@@ -812,12 +804,23 @@ void scene_draw_taskbar()
         x += static_cast<i32>(tw) + 6;
     }
 
-    // ------------------------------------------------------------------
-    // System tray: Wi-Fi, Ethernet, Bluetooth, Volume, Clock, Date.
-    // ------------------------------------------------------------------
+    // Tray icons. Left-to-right: Wi-Fi, Ethernet, Bluetooth, Volume, Clock.
     const i32 tray_x = to_i32(g_w) - 170;
+    g_tray_wifi_x = tray_x + 0;
+    g_tray_wifi_y = y0 + 6;
+    g_tray_eth_x = tray_x + 18;
+    g_tray_eth_y = y0 + 6;
+    g_tray_bt_x = tray_x + 36;
+    g_tray_bt_y = y0 + 6;
+    g_tray_vol_x = tray_x + 54;
+    g_tray_vol_y = y0 + 6;
 
-    // Wi-Fi indicator.
+    const i32 mx2 = arch::x86_64::mouse_x();
+    const i32 my2 = arch::x86_64::mouse_y();
+
+    auto tray_hover = [&](i32 tx, i32 ty) -> bool
+    { return mx2 >= tx && mx2 < tx + 16 && my2 >= ty && my2 < ty + 18; };
+
     {
         u32 wifi_color = kTextDim;
         bool any = false;
@@ -834,39 +837,42 @@ void scene_draw_taskbar()
         }
         if (!any && n > 0)
             wifi_color = 0x00C0A040u;
-
-        s_fill(tray_x + 0, y0 + 12, 8, 8, wifi_color);
-        s_fill(tray_x + 2, y0 + 18, 4, 2, wifi_color);
+        if (tray_hover(g_tray_wifi_x, g_tray_wifi_y))
+            s_fill(g_tray_wifi_x - 1, g_tray_wifi_y - 1, 18, 20, kTaskbarHi);
+        s_fill(g_tray_wifi_x + 2, y0 + 12, 8, 8, wifi_color);
+        s_fill(g_tray_wifi_x + 4, y0 + 18, 4, 2, wifi_color);
     }
 
-    // Ethernet indicator.
     {
         const bool eth_up = net::e1000_present();
         const u32 eth_color = eth_up ? 0x0060C060u : kTextDim;
-        s_fill(tray_x + 16, y0 + 12, 8, 8, eth_color);
-        s_fill(tray_x + 18, y0 + 18, 4, 2, eth_color);
+        if (tray_hover(g_tray_eth_x, g_tray_eth_y))
+            s_fill(g_tray_eth_x - 1, g_tray_eth_y - 1, 18, 20, kTaskbarHi);
+        s_fill(g_tray_eth_x + 2, y0 + 12, 8, 8, eth_color);
+        s_fill(g_tray_eth_x + 4, y0 + 18, 4, 2, eth_color);
     }
 
-    // Bluetooth indicator.
     {
         const bool bt_on = bt::powered();
         const u32 bt_color = bt_on ? 0x0060A0E0u : kTextDim;
-        s_fill(tray_x + 34, y0 + 12, 4, 8, bt_color);
-        s_fill(tray_x + 36, y0 + 14, 2, 2, bt_color);
-        s_fill(tray_x + 36, y0 + 17, 2, 2, bt_color);
+        if (tray_hover(g_tray_bt_x, g_tray_bt_y))
+            s_fill(g_tray_bt_x - 1, g_tray_bt_y - 1, 18, 20, kTaskbarHi);
+        s_fill(g_tray_bt_x + 6, y0 + 12, 4, 8, bt_color);
+        s_fill(g_tray_bt_x + 8, y0 + 14, 2, 2, bt_color);
+        s_fill(g_tray_bt_x + 8, y0 + 17, 2, 2, bt_color);
     }
 
-    // Volume indicator (placeholder triangle).
     {
+        if (tray_hover(g_tray_vol_x, g_tray_vol_y))
+            s_fill(g_tray_vol_x - 1, g_tray_vol_y - 1, 18, 20, kTaskbarHi);
         for (i32 i = 0; i < 6; ++i)
         {
             const i32 h = 2 + i;
-            s_fill(tray_x + 50, y0 + 18 - h / 2, 1, h, kTextDim);
+            s_fill(g_tray_vol_x + 0, y0 + 18 - h / 2, 1, h, kTextDim);
         }
-        s_fill(tray_x + 56, y0 + 12, 3, 6, kTextDim);
+        s_fill(g_tray_vol_x + 6, y0 + 12, 3, 6, kTextDim);
     }
 
-    // Clock and date.
     {
         u32 yy = 0, mo = 0, dy = 0, hh = 0, mi = 0;
         civil_from_unix(g_clock_sec, yy, mo, dy, hh, mi);
@@ -881,7 +887,7 @@ void scene_draw_taskbar()
         buf[n++] = ':';
         push2(mi);
         buf[n] = 0;
-        s_text(tray_x + 72, y0 + 4, buf, kTextFg, kTaskbarBg);
+        s_text(tray_x + 74, y0 + 4, buf, kTextFg, kTaskbarBg);
     }
     {
         u32 yy = 0, mo = 0, dy = 0, hh = 0, mi = 0;
@@ -899,7 +905,7 @@ void scene_draw_taskbar()
         buf[n++] = '/';
         push2(yy % 100u);
         buf[n] = 0;
-        s_text(tray_x + 72, y0 + 16, buf, kTextDim, kTaskbarBg);
+        s_text(tray_x + 74, y0 + 16, buf, kTextDim, kTaskbarBg);
     }
 }
 
@@ -919,13 +925,11 @@ void scene_draw_start_menu()
 
     s_fill(mx, my, menu_w, menu_h, kMenuBg);
     s_rect(mx, my, menu_w, menu_h, kMenuSep);
-
     s_fill(mx + 1, my + 1, menu_w - 2, header_h - 2, kMenuBg);
     s_text(mx + 40, my + 10, "NOTYVOS user", kMenuFg, kMenuBg);
 
     const char* items[7] = {"Explorer",     "Settings",    "Terminal", "Game Launcher",
                             "Image Viewer", "Recycle Bin", "Shut down"};
-
     static const icons::Id menu_icons[7] = {
         icons::Id::Explorer, icons::Id::Settings, icons::Id::Terminal,   icons::Id::GameLauncher,
         icons::Id::Explorer, icons::Id::Bin,      icons::Id::StartButton};
@@ -1017,50 +1021,6 @@ void scene_draw_context_menu()
     }
 }
 
-void scene_draw_game_content(i32 gx, i32 gy, i32 gw, i32 gh)
-{
-    if (!g_game_pixels || g_game_w == 0 || g_game_h == 0)
-    {
-        s_text(gx + 12, gy + 12, "No RSX surface attached.", kTextFg, kClientBg);
-        return;
-    }
-
-    // Nearest-neighbour blit scaled to fit. Aspect ratio preserved.
-    const u32 scale_num_w = static_cast<u32>(gw);
-    const u32 scale_num_h = static_cast<u32>(gh);
-    u32 dw = g_game_w;
-    u32 dh = g_game_h;
-    if (dw > scale_num_w || dh > scale_num_h)
-    {
-        const u32 sw = scale_num_w * g_game_h;
-        const u32 sh = scale_num_h * g_game_w;
-        if (sw < sh)
-        {
-            dw = scale_num_w;
-            dh = (g_game_h * dw) / g_game_w;
-        }
-        else
-        {
-            dh = scale_num_h;
-            dw = (g_game_w * dh) / g_game_h;
-        }
-    }
-    const i32 ox = gx + (gw - static_cast<i32>(dw)) / 2;
-    const i32 oy = gy + (gh - static_cast<i32>(dh)) / 2;
-
-    for (u32 y = 0; y < dh; ++y)
-    {
-        const u32 sy = (y * g_game_h) / dh;
-        const u32* row = g_game_pixels + static_cast<usize>(sy) * g_game_pitch;
-        for (u32 x = 0; x < dw; ++x)
-        {
-            const u32 sx = (x * g_game_w) / dw;
-            const u32 c = row[sx] & 0x00FFFFFFu;
-            s_fill(ox + static_cast<i32>(x), oy + static_cast<i32>(y), 1, 1, c);
-        }
-    }
-}
-
 void scene_draw_terminal_content(i32 gx, i32 gy)
 {
     if (g_term_cols == 0 || g_term_rows == 0)
@@ -1129,6 +1089,46 @@ void scene_draw_terminal_content(i32 gx, i32 gy)
         hb[n++] = 'p';
         hb[n] = 0;
         s_text(bx + 4, by + 1, hb, 0x00C0C0C0, 0x00202030);
+    }
+}
+
+void scene_draw_game_content(i32 gx, i32 gy, i32 gw, i32 gh)
+{
+    if (!g_game_pixels || g_game_w == 0 || g_game_h == 0)
+    {
+        s_text(gx + 12, gy + 12, "No RSX surface attached.", kTextFg, kClientBg);
+        return;
+    }
+
+    u32 dw = g_game_w;
+    u32 dh = g_game_h;
+    if (dw > static_cast<u32>(gw) || dh > static_cast<u32>(gh))
+    {
+        const u32 sw = static_cast<u32>(gw) * g_game_h;
+        const u32 sh = static_cast<u32>(gh) * g_game_w;
+        if (sw < sh)
+        {
+            dw = static_cast<u32>(gw);
+            dh = (g_game_h * dw) / g_game_w;
+        }
+        else
+        {
+            dh = static_cast<u32>(gh);
+            dw = (g_game_w * dh) / g_game_h;
+        }
+    }
+    const i32 ox = gx + (gw - static_cast<i32>(dw)) / 2;
+    const i32 oy = gy + (gh - static_cast<i32>(dh)) / 2;
+
+    for (u32 y = 0; y < dh; ++y)
+    {
+        const u32 sy = (y * g_game_h) / dh;
+        const u32* row = g_game_pixels + static_cast<usize>(sy) * g_game_pitch;
+        for (u32 x = 0; x < dw; ++x)
+        {
+            const u32 sx = (x * g_game_w) / dw;
+            s_fill(ox + static_cast<i32>(x), oy + static_cast<i32>(y), 1, 1, row[sx] & 0x00FFFFFFu);
+        }
     }
 }
 
@@ -1273,9 +1273,7 @@ void scene_draw_window(const Window& win_in)
     const i32 tb_icon = 16;
     s_icon(icon_for_window(win.kind), win.x + 6, win.y + (static_cast<i32>(kTitleH) - tb_icon) / 2,
            static_cast<u32>(tb_icon));
-
     s_text(win.x + 28, win.y + static_cast<i32>((kTitleH - kCellH) / 2), win.title, titleFg, title);
-    (void)kTextDim;
 
     const i32 btn_y = win.y + 1;
     const i32 btn_h = static_cast<i32>(kTitleH) - 2;
@@ -1343,7 +1341,6 @@ void scene_draw_snap_preview()
 
     s_fill(px - 4, py - 4, preview_w + 8, preview_h + 8, kMenuBg);
     s_rect(px - 4, py - 4, preview_w + 8, preview_h + 8, kAccent);
-
     s_text(px, py + 4, "Snap layout", kTextFg, kMenuBg);
 
     const i32 cell_w = 56;
@@ -1399,7 +1396,6 @@ void scene_draw_toast()
 
     s_fill(tx, ty, tw, th, kMenuBg);
     s_rect(tx, ty, tw, th, kAccent);
-
     s_fill(tx, ty, 4, th, kAccent);
 
     s_text(tx + 16, ty + 12, "Notification", kTextFg, kMenuBg);
@@ -1473,13 +1469,10 @@ void scene_draw_switcher()
 
         s_fill(px + 16, ry + 8, 24, 20, g_windows[i].focused ? kTitleOn : kTitleOff);
         s_fill(px + 16, ry + 8, 24, 2, kAccent);
-
         s_text(px + 52, ry + 12, g_windows[i].title, kMenuFg, bg);
     }
 }
 
-// Boot splash: static logo, animated progress bar. Shown for
-// kBootSplashTicks, then the desktop appears.
 void scene_draw_boot_splash()
 {
     s_fill(0, 0, to_i32(g_w), to_i32(g_h), 0x000A0A12);
@@ -1489,9 +1482,7 @@ void scene_draw_boot_splash()
     const i32 cx = (to_i32(g_w) - card_w) / 2;
     const i32 cy = (to_i32(g_h) - card_h) / 2;
 
-    // Static logo (Start button icon as the brand mark).
     s_icon(icons::Id::StartButton, cx + 28, cy + 28, 64);
-
     s_text(cx + 108, cy + 30, "NOTYVOS", 0x00FFFFFF, 0x000A0A12);
     s_text(cx + 108, cy + 56, "by NotY215", 0x0080A0C0, 0x000A0A12);
 
@@ -1736,11 +1727,9 @@ void minimize_window(u32 idx)
 void scene_tick_animations()
 {
     const u64 now = arch::x86_64::pit_ticks();
-
     for (u32 i = 0; i < g_win_count;)
     {
         Window& w = g_windows[i];
-
         switch (w.anim_state)
         {
         case AnimState::Opening:
@@ -1748,7 +1737,6 @@ void scene_tick_animations()
                 w.anim_state = AnimState::Settled;
             g_dirty_scene = true;
             break;
-
         case AnimState::Closing:
             if ((now - w.anim_start_tick) >= kAnimTicks)
             {
@@ -1762,19 +1750,12 @@ void scene_tick_animations()
             }
             g_dirty_scene = true;
             break;
-
         case AnimState::Minimizing:
-            if ((now - w.anim_start_tick) >= kAnimTicks)
-                w.anim_state = AnimState::Settled;
-            g_dirty_scene = true;
-            break;
-
         case AnimState::Restoring:
             if ((now - w.anim_start_tick) >= kAnimTicks)
                 w.anim_state = AnimState::Settled;
             g_dirty_scene = true;
             break;
-
         default:
             break;
         }
@@ -2097,6 +2078,68 @@ void on_mouse_tick()
             return;
         }
 
+        // Tray icons.
+        if (mx >= g_tray_wifi_x && mx < g_tray_wifi_x + 16 && my >= g_tray_wifi_y &&
+            my < g_tray_wifi_y + 18)
+        {
+            Compositor::notify("Wi-Fi: opening settings");
+            open_window(WindowKind::Settings, "Settings", 720, 480);
+            g_dirty_scene = true;
+            g_prev_mx = mx;
+            g_prev_my = my;
+            g_prev_left = left;
+            g_prev_right = right;
+            return;
+        }
+        if (mx >= g_tray_eth_x && mx < g_tray_eth_x + 16 && my >= g_tray_eth_y &&
+            my < g_tray_eth_y + 18)
+        {
+            char buf[64];
+            int n = 0;
+            const char* pre = "eth0: ";
+            while (*pre)
+                buf[n++] = *pre++;
+            auto* eth = net::e1000_interface();
+            if (eth && eth->ip)
+                net::format_ip(eth->ip, buf + n);
+            else
+            {
+                const char* s = "no link";
+                while (*s)
+                    buf[n++] = *s++;
+                buf[n] = 0;
+            }
+            Compositor::notify(buf);
+            g_dirty_scene = true;
+            g_prev_mx = mx;
+            g_prev_my = my;
+            g_prev_left = left;
+            g_prev_right = right;
+            return;
+        }
+        if (mx >= g_tray_bt_x && mx < g_tray_bt_x + 16 && my >= g_tray_bt_y &&
+            my < g_tray_bt_y + 18)
+        {
+            Compositor::notify(bt::powered() ? "Bluetooth: on" : "Bluetooth: off");
+            g_dirty_scene = true;
+            g_prev_mx = mx;
+            g_prev_my = my;
+            g_prev_left = left;
+            g_prev_right = right;
+            return;
+        }
+        if (mx >= g_tray_vol_x && mx < g_tray_vol_x + 16 && my >= g_tray_vol_y &&
+            my < g_tray_vol_y + 18)
+        {
+            Compositor::notify("Volume: not implemented");
+            g_dirty_scene = true;
+            g_prev_mx = mx;
+            g_prev_my = my;
+            g_prev_left = left;
+            g_prev_right = right;
+            return;
+        }
+
         if (g_start_open)
         {
             if (h_menu >= 0 && h_menu < 7)
@@ -2149,13 +2192,11 @@ void on_mouse_tick()
             else
             {
                 focus_window(static_cast<u32>(idx));
-
                 if (w.kind == WindowKind::Explorer && just_left_pressed)
                 {
                     const i32 rx = mx - w.x;
                     const i32 ry = my - w.y;
                     const bool in_toolbar = (ry >= 22 && ry < 22 + 30);
-
                     if (in_toolbar)
                     {
                         if (rx >= 4 && rx < 32)
@@ -2184,14 +2225,12 @@ void on_mouse_tick()
                         }
                     }
                 }
-
                 if (w.kind == WindowKind::Explorer)
                     apps_click_explorer(mx, my, just_left_pressed);
                 if (w.kind == WindowKind::Settings)
                     apps_click_settings(mx, my, just_left_pressed);
                 if (w.kind == WindowKind::Bin)
                     apps_click_bin(mx, my, just_left_pressed);
-
             after_explorer_click:
                 g_dirty_scene = true;
             }
@@ -2222,7 +2261,6 @@ void on_mouse_tick()
                 {
                     if (!g_windows[i].visible)
                         continue;
-
                     bool is_first = true;
                     for (u32 j = 0; j < i; ++j)
                     {
@@ -2234,15 +2272,12 @@ void on_mouse_tick()
                     }
                     if (!is_first)
                         continue;
-
                     u32 group_size = 0;
                     for (u32 j = 0; j < g_win_count; ++j)
                         if (g_windows[j].visible && g_windows[j].kind == g_windows[i].kind)
                             ++group_size;
-
                     const u32 title_len = static_cast<u32>(libk::strlen(g_windows[i].title));
                     const u32 tw = title_len * kCellW + 20 + ((group_size > 1) ? 24 : 0);
-
                     if (mx >= bx && mx < bx + static_cast<i32>(tw))
                     {
                         bool restored_any = false;
@@ -2260,48 +2295,35 @@ void on_mouse_tick()
                                 restored_any = true;
                             }
                         }
-
                         if (restored_any)
-                        {
                             focus_window(i);
-                        }
                         else if (group_size == 1)
-                        {
                             focus_window(i);
-                        }
                         else
                         {
                             i32 cur = -1;
                             for (u32 j = 0; j < g_win_count; ++j)
-                            {
                                 if (g_windows[j].kind == g_windows[i].kind && g_windows[j].focused)
                                 {
                                     cur = static_cast<i32>(j);
                                     break;
                                 }
-                            }
                             i32 next = -1;
                             if (cur >= 0)
                             {
                                 for (u32 j = static_cast<u32>(cur) + 1; j < g_win_count; ++j)
-                                {
                                     if (g_windows[j].kind == g_windows[i].kind)
                                     {
                                         next = static_cast<i32>(j);
                                         break;
                                     }
-                                }
                                 if (next < 0)
-                                {
                                     for (u32 j = 0; j < static_cast<u32>(cur); ++j)
-                                    {
                                         if (g_windows[j].kind == g_windows[i].kind)
                                         {
                                             next = static_cast<i32>(j);
                                             break;
                                         }
-                                    }
-                                }
                             }
                             if (next >= 0)
                                 focus_window(static_cast<u32>(next));
@@ -2338,7 +2360,6 @@ void on_mouse_tick()
                 const i32 snap = 30;
                 const i32 work_h = to_i32(g_h) - static_cast<i32>(kTaskbarH);
                 Window& w = g_windows[static_cast<u32>(g_drag_win)];
-
                 if (mx <= snap)
                 {
                     w.x = 0;
@@ -2365,7 +2386,6 @@ void on_mouse_tick()
                 }
                 g_dirty_scene = true;
             }
-
             g_snap_preview_open = false;
             g_snap_layout_hover = -1;
             g_snap_zone_hover = -1;
@@ -2410,7 +2430,6 @@ void on_mouse_tick()
             const i32 preview_w = 260;
             const i32 ppx = (to_i32(g_w) - preview_w) / 2;
             const i32 ppy = 20;
-
             const i32 cell_w = 56;
             const i32 cell_h = 80;
             const i32 cell_gap = 8;
@@ -2429,7 +2448,6 @@ void on_mouse_tick()
                         layout_i = -1;
                 }
             }
-
             if (layout_i != g_snap_layout_hover)
             {
                 g_snap_layout_hover = layout_i;
@@ -2461,7 +2479,6 @@ void on_mouse_tick()
                 g_dirty_scene = true;
             }
         }
-
         g_dirty_scene = true;
     }
 
@@ -2495,11 +2512,8 @@ void try_load_wallpaper()
     }
     const isize sz = vn->ops->size(vn);
     if (sz < 16 || sz > 256 * 1024 * 1024)
-    {
-        log::write(log::Level::Warn, "comp", "wallpaper.raw size invalid: %lld",
-                   static_cast<long long>(sz));
         return;
-    }
+
     auto* tmp = static_cast<u8*>(mm::Heap::allocate(static_cast<usize>(sz)));
     if (!tmp)
         return;
@@ -2518,6 +2532,7 @@ void try_load_wallpaper()
         mm::Heap::deallocate(tmp);
         return;
     }
+
     const u32 wp_w = *reinterpret_cast<const u32*>(tmp + 0);
     const u32 wp_h = *reinterpret_cast<const u32*>(tmp + 4);
     const u64 need = 8 + static_cast<u64>(wp_w) * wp_h * 4;
@@ -2534,6 +2549,7 @@ void try_load_wallpaper()
         mm::Heap::deallocate(tmp);
         return;
     }
+
     const auto* src = reinterpret_cast<const u32*>(tmp + 8);
     for (u32 y = 0; y < g_h; ++y)
     {
@@ -2574,7 +2590,7 @@ void Compositor::game_attach(u32* pixels, u32 width, u32 height, u32 pitch) noex
     }
     if (g_win_count < kMaxWindows)
     {
-        open_window(WindowKind::GameRuntime, "Game Runtime", 720, 480);
+        (void)open_window(WindowKind::GameRuntime, "Game Runtime", 720, 480);
     }
 }
 
@@ -2620,6 +2636,7 @@ void Compositor::notify(const char* text) noexcept
     g_toast_visible = true;
     g_dirty_scene = true;
 }
+
 void Compositor::machine_shutdown() noexcept
 {
     acpi::power_off();
@@ -2633,7 +2650,10 @@ void Compositor::boot_splash_begin() noexcept
 {
     g_boot_splash = true;
     g_boot_splash_start = arch::x86_64::pit_ticks();
+    g_boot_splash_calls = 0;
     g_dirty_scene = true;
+    log::write(log::Level::Info, "comp", "boot splash begin (tick=%llu)",
+               static_cast<unsigned long long>(g_boot_splash_start));
 }
 
 bool Compositor::boot_splash_active() noexcept
@@ -2732,7 +2752,6 @@ void Compositor::init() noexcept
     cursor_draw(mx, my);
 
     apps_bind_impl(widget_rect_cb, widget_text_cb);
-
     icons::init();
 
     log::write(log::Level::Info, "comp", "desktop %llu x %llu, terminal %llu x %llu",
@@ -2757,16 +2776,37 @@ void Compositor::tick() noexcept
 
     if (g_boot_splash)
     {
+        ++g_boot_splash_calls;
         const u64 now = arch::x86_64::pit_ticks();
-        if ((now - g_boot_splash_start) >= kBootSplashTicks)
+        const bool by_tick = (now - g_boot_splash_start) >= kBootSplashTicks;
+        const bool by_calls = g_boot_splash_calls >= kBootSplashMaxCalls;
+        if (by_tick || by_calls)
         {
             g_boot_splash = false;
             g_dirty_scene = true;
+            log::write(log::Level::Info, "comp",
+                       "boot splash cleared (calls=%u ticks=%llu by_tick=%s by_calls=%s)",
+                       static_cast<unsigned long long>(g_boot_splash_calls),
+                       static_cast<unsigned long long>(now), by_tick ? "yes" : "no",
+                       by_calls ? "yes" : "no");
+
+            if (g_scene)
+            {
+                gfx::hal_set_target(g_scene, g_w, g_h, g_w);
+                gpu::bind_surface(g_scene, g_w, g_h, g_w);
+                gfx::Device::begin_frame();
+                scene_render();
+                gfx::Device::end_frame();
+                fb_blit_full();
+                g_dirty_scene = false;
+                g_cursor_x = -1000;
+            }
+        }
+        else
+        {
+            g_dirty_scene = true;
         }
     }
-
-    // Advance any pending Wi-Fi scan (cooperative, ~3 s timeout).
-    wifi_pump_scan();
 
     usb::hid::poll();
 
@@ -2793,10 +2833,8 @@ void Compositor::tick() noexcept
                 {
                     const auto& c = clipboard::get();
                     if (c.kind == clipboard::Kind::Text)
-                    {
                         for (const char* p = c.text; *p; ++p)
                             arch::x86_64::keyboard_inject(*p);
-                    }
                 }
             }
             else if (focused->kind == WindowKind::Explorer)
@@ -2814,13 +2852,11 @@ void Compositor::tick() noexcept
     if (arch::x86_64::keyboard_alt_f4_event())
     {
         for (u32 i = 0; i < g_win_count; ++i)
-        {
             if (g_windows[i].focused)
             {
                 close_window(i);
                 break;
             }
-        }
     }
 
     switch (arch::x86_64::keyboard_alt_tab_event())
@@ -2832,12 +2868,9 @@ void Compositor::tick() noexcept
             g_switcher_idx = (g_win_count > 0) ? static_cast<i32>(g_win_count) - 1 : 0;
         }
         else if (g_win_count > 0)
-        {
             g_switcher_idx = (g_switcher_idx + 1) % static_cast<i32>(g_win_count);
-        }
         g_dirty_scene = true;
         break;
-
     case arch::x86_64::AltTabEvent::Commit:
         if (g_switcher_open)
         {
@@ -2847,14 +2880,11 @@ void Compositor::tick() noexcept
             g_dirty_scene = true;
         }
         break;
-
-    case arch::x86_64::AltTabEvent::None:
     default:
         break;
     }
 
     on_mouse_tick();
-
     scene_tick_animations();
 
     if (g_dirty_scene)
@@ -2890,22 +2920,17 @@ u32 Compositor::term_rows() noexcept
 void Compositor::term_scroll_by(i32 delta) noexcept
 {
     const i32 eff = kTermScrollInvert ? -delta : delta;
-
     if (eff > 0)
-    {
         g_term_scroll += static_cast<u32>(eff);
-    }
     else if (eff < 0)
     {
         const u32 mag = static_cast<u32>(-eff);
         g_term_scroll = (mag >= g_term_scroll) ? 0u : (g_term_scroll - mag);
     }
-
     const u32 max_scroll =
         (g_term_stored_lines > g_term_rows) ? (g_term_stored_lines - g_term_rows) : 0u;
     if (g_term_scroll > max_scroll)
         g_term_scroll = max_scroll;
-
     g_dirty_scene = true;
 }
 
@@ -2977,7 +3002,6 @@ void Compositor::term_put(char c) noexcept
             g_term[(kTermMaxLines - 1u) * g_term_cols + i] = 0;
         g_term_cursor = (kTermMaxLines - 1u) * g_term_cols;
         g_term_stored_lines = kTermMaxLines;
-
         if (g_term_scroll > 0)
             ++g_term_scroll;
     }

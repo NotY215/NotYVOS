@@ -392,8 +392,8 @@ void raster_triangle(const Vertex& a, const Vertex& b, const Vertex& c) noexcept
             i32 uu = 0, vv = 0;
             if (iw_acc != 0)
             {
-                uu = static_cast<i32>((sw_acc / area) / (iw_acc / area));
-                vv = static_cast<i32>((tw_acc / area) / (iw_acc / area));
+                uu = static_cast<i32>((sw_acc * kFixedOne) / iw_acc);
+                vv = static_cast<i32>((tw_acc * kFixedOne) / iw_acc);
             }
 
             // Span estimate for LOD: triangle bbox diagonal in 1/16-pixel
