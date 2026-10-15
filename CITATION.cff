@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use or reference NotYVOS in academic work, software, or other research, please cite this project."
+type: software
+title: "NotYVOS"
+abstract: >-
+  NotYVOS is an experimental operating-system project that boots into a
+  PlayStation 3-style XrossMediaBar (XMB) interface, using a Linux kernel
+  and a lightweight kiosk-oriented user interface.
+authors:
+  - name: "NotY215"
+repository-code: "https://github.com/NotY215/NotYVOS"
+url: "https://github.com/NotY215/NotYVOS"
+license: "AGPL-3.0-or-later"
+keywords:
+  - operating-system
+  - Linux
+  - XMB
+  - open-source
