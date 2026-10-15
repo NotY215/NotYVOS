@@ -1,0 +1,5 @@
+config BR2_PACKAGE_NOTYVOS_XMB
+	bool "notyvos-xmb"
+	depends on BR2_INSTALL_LIBSTDCPP
+	help
+	  The NotYVOS XMB user interface (SDL2).

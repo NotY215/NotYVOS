@@ -1,0 +1,5 @@
+# NotYVOS: no getty, no login. Init only runs the XMB session.
+::sysinit:/etc/init.d/rcS
+::respawn:/usr/bin/notyvos-session
+::ctrlaltdel:/sbin/reboot
+::shutdown:/bin/umount -a -r

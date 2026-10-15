@@ -1,0 +1,10 @@
+#!/bin/sh
+# Starts the one and only program: the XMB, inside a kiosk Wayland compositor.
+export XDG_RUNTIME_DIR=/run/user/0
+mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
+export NOTYVOS_APPLIANCE=1
+export SDL_VIDEODRIVER=wayland
+export WLR_RENDERER_ALLOW_SOFTWARE=1
+export NOTYVOS_FONTS=/usr/share/notyvos/fonts
+export NOTYVOS_ASSETS=/usr/share/notyvos/assets
+exec seatd-launch -- cage -- /usr/bin/notyvos-xmb
