@@ -1,0 +1,22 @@
+NotYVOS
+Copyright (C) the NotYVOS contributors.
+
+NotYVOS is distributed under the GNU Affero General Public License, version 3.
+See the LICENSE file for the complete license text.
+
+Independent-project notice
+NotYVOS is an unofficial, independent project and is not affiliated with,
+endorsed by, or sponsored by Sony Interactive Entertainment. PlayStation and
+other referenced trademarks belong to their respective owners.
+
+Third-party components
+The project uses or may use third-party software and resources, including the
+Linux kernel, Buildroot, SDL2, and Wayland-related components. Those components
+are owned by their respective copyright holders and are governed by their own
+licenses and notices. Consult each component's upstream documentation and the
+license files distributed with the relevant source or build.
+
+This notice is a general attribution summary, not an exhaustive software bill
+of materials and not a grant of rights to third-party material. Verify the
+license and redistribution requirements of each dependency and asset before
+redistributing a build.
